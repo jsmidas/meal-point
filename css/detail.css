@@ -1,0 +1,113 @@
+/* ============================
+   MEALPOINT — detail.css
+   Product detail page styles
+   ============================ */
+
+/* ---------- Detail Main ---------- */
+.detail-main {
+  padding-top: var(--header-h);
+  position: relative;
+  z-index: 2;
+}
+
+/* ---------- Detail Hero ---------- */
+.detail-hero {
+  padding: 48px 0 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  transition: color var(--transition);
+}
+
+.detail-back:hover {
+  color: var(--primary);
+}
+
+.detail-title-wrap {
+  max-width: 600px;
+}
+
+.detail-title {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 800;
+  color: var(--text-bright);
+  margin-top: 12px;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.detail-subtitle {
+  font-size: 16px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* ---------- Detail Images ---------- */
+.detail-images {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-images img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ---------- Detail CTA ---------- */
+.detail-cta {
+  padding: 80px 0;
+  text-align: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.detail-cta h3 {
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 800;
+  color: var(--text-bright);
+  margin-bottom: 12px;
+}
+
+.detail-cta p {
+  font-size: 16px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+}
+
+.detail-cta-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 767px) {
+  .detail-hero {
+    padding: 32px 0 28px;
+  }
+
+  .detail-title {
+    font-size: 26px;
+  }
+
+  .detail-cta {
+    padding: 52px 0;
+  }
+
+  .detail-cta-buttons {
+    flex-direction: column;
+    align-items: center;
+  }
+}
