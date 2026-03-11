@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>밀포인트 | 급식 용기 도매 전문</title>
+  <meta name="description" content="급식 용기의 새로운 기준, 밀포인트. 내피, 외피, 발열제, 필름 등 급식 용기 도매 전문. 카카오톡/전화 상담 가능.">
+  <meta name="keywords" content="급식용기, 도매, 내피, 외피, 발열제, 필름, 밀포인트, mealpoint">
+  <meta property="og:title" content="밀포인트 | 급식 용기 도매 전문">
+  <meta property="og:description" content="급식 용기의 새로운 기준. 도매 전문, 빠른 배송, 직접 상담.">
+  <meta property="og:type" content="website">
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23E8A04A'/><text x='6' y='23' font-size='18'>🍱</text></svg>">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap"
+    rel="stylesheet">
+
+  <!-- GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- Background layers -->
+  <canvas id="heroCanvas"></canvas>
+  <div class="bg-mesh"></div>
+  <div class="noise-overlay"></div>
+
+  <!-- ========== HEADER ========== -->
+  <header class="site-header" id="siteHeader">
+    <div class="header-inner">
+      <a href="#" class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="url(#logoGrad)" />
+          <path d="M8 22V12a2 2 0 012-2h12a2 2 0 012 2v10" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+          <path d="M6 22h20" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+          <circle cx="16" cy="16" r="3" stroke="#fff" stroke-width="1.5" />
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32">
+              <stop stop-color="#E8A04A" />
+              <stop offset="1" stop-color="#7C6AEF" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">밀포인트</span>
+      </a>
+      <nav class="header-nav" id="headerNav">
+        <a href="#why" class="nav-link">왜 밀포인트</a>
+        <a href="#products" class="nav-link">제품</a>
+        <a href="#process" class="nav-link">주문방법</a>
+        <a href="#contact" class="nav-link">문의하기</a>
+      </nav>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="메뉴 열기">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ========== SECTION 1: HERO ========== -->
+  <section class="hero" id="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-content">
+      <p class="hero-subtitle reveal-hero">급식 용기 도매 전문</p>
+      <h1 class="hero-title reveal-hero">
+        급식 용기의<br><span class="text-gradient">새로운 기준</span>
+      </h1>
+      <p class="hero-desc reveal-hero">
+        내피부터 발열제까지, 합리적인 가격과 빠른 배송으로<br>
+        급식 현장의 파트너가 되겠습니다.
+      </p>
+      <div class="hero-buttons reveal-hero">
+        <a href="#products" class="btn btn-primary btn-lg">제품 보기</a>
+        <a href="#contact" class="btn btn-outline btn-lg">문의하기</a>
+      </div>
+    </div>
+    <div class="hero-scroll-indicator">
+      <span>scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- ========== SECTION 2: WHY MEALPOINT ========== -->
+  <section class="section why-section" id="why">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label reveal">WHY MEALPOINT</p>
+        <h2 class="section-title reveal"><span class="text-gradient">전국 최저가</span>로 급식 용기를 공급합니다</h2>
+        <p class="section-desc reveal">전국 최저가로 급식 용기를 공급합니다.<br>같은 제품, 어디보다 합리적인 가격 — 직접 비교해보세요.</p>
+      </div>
+      <div class="why-cards">
+        <div class="why-card reveal">
+          <div class="why-card-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <path d="M4 8h24v4l-4 4 4 4v4H4v-4l4-4-4-4V8z" stroke="#E8A04A" stroke-width="2"
+                stroke-linejoin="round" />
+              <path d="M10 16h12" stroke="#E8A04A" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </div>
+          <h3 class="why-card-title">전국 최저가</h3>
+          <p class="why-card-desc">도매 직거래로 중간 마진 없이<br>전국 최저가를 보장합니다.</p>
+        </div>
+        <div class="why-card reveal">
+          <div class="why-card-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect x="4" y="12" width="24" height="14" rx="3" stroke="#E8A04A" stroke-width="2" />
+              <path d="M8 12V8a8 8 0 0116 0v4" stroke="#E8A04A" stroke-width="2" />
+              <path d="M16 19v3" stroke="#E8A04A" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+          </div>
+          <h3 class="why-card-title">빠른 배송</h3>
+          <p class="why-card-desc">주문 확인 후 신속하게 발송하여<br>현장에 차질이 없도록 합니다.</p>
+        </div>
+        <div class="why-card reveal">
+          <div class="why-card-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="12" stroke="#E8A04A" stroke-width="2" />
+              <path d="M11 16c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5" stroke="#E8A04A" stroke-width="2"
+                stroke-linecap="round" />
+              <circle cx="16" cy="16" r="2" fill="#E8A04A" />
+            </svg>
+          </div>
+          <h3 class="why-card-title">직접 상담</h3>
+          <p class="why-card-desc">카카오톡, 전화, 문자로 직접<br>상담하여 맞춤 견적을 제공합니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SECTION 3: PRODUCTS ========== -->
+  <section class="section products-section" id="products">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label reveal">PRODUCTS</p>
+        <h2 class="section-title reveal">제품 <span class="text-gradient">쇼케이스</span></h2>
+        <p class="section-desc reveal">다양한 급식 용기 제품을 확인하세요.</p>
+      </div>
+
+      <div class="product-tabs reveal" id="productTabs">
+        <button class="tab-btn active" data-category="all">전체</button>
+        <button class="tab-btn" data-category="inner">내피</button>
+        <button class="tab-btn" data-category="outer">외피</button>
+        <button class="tab-btn" data-category="heater">발열제</button>
+        <button class="tab-btn" data-category="set">세트</button>
+      </div>
+
+      <div class="product-grid" id="productGrid">
+        <!-- 내피 -->
+        <a href="detail-6kan-naepi.html" class="product-card tilt-card reveal" data-category="inner">
+          <div class="product-img-wrap">
+            <img src="assets/images/001.jpg"
+              alt="일품 6칸 내피" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-inner">내피</span>
+            <h4 class="product-name">일품 6칸 내피</h4>
+            <p class="product-price">가격문의</p>
+            <span class="btn btn-sm btn-primary">상세보기</span>
+          </div>
+        </a>
+        <a href="detail-8kan-naepi.html" class="product-card tilt-card reveal" data-category="inner">
+          <div class="product-img-wrap">
+            <img src="assets/images/002.jpg"
+              alt="8칸 내피" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-inner">내피</span>
+            <h4 class="product-name">8칸 내피</h4>
+            <p class="product-price">가격문의</p>
+            <span class="btn btn-sm btn-primary">상세보기</span>
+          </div>
+        </a>
+        <div class="product-card tilt-card reveal" data-category="inner">
+          <div class="product-img-wrap">
+            <img src="assets/images/발열내피_6칸.jpg"
+              alt="발열 6칸 내피" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-inner">내피</span>
+            <h4 class="product-name">발열 6칸 내피</h4>
+            <p class="product-price">가격문의</p>
+            <a href="#contact" class="btn btn-sm btn-primary">문의하기</a>
+          </div>
+        </div>
+
+        <!-- 외피 -->
+        <a href="detail-ilhoeyo-oepi.html" class="product-card tilt-card reveal" data-category="outer">
+          <div class="product-img-wrap">
+            <img src="assets/images/003.jpg"
+              alt="일회용 외피 (PP)" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-outer">외피</span>
+            <h4 class="product-name">일회용 외피 (PP)</h4>
+            <p class="product-price">가격문의</p>
+            <span class="btn btn-sm btn-primary">상세보기</span>
+          </div>
+        </a>
+        <a href="detail-dahoeyo-oepi.html" class="product-card tilt-card reveal" data-category="outer">
+          <div class="product-img-wrap">
+            <img src="assets/images/004.jpg"
+              alt="다회용 발열 외피 (EPP)" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-outer">외피</span>
+            <h4 class="product-name">다회용 발열 외피 (EPP)</h4>
+            <p class="product-price">가격문의</p>
+            <span class="btn btn-sm btn-primary">상세보기</span>
+          </div>
+        </a>
+        <div class="product-card tilt-card reveal" data-category="outer">
+          <div class="product-img-wrap">
+            <img src="assets/images/발열외피 바디, 뚜껑.jpg"
+              alt="발열 외피 바디 + 뚜껑" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-outer">외피</span>
+            <h4 class="product-name">발열 외피 바디 + 뚜껑</h4>
+            <p class="product-price">가격문의</p>
+            <a href="#contact" class="btn btn-sm btn-primary">문의하기</a>
+          </div>
+        </div>
+
+        <!-- 발열제 -->
+        <div class="product-card tilt-card reveal" data-category="heater">
+          <div class="product-img-wrap">
+            <img src="assets/images/발열외비+발열제.jpg"
+              alt="급식용 발열제" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-heater">발열제</span>
+            <h4 class="product-name">급식용 발열제</h4>
+            <p class="product-price">가격문의</p>
+            <a href="#contact" class="btn btn-sm btn-primary">문의하기</a>
+          </div>
+        </div>
+
+        <!-- 세트 -->
+        <div class="product-card tilt-card reveal" data-category="set">
+          <div class="product-img-wrap">
+            <img src="assets/images/일회용-외피-발열제.png"
+              alt="일회용 외피 + 발열제 세트" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-set">세트</span>
+            <h4 class="product-name">일회용 외피 + 발열제 세트</h4>
+            <p class="product-price">가격문의</p>
+            <a href="#contact" class="btn btn-sm btn-primary">문의하기</a>
+          </div>
+        </div>
+        <div class="product-card tilt-card reveal" data-category="set">
+          <div class="product-img-wrap">
+            <img src="assets/images/발열외피+내피.jpg"
+              alt="발열 외피 + 내피 세트" loading="lazy">
+          </div>
+          <div class="product-info">
+            <span class="product-badge badge-set">세트</span>
+            <h4 class="product-name">발열 외피 + 내피 세트</h4>
+            <p class="product-price">가격문의</p>
+            <a href="#contact" class="btn btn-sm btn-primary">문의하기</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="products-more reveal">
+        <a href="https://mealpoint.cafe24.com" target="_blank" rel="noopener" class="btn btn-outline">
+          전체 제품 보기
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 8h8m0 0L9 5m3 3L9 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SECTION 3.5: HEATING DEMO ========== -->
+  <section class="section demo-section" id="demo">
+    <div class="container">
+      <div class="demo-grid">
+        <div class="demo-video-wrap reveal">
+          <img
+            src="assets/images/발열제와 물120ml.jpg"
+            alt="발열도시락 물 붓는 시연"
+            style="width: 100%; height: auto; max-height: 500px; object-fit: contain; transition: transform 0.5s ease; cursor: pointer;"
+            onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+        </div>
+        <div class="demo-text">
+          <p class="section-label reveal">HEATING DEMO</p>
+          <h2 class="demo-title reveal">점심시간 5분,<br><span class="text-gradient">가장 따뜻한 휴식</span></h2>
+          <p class="demo-desc reveal">바쁜 일상 속, 종이컵 한 컵의 물(120ml)만 부어주세요. 5분 후 갓 지은 듯한 따뜻한 식사가 당신을 기다립니다.</p>
+          <div class="demo-steps">
+            <div class="demo-step reveal">
+              <div class="demo-step-num">01</div>
+              <div class="demo-step-content">
+                <h4>120ml의 마법</h4>
+                <p>종이컵 한 컵(120ml) 분량의 물을 용기에 가볍게 부어주세요.</p>
+              </div>
+            </div>
+            <div class="demo-step reveal">
+              <div class="demo-step-num">02</div>
+              <div class="demo-step-content">
+                <h4>단 5분의 기다림</h4>
+                <p>발열제가 안전하게 반응을 시작합니다. 딱 5분만 기다려주세요.</p>
+              </div>
+            </div>
+            <div class="demo-step reveal">
+              <div class="demo-step-num">03</div>
+              <div class="demo-step-content">
+                <h4>따뜻한 식사 완성</h4>
+                <p>모락모락 김이 나는, 갓 지은 듯한 따뜻하고 든든한 식사를 즐기세요.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SECTION 4: ORDER PROCESS ========== -->
+  <section class="section process-section" id="process">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label reveal">ORDER PROCESS</p>
+        <h2 class="section-title reveal">간편한 <span class="text-gradient">주문 프로세스</span></h2>
+        <p class="section-desc reveal">4단계로 쉽고 빠르게 주문하세요.</p>
+      </div>
+      <div class="process-track">
+        <div class="process-line">
+          <div class="process-line-fill" id="processLineFill"></div>
+        </div>
+        <div class="process-steps">
+          <div class="process-step reveal">
+            <div class="process-step-dot"></div>
+            <div class="process-step-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <rect x="6" y="4" width="20" height="24" rx="3" stroke="currentColor" stroke-width="1.5" />
+                <path d="M10 12h12M10 16h12M10 20h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h4>문의</h4>
+            <p>카톡/전화/문자로<br>편하게 연락주세요</p>
+          </div>
+          <div class="process-step reveal">
+            <div class="process-step-dot"></div>
+            <div class="process-step-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="12" r="6" stroke="currentColor" stroke-width="1.5" />
+                <path d="M6 28c0-5.5 4.5-10 10-10s10 4.5 10 10" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round" />
+              </svg>
+            </div>
+            <h4>수량 상담</h4>
+            <p>필요한 제품과<br>수량을 상담합니다</p>
+          </div>
+          <div class="process-step reveal">
+            <div class="process-step-dot"></div>
+            <div class="process-step-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <path d="M8 6h16v4l-5 6 5 6v4H8v-4l5-6-5-6V6z" stroke="currentColor" stroke-width="1.5"
+                  stroke-linejoin="round" />
+                <circle cx="16" cy="16" r="2" fill="currentColor" />
+              </svg>
+            </div>
+            <h4>견적 확인</h4>
+            <p>수량에 맞는<br>견적을 안내드립니다</p>
+          </div>
+          <div class="process-step reveal">
+            <div class="process-step-dot"></div>
+            <div class="process-step-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <rect x="4" y="6" width="24" height="20" rx="3" stroke="currentColor" stroke-width="1.5" />
+                <path d="M4 12h24" stroke="currentColor" stroke-width="1.5" />
+                <path d="M10 18h12M10 22h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h4>주문/배송</h4>
+            <p>결제 확인 후<br>신속하게 배송합니다</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ========== SECTION 5: CONTACT ========== -->
+  <section class="section contact-section" id="contact">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label reveal">CONTACT</p>
+        <h2 class="section-title reveal">지금 바로 <span class="text-gradient">문의하세요</span></h2>
+        <p class="section-desc reveal">편한 방법으로 연락 주시면 빠르게 답변드리겠습니다.</p>
+      </div>
+      <div class="contact-grid">
+        <a href="https://pf.kakao.com/CHANNEL_ID/chat" target="_blank" rel="noopener"
+          class="contact-card kakao-channel reveal">
+          <div class="contact-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="20" fill="#FEE500" />
+              <path
+                d="M24 13c-7.2 0-13 4.5-13 10 0 3.5 2.3 6.6 5.8 8.4l-1.5 5.5c-.1.3.3.5.5.3l6.4-4.2c.6.1 1.2.1 1.8.1 7.2 0 13-4.5 13-10S31.2 13 24 13z"
+                fill="#3C1E1E" />
+            </svg>
+          </div>
+          <h4>카카오톡 채널</h4>
+          <p>밀포인트 공식 채널로 문의</p>
+        </a>
+        <a href="https://open.kakao.com/o/ROOM_ID" target="_blank" rel="noopener"
+          class="contact-card kakao-open reveal">
+          <div class="contact-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="20" fill="#FEE500" />
+              <path d="M15 19h18M15 24h18M15 29h12" stroke="#3C1E1E" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+          </div>
+          <h4>오픈채팅</h4>
+          <p>카카오톡 오픈채팅방 입장</p>
+        </a>
+        <a href="#" class="contact-card sms-card reveal" id="smsLink">
+          <div class="contact-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect x="10" y="6" width="28" height="36" rx="6" fill="none" stroke="#E8A04A" stroke-width="2" />
+              <path d="M18 18h12M18 24h8" stroke="#E8A04A" stroke-width="2" stroke-linecap="round" />
+              <circle cx="24" cy="34" r="2" fill="#E8A04A" />
+            </svg>
+          </div>
+          <h4>문자 보내기</h4>
+          <p>010-5678-1898</p>
+        </a>
+        <a href="tel:010-5678-1898" class="contact-card tel-card reveal">
+          <div class="contact-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <path d="M14 8c-2 0-4 2-4 4 0 12 10 24 22 28 2 .8 4-1 4-3v-4l-6-3-3 3c-4-2-8-6-10-10l3-3-3-6h-3z"
+                stroke="#E8A04A" stroke-width="2" stroke-linejoin="round" />
+            </svg>
+          </div>
+          <h4>전화 걸기</h4>
+          <p>010-5678-1898</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="logo-text">밀포인트</span>
+          <p>급식 용기 도매 전문</p>
+        </div>
+        <div class="footer-info">
+          <p>사업자등록번호: 000-00-00000</p>
+          <p>대표: 000 | 연락처: 010-5678-1898</p>
+          <p>이메일: mealpoint@email.com</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://mealpoint.cafe24.com" target="_blank" rel="noopener">cafe24 스토어 &rarr;</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 밀포인트. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========== FAB ========== -->
+  <div class="fab-wrap" id="fabWrap">
+    <div class="fab-options" id="fabOptions">
+      <a href="https://pf.kakao.com/CHANNEL_ID/chat" target="_blank" rel="noopener" class="fab-option fab-kakao"
+        aria-label="카카오톡">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3C6.5 3 2 6.6 2 11c0 2.8 1.8 5.3 4.6 6.7L5.4 22c-.1.2.2.4.4.2l5-3.3c.4 0 .8.1 1.2.1 5.5 0 10-3.6 10-8S17.5 3 12 3z"
+            fill="#3C1E1E" />
+        </svg>
+      </a>
+      <a href="#" class="fab-option fab-sms" id="fabSms" aria-label="문자">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="4" y="2" width="16" height="20" rx="3" stroke="#fff" stroke-width="1.5" />
+          <path d="M8 8h8M8 12h6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </a>
+      <a href="tel:010-5678-1898" class="fab-option fab-tel" aria-label="전화">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M7 4c-1 0-2 1-2 2 0 6 5 12 11 14 1 .4 2-.5 2-1.5v-2l-3-1.5-1.5 1.5c-2-1-4-3-5-5L10 10 8.5 7H7z"
+            fill="#fff" />
+        </svg>
+      </a>
+    </div>
+    <button class="fab-main" id="fabMain" aria-label="문의하기">
+      <svg class="fab-icon-open" width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <path d="M14 6v16M6 14h16" stroke="#0B1121" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+      <svg class="fab-icon-close" width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <path d="M8 8l12 12M20 8L8 20" stroke="#0B1121" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Image placeholder helper -->
+  <script>
+    function makePlaceholder(type) {
+      var colors = { '내피': '#E8A04A', '외피': '#7C6AEF', '발열제': '#EF6C6C', '필름': '#34D399' };
+      var c = colors[type] || '#E8A04A';
+      return '<div class="product-placeholder">' +
+        '<svg width="64" height="64" viewBox="0 0 64 64" fill="none">' +
+        '<rect x="8" y="16" width="48" height="32" rx="8" stroke="' + c + '" stroke-width="1.5" opacity="0.4"/>' +
+        '<ellipse cx="32" cy="16" rx="20" ry="6" stroke="' + c + '" stroke-width="1.5" opacity="0.3"/>' +
+        '<path d="M12 16v32" stroke="' + c + '" stroke-width="1.5" opacity="0.2"/>' +
+        '<path d="M52 16v32" stroke="' + c + '" stroke-width="1.5" opacity="0.2"/>' +
+        '</svg>' +
+        '<span>' + type + '</span></div>';
+    }
+  </script>
+
+  <!-- Scripts -->
+  <script src="js/floating.js"></script>
+  <script src="js/main.js" defer></script>
+</body>
+
+</html>

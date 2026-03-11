@@ -1,0 +1,36 @@
+import { ExternalLink } from "lucide-react";
+
+export default function Footer() {
+  return (
+    <footer className="border-t border-border py-12">
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="grid md:grid-cols-3 gap-8 mb-8">
+          <div>
+            <span className="text-lg font-bold text-text-primary">밀포인트</span>
+            <p className="text-sm text-text-secondary mt-1">급식 용기 도매 전문</p>
+          </div>
+          <div className="text-sm text-text-secondary space-y-1">
+            <p>사업자등록번호: 000-00-00000</p>
+            <p>대표: 000 | 연락처: 010-5678-1898</p>
+            <p>이메일: mealpoint@email.com</p>
+          </div>
+          <div>
+            <a
+              href="https://mealpoint.cafe24.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-text-secondary hover:text-primary transition-colors"
+            >
+              cafe24 스토어 <ExternalLink size={14} />
+            </a>
+          </div>
+        </div>
+        <div className="border-t border-border pt-6">
+          <p className="text-xs text-text-muted text-center">
+            &copy; {new Date().getFullYear()} 밀포인트. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}
