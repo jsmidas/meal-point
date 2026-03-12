@@ -94,7 +94,7 @@ export default function ProductDetailEditorPage() {
       .from("product_pages")
       .select("*")
       .eq("product_id", id)
-      .single();
+      .maybeSingle();
 
     if (page) {
       setPageId(page.id);
@@ -339,7 +339,7 @@ export default function ProductDetailEditorPage() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
           <Link
-            href="/admin/products"
+            href="/admin/pages"
             className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-text-primary transition-colors"
           >
             <ArrowLeft size={20} />

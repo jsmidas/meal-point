@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { BillingWithPayments, Company } from "@/lib/supabase/types";
 import { BILLING_STATUS, formatNumber, generateBillingNumber } from "@/lib/utils";
-import { Plus, Receipt, CreditCard, X } from "lucide-react";
+import { Plus, Receipt, CreditCard, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function BillingPage() {
   const supabase = createClient();
@@ -45,10 +45,32 @@ export default function BillingPage() {
 
   useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [monthFilter]);
 
+  // 월 이동
+  function changeMonth(delta: number) {
+    const [y, m] = monthFilter.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setMonthFilter(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  const monthLabel = (() => {
+    const [y, m] = monthFilter.split("-").map(Number);
+    return `${y}년 ${m}월`;
+  })();
+
   // 요약
   const totalBilled = billings.reduce((s, b) => s + b.total_amount, 0);
   const totalPaid = billings.reduce((s, b) => s + b.paid_amount, 0);
   const totalUnpaid = totalBilled - totalPaid;
+
+  // 업체별 정산 요약
+  const companySummary = billings.reduce<Record<string, { name: string; billed: number; paid: number }>>((acc, b) => {
+    const cid = b.company_id;
+    if (!acc[cid]) acc[cid] = { name: b.companies.name, billed: 0, paid: 0 };
+    acc[cid].billed += b.total_amount;
+    acc[cid].paid += b.paid_amount;
+    return acc;
+  }, {});
+  const companySummaryList = Object.values(companySummary).sort((a, b) => b.billed - a.billed);
 
   async function handleCreateBilling(e: React.FormEvent) {
     e.preventDefault();
@@ -105,13 +127,26 @@ export default function BillingPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <h1 className="text-2xl font-bold text-text-primary">월 정산/청구</h1>
-        <div className="flex gap-3">
-          <input
-            type="month"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
-            className="px-4 py-2.5 rounded-xl border border-border bg-bg-card text-text-primary focus:outline-none focus:border-primary transition-colors"
-          />
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-bg-card">
+            <button
+              onClick={() => changeMonth(-1)}
+              className="p-2.5 text-text-muted hover:text-text-primary transition-colors"
+              title="전월"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="px-3 py-2 text-sm font-semibold text-text-primary min-w-[100px] text-center">
+              {monthLabel}
+            </span>
+            <button
+              onClick={() => changeMonth(1)}
+              className="p-2.5 text-text-muted hover:text-text-primary transition-colors"
+              title="다음월"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
           <button
             onClick={() => setShowCreate(true)}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
@@ -138,6 +173,42 @@ export default function BillingPage() {
           </p>
         </div>
       </div>
+
+      {/* 업체별 정산 요약 */}
+      {companySummaryList.length > 0 && (
+        <div className="rounded-2xl border border-border overflow-hidden mb-8">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-bg-card">
+                <th className="text-left px-4 py-3 text-text-secondary font-medium">거래처</th>
+                <th className="text-right px-4 py-3 text-text-secondary font-medium">청구액</th>
+                <th className="text-right px-4 py-3 text-text-secondary font-medium">입금액</th>
+                <th className="text-right px-4 py-3 text-text-secondary font-medium">미수금</th>
+                <th className="text-center px-4 py-3 text-text-secondary font-medium">수금률</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companySummaryList.map((c) => {
+                const unpaid = c.billed - c.paid;
+                const pct = c.billed > 0 ? Math.round((c.paid / c.billed) * 100) : 0;
+                return (
+                  <tr key={c.name} className="border-b border-border hover:bg-bg-card-hover transition-colors">
+                    <td className="px-4 py-3 text-text-primary font-medium">{c.name}</td>
+                    <td className="px-4 py-3 text-right text-text-primary">{formatNumber(c.billed)}원</td>
+                    <td className="px-4 py-3 text-right text-emerald-400">{formatNumber(c.paid)}원</td>
+                    <td className={`px-4 py-3 text-right font-medium ${unpaid > 0 ? "text-red-400" : "text-emerald-400"}`}>{formatNumber(unpaid)}원</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${pct === 100 ? "bg-emerald-400/10 text-emerald-400" : pct > 0 ? "bg-primary/10 text-primary" : "bg-red-400/10 text-red-400"}`}>
+                        {pct}%
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* 청구 목록 */}
       {loading ? (

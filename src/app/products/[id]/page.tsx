@@ -62,7 +62,7 @@ export default function ProductDetailPage() {
         .select("*")
         .eq("product_id", id)
         .eq("is_published", true)
-        .single();
+        .maybeSingle();
 
       setProduct(prod || null);
       setPage(pg || null);

@@ -127,6 +127,26 @@ export default function LoginPage() {
           >
             {loading ? "로그인 중..." : "로그인"}
           </button>
+
+          <div className="relative my-2">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-bg-card px-3 text-text-muted">또는</span>
+            </div>
+          </div>
+
+          <a
+            href="/api/auth/naver"
+            className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 text-white"
+            style={{ backgroundColor: "#03C75A" }}
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M13.5 10.56L6.26 0H0v20h6.5V9.44L13.74 20H20V0h-6.5v10.56z" fill="white"/>
+            </svg>
+            네이버로 로그인
+          </a>
         </form>
 
         <p className="text-center text-xs text-text-muted mt-6">

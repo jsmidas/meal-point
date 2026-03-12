@@ -458,6 +458,9 @@ export type Database = {
           reason: string | null;
           reference_id: string | null;
           reference_type: string | null;
+          company_id: string | null;
+          unit_price: number;
+          log_date: string;
           created_at: string;
         };
         Insert: {
@@ -467,6 +470,9 @@ export type Database = {
           reason?: string | null;
           reference_id?: string | null;
           reference_type?: string | null;
+          company_id?: string | null;
+          unit_price?: number;
+          log_date?: string;
         };
         Update: {
           product_id?: string;
@@ -475,6 +481,9 @@ export type Database = {
           reason?: string | null;
           reference_id?: string | null;
           reference_type?: string | null;
+          company_id?: string | null;
+          unit_price?: number;
+          log_date?: string;
         };
       };
       expenses: {
@@ -559,6 +568,41 @@ export type Database = {
           is_published?: boolean;
         };
       };
+      popups: {
+        Row: {
+          id: string;
+          title: string;
+          content: string | null;
+          image_url: string | null;
+          link_url: string | null;
+          is_active: boolean;
+          sort_order: number;
+          start_date: string | null;
+          end_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          title: string;
+          content?: string | null;
+          image_url?: string | null;
+          link_url?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          start_date?: string | null;
+          end_date?: string | null;
+        };
+        Update: {
+          title?: string;
+          content?: string | null;
+          image_url?: string | null;
+          link_url?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          start_date?: string | null;
+          end_date?: string | null;
+        };
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -595,3 +639,4 @@ export type Expense = Database["public"]["Tables"]["expenses"]["Row"];
 export type InventoryWithProduct = Inventory & { products: Product };
 export type ProductPage = Database["public"]["Tables"]["product_pages"]["Row"];
 export type ProductPageWithProduct = ProductPage & { products: Product };
+export type Popup = Database["public"]["Tables"]["popups"]["Row"];

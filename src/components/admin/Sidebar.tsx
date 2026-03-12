@@ -17,6 +17,9 @@ import {
   Menu,
   X,
   LogOut,
+  Bell,
+  ArrowDownCircle,
+  ArrowUpCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,12 +29,15 @@ const navItems = [
   { href: "/admin/companies", label: "거래처 관리", icon: Building2 },
   { href: "/admin/products", label: "상품 관리", icon: Package },
   { href: "/admin/pages", label: "상세페이지", icon: FileImage },
+  { href: "/admin/inbound", label: "입고 관리", icon: ArrowDownCircle },
+  { href: "/admin/sales", label: "판매 관리", icon: ArrowUpCircle },
+  { href: "/admin/inventory", label: "재고 수불", icon: Warehouse },
   { href: "/admin/orders", label: "주문 관리", icon: ShoppingCart },
   { href: "/admin/statements", label: "거래명세서", icon: FileText },
   { href: "/admin/quotes", label: "견적서", icon: ClipboardList },
   { href: "/admin/billing", label: "월 정산/청구", icon: Receipt },
   { href: "/admin/pnl", label: "손익 현황", icon: TrendingUp },
-  { href: "/admin/inventory", label: "재고 관리", icon: Warehouse },
+  { href: "/admin/popups", label: "팝업 관리", icon: Bell },
 ];
 
 export default function Sidebar() {

@@ -8,6 +8,7 @@ import Contact from "@/components/landing/Contact";
 import Footer from "@/components/landing/Footer";
 import FloatingCTA from "@/components/landing/FloatingCTA";
 import ParticleCanvas from "@/components/landing/ParticleCanvas";
+import PopupBanner from "@/components/landing/PopupBanner";
 
 export default function Home() {
   return (
@@ -23,6 +24,7 @@ export default function Home() {
         <Contact />
         <Footer />
         <FloatingCTA />
+        <PopupBanner />
       </div>
     </div>
   );
