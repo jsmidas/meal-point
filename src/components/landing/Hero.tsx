@@ -9,17 +9,17 @@ export default function Hero() {
 
       <div className="relative z-10 text-center px-6 max-w-3xl mx-auto">
         <p className="text-sm tracking-widest text-primary font-medium mb-4 uppercase">
-          급식 용기 도매 전문
+          급식 용기, 식단프로그램, 식권발행기 등 대표님들의 원가절감과 원활한 운영을 적극 도와 드립니다. Meals Total Solution
         </p>
         <h1 className="text-4xl md:text-6xl font-black text-text-primary leading-tight mb-6">
-          급식 용기의
-          <br />
-          <span className="text-gradient">새로운 기준</span>
+          급식/도시락 
+         <br />
+          <span className="text-gradient">Total Solution</span>
         </h1>
         <p className="text-lg text-text-secondary mb-10 leading-relaxed">
-          내피부터 발열제까지, 합리적인 가격과 빠른 배송으로
+          재료비 절감 solution, 식권발행기, 각종용기(내피부터 발열제까지),
           <br className="hidden md:block" />
-          급식 현장의 파트너가 되겠습니다.
+           합리적인 가격과 빠른 배송으로 급식 현장의 파트너가 되겠습니다.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a

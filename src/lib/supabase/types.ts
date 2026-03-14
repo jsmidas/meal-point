@@ -69,6 +69,7 @@ export type Database = {
           contact_phone: string | null;
           biz_cert_image_url: string | null;
           notes: string | null;
+          company_type: string;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -86,6 +87,7 @@ export type Database = {
           contact_phone?: string | null;
           biz_cert_image_url?: string | null;
           notes?: string | null;
+          company_type?: string;
           is_active?: boolean;
         };
         Update: {
@@ -101,6 +103,7 @@ export type Database = {
           contact_phone?: string | null;
           biz_cert_image_url?: string | null;
           notes?: string | null;
+          company_type?: string;
           is_active?: boolean;
         };
       };

@@ -10,6 +10,7 @@ export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Company | null>(null);
 
@@ -36,12 +37,18 @@ export default function CompaniesPage() {
     fetchCompanies();
   }
 
-  const filtered = companies.filter(
-    (c) =>
+  const filtered = companies.filter((c) => {
+    const matchSearch =
       c.name.includes(search) ||
       c.biz_number.includes(search) ||
-      c.ceo_name.includes(search),
-  );
+      c.ceo_name.includes(search);
+    const ct = (c as any).company_type || "customer";
+    const matchType =
+      typeFilter === "all" ||
+      ct === typeFilter ||
+      (ct === "both" && (typeFilter === "customer" || typeFilter === "supplier"));
+    return matchSearch && matchType;
+  });
 
   return (
     <div>
@@ -71,6 +78,28 @@ export default function CompaniesPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
         />
+      </div>
+
+      {/* 유형 필터 */}
+      <div className="flex gap-2 mb-6">
+        {[
+          { value: "all", label: "전체" },
+          { value: "customer", label: "판매처" },
+          { value: "supplier", label: "매입처" },
+          { value: "both", label: "양쪽" },
+        ].map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setTypeFilter(t.value)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              typeFilter === t.value
+                ? "bg-primary text-bg-dark"
+                : "bg-bg-card border border-border text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Table */}
@@ -109,6 +138,9 @@ export default function CompaniesPage() {
                   연락처
                 </th>
                 <th className="text-left px-4 py-3 text-text-secondary font-medium">
+                  유형
+                </th>
+                <th className="text-left px-4 py-3 text-text-secondary font-medium">
                   상태
                 </th>
                 <th className="text-right px-4 py-3 text-text-secondary font-medium">
@@ -133,6 +165,26 @@ export default function CompaniesPage() {
                   </td>
                   <td className="px-4 py-3 text-text-secondary hidden lg:table-cell">
                     {company.phone || "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const ct = (company as any).company_type || "customer";
+                      const styles: Record<string, string> = {
+                        customer: "bg-blue-400/10 text-blue-400",
+                        supplier: "bg-emerald-400/10 text-emerald-400",
+                        both: "bg-purple-400/10 text-purple-400",
+                      };
+                      const labels: Record<string, string> = {
+                        customer: "판매처",
+                        supplier: "매입처",
+                        both: "양쪽",
+                      };
+                      return (
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[ct] || styles.customer}`}>
+                          {labels[ct] || "판매처"}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     <span

@@ -467,7 +467,10 @@ export default function SalesPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                 >
                   <option value="">거래처 선택</option>
-                  {companies.map((c) => (
+                  {companies.filter((c) => {
+                    const ct = (c as any).company_type || "customer";
+                    return ct === "customer" || ct === "both";
+                  }).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
@@ -485,6 +488,7 @@ export default function SalesPage() {
                     value={form.quantity}
                     onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
                     required
+                    aria-label="수량"
                     className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -495,6 +499,7 @@ export default function SalesPage() {
                     min={0}
                     value={form.unit_price}
                     onChange={(e) => setForm({ ...form, unit_price: Number(e.target.value) })}
+                    aria-label="판매 단가"
                     className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                   />
                 </div>

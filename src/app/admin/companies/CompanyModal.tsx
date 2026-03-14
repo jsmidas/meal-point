@@ -23,6 +23,7 @@ const emptyForm = {
   contact_person: "",
   contact_phone: "",
   notes: "",
+  company_type: "customer" as string,
   is_active: true,
 };
 
@@ -42,6 +43,7 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
           contact_person: company.contact_person || "",
           contact_phone: company.contact_phone || "",
           notes: company.notes || "",
+          company_type: (company as any).company_type || "customer",
           is_active: company.is_active,
         }
       : emptyForm,
@@ -51,7 +53,7 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
   const supabase = createClient();
 
   function handleChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value, type } = e.target;
     setForm((prev) => ({
@@ -135,6 +137,23 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
                 />
               </div>
             ))}
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">
+              거래처 유형 <span className="text-red-400 ml-1">*</span>
+            </label>
+            <select
+              name="company_type"
+              value={form.company_type}
+              onChange={handleChange}
+              aria-label="거래처 유형 선택"
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
+            >
+              <option value="customer">판매처 (거래처)</option>
+              <option value="supplier">매입처 (공급업체)</option>
+              <option value="both">양쪽 (매입 + 판매)</option>
+            </select>
           </div>
 
           <div>
