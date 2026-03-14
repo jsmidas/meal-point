@@ -162,7 +162,7 @@ export default function LoginPage() {
 
             <a
               href="/api/auth/google"
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 border border-border text-text-primary bg-white hover:bg-gray-50"
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 border border-border text-[#222] bg-white hover:bg-gray-100"
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
