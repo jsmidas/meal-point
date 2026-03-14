@@ -571,6 +571,44 @@ export type Database = {
           is_published?: boolean;
         };
       };
+      members: {
+        Row: {
+          id: string;
+          login_id: string | null;
+          password_hash: string | null;
+          name: string;
+          company_name: string | null;
+          phone: string | null;
+          email: string | null;
+          provider: string;
+          provider_id: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          login_id?: string | null;
+          password_hash?: string | null;
+          name: string;
+          company_name?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          provider?: string;
+          provider_id?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          login_id?: string | null;
+          password_hash?: string | null;
+          name?: string;
+          company_name?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          provider?: string;
+          provider_id?: string | null;
+          is_active?: boolean;
+        };
+      };
       popups: {
         Row: {
           id: string;
@@ -643,3 +681,4 @@ export type InventoryWithProduct = Inventory & { products: Product };
 export type ProductPage = Database["public"]["Tables"]["product_pages"]["Row"];
 export type ProductPageWithProduct = ProductPage & { products: Product };
 export type Popup = Database["public"]["Tables"]["popups"]["Row"];
+export type Member = Database["public"]["Tables"]["members"]["Row"];
