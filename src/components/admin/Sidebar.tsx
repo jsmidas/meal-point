@@ -20,6 +20,7 @@ import {
   Bell,
   ArrowDownCircle,
   ArrowUpCircle,
+  BadgeDollarSign,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/admin", label: "대시보드", icon: LayoutDashboard },
   { href: "/admin/companies", label: "거래처 관리", icon: Building2 },
   { href: "/admin/products", label: "상품 관리", icon: Package },
+  { href: "/admin/prices", label: "단가 관리", icon: BadgeDollarSign },
   { href: "/admin/pages", label: "상세페이지", icon: FileImage },
   { href: "/admin/inbound", label: "입고 관리", icon: ArrowDownCircle },
   { href: "/admin/sales", label: "판매 관리", icon: ArrowUpCircle },

@@ -23,6 +23,7 @@ export default function NewOrderPage() {
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [companyPrices, setCompanyPrices] = useState<Record<string, number>>({});
   const [companyId, setCompanyId] = useState("");
   const [orderDate, setOrderDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -51,9 +52,42 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 거래처 선택 시 해당 거래처의 단가 로드
+  useEffect(() => {
+    if (!companyId) { setCompanyPrices({}); return; }
+    async function loadPrices() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("company_prices")
+        .select("product_id, custom_price")
+        .eq("company_id", companyId);
+      const map: Record<string, number> = {};
+      for (const row of data || []) {
+        map[row.product_id] = Number(row.custom_price);
+      }
+      setCompanyPrices(map);
+      // 기존 항목들의 단가도 업데이트
+      setItems((prev) =>
+        prev.map((item) => {
+          const price = map[item.product_id] ?? products.find((p) => p.id === item.product_id)?.selling_price ?? item.unit_price;
+          return { ...item, unit_price: price, amount: item.quantity * price };
+        })
+      );
+    }
+    loadPrices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
+  function getProductPrice(productId: string): number {
+    if (companyPrices[productId] !== undefined) return companyPrices[productId];
+    const p = products.find((pr) => pr.id === productId);
+    return p?.selling_price ?? 0;
+  }
+
   function addItem() {
     if (products.length === 0) return;
     const p = products[0];
+    const price = getProductPrice(p.id);
     setItems((prev) => [
       ...prev,
       {
@@ -61,8 +95,8 @@ export default function NewOrderPage() {
         product_name: p.name,
         unit: p.unit,
         quantity: 1,
-        unit_price: p.selling_price,
-        amount: p.selling_price,
+        unit_price: price,
+        amount: price,
       },
     ]);
   }
@@ -72,13 +106,13 @@ export default function NewOrderPage() {
       const copy = [...prev];
       const item = { ...copy[index], [field]: value };
 
-      // 상품 변경 시 이름/단위/단가 동기화
+      // 상품 변경 시 이름/단위/단가 동기화 (거래처 단가 우선)
       if (field === "product_id") {
         const p = products.find((pr) => pr.id === value);
         if (p) {
           item.product_name = p.name;
           item.unit = p.unit;
-          item.unit_price = p.selling_price;
+          item.unit_price = getProductPrice(String(value));
         }
       }
 
