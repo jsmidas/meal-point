@@ -12,7 +12,7 @@ export default function Footer() {
           <div className="text-sm text-text-secondary space-y-1">
             <p>사업자등록번호: 803-53-00711</p>
             <p>대표: 손동엽 | 연락처: 010-5678-1898</p>
-            <p>이메일: mealpoint@gmail.com</p>
+            <p>이메일: mealpoint@naver.com</p>
           </div>
           <div>
             <a
