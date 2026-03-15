@@ -1,5 +1,3 @@
-import { ExternalLink } from "lucide-react";
-
 export default function Footer() {
   return (
     <footer className="border-t border-border py-12">
@@ -13,16 +11,6 @@ export default function Footer() {
             <p>사업자등록번호: 803-53-00711</p>
             <p>대표: 손동엽 | 연락처: 010-5678-1898</p>
             <p>이메일: mealpoint@naver.com</p>
-          </div>
-          <div>
-            <a
-              href="https://mealpoint.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-text-secondary hover:text-primary transition-colors"
-            >
-              cafe24 스토어 <ExternalLink size={14} />
-            </a>
           </div>
         </div>
         <div className="border-t border-border pt-6">
