@@ -37,13 +37,15 @@ export default function BillingPage() {
   const [allCompanies, setAllCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 세금계산서 모달
-  const [taxModal, setTaxModal] = useState<BillingWithPayments | null>(null);
+  // 세금계산서 모달 (CompanyRow 기반으로 변경)
+  const [taxModal, setTaxModal] = useState<CompanyRow | null>(null);
   const [taxDate, setTaxDate] = useState(new Date().toISOString().slice(0, 10));
   const [taxNumber, setTaxNumber] = useState("");
+  const [taxChecked, setTaxChecked] = useState<Set<string>>(new Set()); // 선택된 명세서 ID
+  const [taxSupplyOverride, setTaxSupplyOverride] = useState<number | null>(null); // 수동 금액 입력
 
-  // 입금 모달
-  const [payModal, setPayModal] = useState<BillingWithPayments | null>(null);
+  // 입금 모달 (CompanyRow 기반으로 변경 - 청구 없어도 가능)
+  const [payModalRow, setPayModalRow] = useState<CompanyRow | null>(null);
   const [payAmount, setPayAmount] = useState(0);
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payMethod, setPayMethod] = useState("bank_transfer");
@@ -146,43 +148,116 @@ export default function BillingPage() {
     return { totalSales, stmtIssued, taxUnissued, totalUnpaid };
   }, [companyRows]);
 
+  // 세금계산서 합산금액 계산
+  const taxComputedSupply = useMemo(() => {
+    if (!taxModal) return 0;
+    if (taxSupplyOverride !== null) return taxSupplyOverride;
+    // 명세서 체크된 경우: 선택된 명세서 합산
+    if (taxChecked.size > 0) {
+      return taxModal.statements
+        .filter((s) => taxChecked.has(s.id))
+        .reduce((sum, s) => sum + s.supply_amount, 0);
+    }
+    // 기본: 청구금액 or 판매금액
+    return taxModal.billing?.total_supply ?? taxModal.sales.amount;
+  }, [taxModal, taxChecked, taxSupplyOverride]);
+
+  const taxComputedTax = Math.round(taxComputedSupply * 0.1);
+  const taxComputedTotal = taxComputedSupply + taxComputedTax;
+
+  function openTaxModal(row: CompanyRow) {
+    setTaxModal(row);
+    setTaxDate(new Date().toISOString().slice(0, 10));
+    setTaxNumber("");
+    setTaxSupplyOverride(null);
+    // 명세서가 있으면 전체 선택
+    setTaxChecked(new Set(row.statements.map((s) => s.id)));
+  }
+
   // 세금계산서 발행 처리
   async function handleTaxInvoice(e: React.FormEvent) {
     e.preventDefault();
     if (!taxModal) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
+
+    let billingId = taxModal.billing?.id;
+
+    // 청구 없으면 자동 생성
+    if (!billingId) {
+      const { data: newBilling } = await db.from("billings").insert({
+        billing_number: generateBillingNumber(month),
+        company_id: taxModal.id,
+        billing_month: month,
+        total_supply: taxComputedSupply,
+        total_tax: taxComputedTax,
+        total_amount: taxComputedTotal,
+      }).select().single();
+      billingId = newBilling?.id;
+    } else {
+      // 기존 청구 금액 업데이트
+      await db.from("billings").update({
+        total_supply: taxComputedSupply,
+        total_tax: taxComputedTax,
+        total_amount: taxComputedTotal,
+      }).eq("id", billingId);
+    }
+
     await db.from("billings").update({
       tax_invoice_issued: true,
       tax_invoice_date: taxDate,
       tax_invoice_number: taxNumber || null,
-    }).eq("id", taxModal.id);
+    }).eq("id", billingId);
+
     setTaxModal(null);
     setTaxNumber("");
     fetchData();
   }
 
-  // 입금 처리
+  // 입금 처리 (청구 없어도 자동 생성)
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payModal || payAmount <= 0) return;
+    if (!payModalRow || payAmount <= 0) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
+
+    let billingId = payModalRow.billing?.id;
+    let currentPaid = payModalRow.billing?.paid_amount ?? 0;
+    let currentTotal = payModalRow.billing?.total_amount ?? payAmount;
+
+    // 청구 없으면 자동 생성
+    if (!billingId) {
+      const supply = payModalRow.sales.amount || payAmount;
+      const tax = Math.round(supply * 0.1);
+      const { data: newBilling } = await db.from("billings").insert({
+        billing_number: generateBillingNumber(month),
+        company_id: payModalRow.id,
+        billing_month: month,
+        total_supply: supply,
+        total_tax: tax,
+        total_amount: supply + tax,
+      }).select().single();
+      billingId = newBilling?.id;
+      currentTotal = supply + tax;
+    }
+
     await db.from("payments").insert({
-      billing_id: payModal.id,
+      billing_id: billingId,
       amount: payAmount,
       payment_date: payDate,
       payment_method: payMethod,
       notes: payNotes || null,
     });
-    const newPaid = payModal.paid_amount + payAmount;
-    const newStatus = newPaid >= payModal.total_amount ? "paid" : "partial";
+
+    const newPaid = currentPaid + payAmount;
+    const newStatus = newPaid >= currentTotal ? "paid" : "partial";
     await db.from("billings").update({
       paid_amount: newPaid,
       status: newStatus,
       paid_date: newStatus === "paid" ? payDate : null,
-    }).eq("id", payModal.id);
-    setPayModal(null);
+    }).eq("id", billingId);
+
+    setPayModalRow(null);
     setPayAmount(0);
     setPayNotes("");
     fetchData();
@@ -381,82 +456,77 @@ export default function BillingPage() {
                           <p className="text-[11px] text-text-muted font-mono">{billing.tax_invoice_number}</p>
                         )}
                       </div>
-                    ) : billing ? (
+                    ) : (
                       <>
                         <p className="text-xs text-text-muted mb-2">미발행</p>
                         <button
                           type="button"
-                          onClick={() => { setTaxModal(billing); setTaxDate(new Date().toISOString().slice(0, 10)); }}
+                          onClick={() => openTaxModal(row)}
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-medium hover:bg-yellow-500/20 transition-colors"
                         >
                           <Receipt size={12} /> 발행 처리
                         </button>
                       </>
-                    ) : (
-                      <p className="text-xs text-text-muted">청구 후 가능</p>
                     )}
                   </div>
 
                   {/* ④ 수금 */}
                   <div className="px-5 py-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <StepIcon done={!!billing && unpaid === 0} />
+                      <StepIcon done={!!billing && unpaid === 0 && billing.paid_amount > 0} />
                       <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">④ 수금</span>
                     </div>
                     {billing ? (
-                      <>
-                        <div className="space-y-0.5 mb-2">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-text-muted">청구액</span>
-                            <span className="text-text-primary">{formatNumber(billing.total_amount)}원</span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-text-muted">입금액</span>
-                            <span className="text-emerald-400">{formatNumber(billing.paid_amount)}원</span>
-                          </div>
-                          {unpaid > 0 && (
-                            <div className="flex justify-between text-xs font-bold">
-                              <span className="text-text-muted">미수금</span>
-                              <span className="text-red-400">{formatNumber(unpaid)}원</span>
-                            </div>
-                          )}
+                      <div className="space-y-0.5 mb-2">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-text-muted">청구액</span>
+                          <span className="text-text-primary">{formatNumber(billing.total_amount)}원</span>
                         </div>
-                        {/* 수금 progress bar */}
-                        <div className="h-1.5 rounded-full bg-bg-dark overflow-hidden mb-2">
-                          <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${paidPct}%` }} aria-label={`수금률 ${paidPct}%`} />
+                        <div className="flex justify-between text-xs">
+                          <span className="text-text-muted">입금액</span>
+                          <span className="text-emerald-400">{formatNumber(billing.paid_amount)}원</span>
                         </div>
                         {unpaid > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => { setPayModal(billing); setPayAmount(unpaid); setPayDate(new Date().toISOString().slice(0, 10)); setPayNotes(""); }}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
-                          >
-                            <CreditCard size={12} /> 입금 처리
-                          </button>
-                        )}
-                        {/* 입금 이력 */}
-                        {billing.payments.length > 0 && (
-                          <div className="mt-2 space-y-0.5">
-                            {billing.payments.map((p: Payment) => (
-                              <div key={p.id} className="flex justify-between text-[10px] text-text-muted">
-                                <span>{p.payment_date}</span>
-                                <span className="text-emerald-400">+{formatNumber(p.amount)}원</span>
-                              </div>
-                            ))}
+                          <div className="flex justify-between text-xs font-bold">
+                            <span className="text-text-muted">미수금</span>
+                            <span className="text-red-400">{formatNumber(unpaid)}원</span>
                           </div>
                         )}
-                      </>
+                      </div>
                     ) : (
-                      <>
-                        <p className="text-xs text-text-muted mb-2">청구 없음</p>
-                        <button
-                          type="button"
-                          onClick={() => openBillingModal(row)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
-                        >
-                          <Plus size={12} /> 청구 생성
-                        </button>
-                      </>
+                      <p className="text-xs text-text-muted mb-2">입금 내역 없음</p>
+                    )}
+                    {/* 수금 progress bar (청구 있을 때만) */}
+                    {billing && (
+                      <div className="h-1.5 rounded-full bg-bg-dark overflow-hidden mb-2">
+                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${paidPct}%` }} aria-label={`수금률 ${paidPct}%`} />
+                      </div>
+                    )}
+                    {/* 입금 처리 버튼 - 항상 표시 */}
+                    {(!billing || unpaid > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPayModalRow(row);
+                          setPayAmount(unpaid > 0 ? unpaid : row.sales.amount);
+                          setPayDate(new Date().toISOString().slice(0, 10));
+                          setPayNotes("");
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                      >
+                        <CreditCard size={12} /> 입금 처리
+                      </button>
+                    )}
+                    {/* 입금 이력 */}
+                    {billing && billing.payments.length > 0 && (
+                      <div className="mt-2 space-y-0.5">
+                        {billing.payments.map((p: Payment) => (
+                          <div key={p.id} className="flex justify-between text-[10px] text-text-muted">
+                            <span>{p.payment_date}</span>
+                            <span className="text-emerald-400">+{formatNumber(p.amount)}원</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -469,28 +539,85 @@ export default function BillingPage() {
       {/* 세금계산서 발행 모달 */}
       {taxModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-base font-bold text-text-primary">세금계산서 발행 처리</h2>
+          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-bg-card z-10">
+              <h2 className="text-base font-bold text-text-primary">세금계산서 발행 — {taxModal.name}</h2>
               <button type="button" onClick={() => setTaxModal(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
             </div>
-            <form onSubmit={handleTaxInvoice} className="p-6 space-y-4">
-              <p className="text-sm text-text-secondary">
-                {taxModal.companies?.name} — {formatNumber(taxModal.total_amount)}원
-              </p>
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">발행일 <span className="text-red-400">*</span></label>
-                <input type="date" value={taxDate} onChange={(e) => setTaxDate(e.target.value)} required
-                  aria-label="세금계산서 발행일"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+            <form onSubmit={handleTaxInvoice} className="p-6 space-y-5">
+
+              {/* 명세서 합산 선택 */}
+              {taxModal.statements.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-text-primary mb-2">포함할 명세서 선택</p>
+                  <div className="space-y-1.5 rounded-xl border border-border bg-bg-dark p-3">
+                    {taxModal.statements.map((s) => (
+                      <label key={s.id} className="flex items-center justify-between gap-3 cursor-pointer hover:bg-bg-card-hover rounded-lg px-2 py-1.5 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={taxChecked.has(s.id)}
+                            onChange={(e) => {
+                              const next = new Set(taxChecked);
+                              if (e.target.checked) next.add(s.id);
+                              else next.delete(s.id);
+                              setTaxChecked(next);
+                              setTaxSupplyOverride(null);
+                            }}
+                            className="w-4 h-4 accent-primary"
+                          />
+                          <span className="text-xs text-text-secondary">{s.statement_number}</span>
+                          <span className="text-[11px] text-text-muted">{s.statement_date}</span>
+                        </div>
+                        <span className="text-xs font-medium text-text-primary">{formatNumber(s.supply_amount)}원</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 발행 금액 */}
+              <div className="rounded-xl border border-border bg-bg-dark p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-muted">공급가액</span>
+                  <span className="text-text-primary font-medium">{formatNumber(taxComputedSupply)}원</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-muted">세액 (10%)</span>
+                  <span className="text-text-primary">{formatNumber(taxComputedTax)}원</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t border-border pt-2">
+                  <span className="text-text-primary">합계</span>
+                  <span className="text-accent">{formatNumber(taxComputedTotal)}원</span>
+                </div>
+                <div className="pt-1">
+                  <label className="text-xs text-text-muted">금액 직접 수정</label>
+                  <input
+                    type="number" min={0}
+                    value={taxSupplyOverride ?? taxComputedSupply}
+                    onChange={(e) => setTaxSupplyOverride(Number(e.target.value))}
+                    aria-label="공급가액 직접 입력"
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm focus:outline-none focus:border-primary"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">승인번호 (선택)</label>
-                <input type="text" value={taxNumber} onChange={(e) => setTaxNumber(e.target.value)}
-                  placeholder="국세청 승인번호" aria-label="국세청 승인번호"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">발행일 <span className="text-red-400">*</span></label>
+                  <input type="date" value={taxDate} onChange={(e) => setTaxDate(e.target.value)} required
+                    aria-label="세금계산서 발행일"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">승인번호 (선택)</label>
+                  <input type="text" value={taxNumber} onChange={(e) => setTaxNumber(e.target.value)}
+                    placeholder="국세청 승인번호" aria-label="국세청 승인번호"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                </div>
               </div>
-              <div className="flex items-center justify-end gap-3 pt-2">
+
+              <div className="flex items-center justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setTaxModal(null)} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
                 <button type="submit" className="px-5 py-2.5 rounded-xl bg-yellow-500 text-bg-dark font-semibold hover:bg-yellow-400 transition-colors">발행 완료</button>
               </div>
@@ -500,17 +627,23 @@ export default function BillingPage() {
       )}
 
       {/* 입금 처리 모달 */}
-      {payModal && (
+      {payModalRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-base font-bold text-text-primary">입금 처리 — {payModal.companies?.name}</h2>
-              <button type="button" onClick={() => setPayModal(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
+              <h2 className="text-base font-bold text-text-primary">입금 처리 — {payModalRow.name}</h2>
+              <button type="button" onClick={() => setPayModalRow(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
             </div>
             <form onSubmit={handlePayment} className="p-6 space-y-4">
-              <p className="text-sm text-text-secondary">
-                미수금 <span className="text-red-400 font-bold">{formatNumber(payModal.total_amount - payModal.paid_amount)}원</span>
-              </p>
+              {payModalRow.billing ? (
+                <p className="text-sm text-text-secondary">
+                  미수금 <span className="text-red-400 font-bold">{formatNumber(payModalRow.billing.total_amount - payModalRow.billing.paid_amount)}원</span>
+                </p>
+              ) : (
+                <p className="text-xs text-yellow-500 bg-yellow-500/10 rounded-lg px-3 py-2">
+                  청구 내역이 없습니다. 입금 처리 시 판매 금액 기준으로 청구가 자동 생성됩니다.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금액 <span className="text-red-400">*</span></label>
@@ -542,7 +675,7 @@ export default function BillingPage() {
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setPayModal(null)} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
+                <button type="button" onClick={() => setPayModalRow(null)} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
                 <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors">입금 확인</button>
               </div>
             </form>
