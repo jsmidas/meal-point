@@ -742,7 +742,7 @@ export default function BillingPage() {
         const tax = Math.round(supply * 0.1);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="bg-bg-card border border-border rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                 <h2 className="text-base font-bold text-text-primary">
                   판매 상세 — {salesDetailModal.companyName}
