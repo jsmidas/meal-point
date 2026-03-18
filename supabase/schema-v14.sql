@@ -1,0 +1,4 @@
+-- v14: 견적서/거래명세서에 배송비(비과세) 컬럼 추가
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS shipping_fee INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE statements ADD COLUMN IF NOT EXISTS shipping_fee INTEGER NOT NULL DEFAULT 0;

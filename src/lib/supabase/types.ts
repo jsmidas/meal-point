@@ -238,6 +238,7 @@ export type Database = {
           supply_amount: number;
           tax_amount: number;
           total_amount: number;
+          shipping_fee: number;
           notes: string | null;
           created_at: string;
           updated_at: string;
@@ -250,6 +251,7 @@ export type Database = {
           supply_amount?: number;
           tax_amount?: number;
           total_amount?: number;
+          shipping_fee?: number;
           notes?: string | null;
         };
         Update: {
@@ -260,6 +262,7 @@ export type Database = {
           supply_amount?: number;
           tax_amount?: number;
           total_amount?: number;
+          shipping_fee?: number;
           notes?: string | null;
         };
       };
@@ -298,37 +301,111 @@ export type Database = {
         Row: {
           id: string;
           quote_number: string;
-          company_id: string;
+          company_id: string | null;
           quote_date: string;
           valid_until: string | null;
           status: string;
           supply_amount: number;
           tax_amount: number;
           total_amount: number;
+          shipping_fee: number;
           notes: string | null;
+          recipient_name: string | null;
+          recipient_ceo_name: string | null;
+          recipient_biz_number: string | null;
+          recipient_biz_type: string | null;
+          recipient_biz_category: string | null;
+          recipient_address: string | null;
+          recipient_phone: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           quote_number: string;
-          company_id: string;
+          company_id?: string | null;
           quote_date?: string;
           valid_until?: string | null;
           status?: string;
           supply_amount?: number;
           tax_amount?: number;
           total_amount?: number;
+          shipping_fee?: number;
           notes?: string | null;
+          recipient_name?: string | null;
+          recipient_ceo_name?: string | null;
+          recipient_biz_number?: string | null;
+          recipient_biz_type?: string | null;
+          recipient_biz_category?: string | null;
+          recipient_address?: string | null;
+          recipient_phone?: string | null;
         };
         Update: {
           quote_number?: string;
-          company_id?: string;
+          company_id?: string | null;
           quote_date?: string;
           valid_until?: string | null;
           status?: string;
           supply_amount?: number;
           tax_amount?: number;
           total_amount?: number;
+          shipping_fee?: number;
+          notes?: string | null;
+          recipient_name?: string | null;
+          recipient_ceo_name?: string | null;
+          recipient_biz_number?: string | null;
+          recipient_biz_type?: string | null;
+          recipient_biz_category?: string | null;
+          recipient_address?: string | null;
+          recipient_phone?: string | null;
+        };
+      };
+      quote_send_logs: {
+        Row: {
+          id: string;
+          quote_id: string;
+          sent_at: string;
+          sent_method: string;
+          recipient_info: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          quote_id: string;
+          sent_at?: string;
+          sent_method?: string;
+          recipient_info?: string | null;
+          notes?: string | null;
+        };
+        Update: {
+          quote_id?: string;
+          sent_at?: string;
+          sent_method?: string;
+          recipient_info?: string | null;
+          notes?: string | null;
+        };
+      };
+      statement_send_logs: {
+        Row: {
+          id: string;
+          statement_id: string;
+          sent_at: string;
+          sent_method: string;
+          recipient_info: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          statement_id: string;
+          sent_at?: string;
+          sent_method?: string;
+          recipient_info?: string | null;
+          notes?: string | null;
+        };
+        Update: {
+          statement_id?: string;
+          sent_at?: string;
+          sent_method?: string;
+          recipient_info?: string | null;
           notes?: string | null;
         };
       };
@@ -676,8 +753,10 @@ export type OrderWithCompany = Order & { companies: Company };
 export type OrderWithItems = Order & { companies: Company; order_items: OrderItem[] };
 export type StatementWithCompany = Statement & { companies: Company };
 export type StatementWithItems = Statement & { companies: Company; statement_items: StatementItem[] };
-export type QuoteWithCompany = Quote & { companies: Company };
-export type QuoteWithItems = Quote & { companies: Company; quote_items: QuoteItem[] };
+export type QuoteSendLog = Database["public"]["Tables"]["quote_send_logs"]["Row"];
+export type StatementSendLog = Database["public"]["Tables"]["statement_send_logs"]["Row"];
+export type QuoteWithCompany = Quote & { companies: Company | null };
+export type QuoteWithItems = Quote & { companies: Company | null; quote_items: QuoteItem[] };
 export type BillingWithCompany = Billing & { companies: Company };
 export type BillingWithPayments = Billing & { companies: Company; payments: Payment[] };
 export type Inventory = Database["public"]["Tables"]["inventory"]["Row"];

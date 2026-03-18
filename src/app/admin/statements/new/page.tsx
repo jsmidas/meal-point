@@ -3,12 +3,13 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Company, OrderWithItems } from "@/lib/supabase/types";
+import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
 import { generateStatementNumber, formatNumber } from "@/lib/utils";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 interface StatementItemDraft {
+  product_id: string | null;
   product_name: string;
   specification: string;
   unit: string;
@@ -25,6 +26,8 @@ function NewStatementForm() {
   const supabase = createClient();
 
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [companyPrices, setCompanyPrices] = useState<CompanyPrice[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [statementDate, setStatementDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -34,6 +37,7 @@ function NewStatementForm() {
   const [linkedOrderId, setLinkedOrderId] = useState<string | null>(
     orderId || null,
   );
+  const [shippingFee, setShippingFee] = useState(0);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -41,12 +45,12 @@ function NewStatementForm() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const db = supabase as any;
 
-      const { data: companiesData } = await db
-        .from("companies")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      setCompanies(companiesData || []);
+      const [cRes, pRes] = await Promise.all([
+        db.from("companies").select("*").eq("is_active", true).order("name"),
+        db.from("products").select("*").eq("is_active", true).order("name"),
+      ]);
+      setCompanies(cRes.data || []);
+      setProducts(pRes.data || []);
 
       // 주문에서 자동 채움
       if (orderId) {
@@ -61,6 +65,7 @@ function NewStatementForm() {
           setCompanyId(o.company_id);
           setItems(
             o.order_items.map((item) => ({
+              product_id: item.product_id || null,
               product_name: item.product_name,
               specification: "",
               unit: item.unit,
@@ -69,6 +74,12 @@ function NewStatementForm() {
               amount: item.amount,
             })),
           );
+          // 해당 거래처 단가 로드
+          const { data: prices } = await db
+            .from("company_prices")
+            .select("*")
+            .eq("company_id", o.company_id);
+          setCompanyPrices(prices || []);
         }
       }
     }
@@ -76,10 +87,32 @@ function NewStatementForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
+  // 거래처 변경 시 해당 거래처의 커스텀 단가 로드
+  async function handleCompanyChange(newCompanyId: string) {
+    setCompanyId(newCompanyId);
+    if (newCompanyId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("company_prices")
+        .select("*")
+        .eq("company_id", newCompanyId);
+      setCompanyPrices(data || []);
+    } else {
+      setCompanyPrices([]);
+    }
+  }
+
+  // 상품의 실제 적용 단가 (거래처별 단가 > 기본 판매가)
+  function getProductPrice(product: Product): number {
+    const cp = companyPrices.find((p) => p.product_id === product.id);
+    return cp ? cp.custom_price : product.selling_price;
+  }
+
   function addItem() {
     setItems((prev) => [
       ...prev,
       {
+        product_id: null,
         product_name: "",
         specification: "",
         unit: "EA",
@@ -90,13 +123,26 @@ function NewStatementForm() {
     ]);
   }
 
-  function updateItem(index: number, field: string, value: string | number) {
+  function updateItem(index: number, field: string, value: string | number | null) {
     setItems((prev) => {
       const copy = [...prev];
       const item = { ...copy[index], [field]: value };
-      if (field === "quantity" || field === "unit_price") {
+
+      // 상품 선택 시 자동 채움
+      if (field === "product_id" && value) {
+        const p = products.find((pr) => pr.id === value);
+        if (p) {
+          item.product_name = p.name;
+          item.unit = p.unit;
+          item.unit_price = getProductPrice(p);
+        }
+      }
+
+      // 수량 또는 단가 변경 시 금액 자동 계산
+      if (field === "quantity" || field === "unit_price" || field === "product_id") {
         item.amount = item.quantity * item.unit_price;
       }
+
       copy[index] = item;
       return copy;
     });
@@ -108,7 +154,7 @@ function NewStatementForm() {
 
   const supplyAmount = items.reduce((sum, i) => sum + i.amount, 0);
   const taxAmount = Math.round(supplyAmount * 0.1);
-  const totalAmount = supplyAmount + taxAmount;
+  const totalAmount = supplyAmount + taxAmount + shippingFee; // 배송비는 비과세
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -127,6 +173,7 @@ function NewStatementForm() {
       supply_amount: supplyAmount,
       tax_amount: taxAmount,
       total_amount: totalAmount,
+      shipping_fee: shippingFee,
       notes: notes || null,
     }).select().single();
 
@@ -176,7 +223,7 @@ function NewStatementForm() {
               </label>
               <select
                 value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
+                onChange={(e) => handleCompanyChange(e.target.value)}
                 required
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
               >
@@ -196,6 +243,7 @@ function NewStatementForm() {
                 type="date"
                 value={statementDate}
                 onChange={(e) => setStatementDate(e.target.value)}
+                title="작성일"
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
               />
             </div>
@@ -208,6 +256,7 @@ function NewStatementForm() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
+              placeholder="비고 사항을 입력하세요"
               className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
             />
           </div>
@@ -248,16 +297,33 @@ function NewStatementForm() {
                   className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center rounded-xl border border-border p-3"
                 >
                   <div className="lg:col-span-3">
-                    <input
-                      type="text"
-                      placeholder="품목명"
-                      value={item.product_name}
-                      onChange={(e) =>
-                        updateItem(i, "product_name", e.target.value)
-                      }
-                      required
+                    <select
+                      value={item.product_id || ""}
+                      onChange={(e) => updateItem(i, "product_id", e.target.value || null)}
+                      title="품목 선택"
                       className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary"
-                    />
+                    >
+                      <option value="">직접 입력</option>
+                      {products.map((p) => {
+                        const price = getProductPrice(p);
+                        const isCustom = companyPrices.some((cp) => cp.product_id === p.id);
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({formatNumber(price)}원{isCustom ? " ★" : ""})
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {!item.product_id && (
+                      <input
+                        type="text"
+                        placeholder="품목명 직접 입력"
+                        value={item.product_name}
+                        onChange={(e) => updateItem(i, "product_name", e.target.value)}
+                        required
+                        className="w-full mt-2 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary"
+                      />
+                    )}
                   </div>
                   <div className="lg:col-span-2">
                     <input
@@ -330,6 +396,20 @@ function NewStatementForm() {
               <span className="text-text-primary">
                 {formatNumber(taxAmount)}원
               </span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-text-secondary">배송비 <span className="text-xs text-text-muted">(비과세)</span></span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={shippingFee}
+                  onChange={(e) => setShippingFee(Number(e.target.value))}
+                  placeholder="0"
+                  className="w-32 px-3 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary"
+                />
+                <span className="text-text-primary">원</span>
+              </div>
             </div>
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="text-text-secondary font-medium">합계</span>

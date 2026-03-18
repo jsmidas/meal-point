@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Company, Product } from "@/lib/supabase/types";
-import { generateQuoteNumber, formatNumber } from "@/lib/utils";
-import { Plus, Trash2, ArrowLeft } from "lucide-react";
+import type { Company, Product, CompanyPrice, QuoteWithItems } from "@/lib/supabase/types";
+import { generateQuoteNumber, formatNumber, formatDate } from "@/lib/utils";
+import { Plus, Trash2, ArrowLeft, Building2, PenLine, Copy, X } from "lucide-react";
 import Link from "next/link";
 
 interface QuoteItemDraft {
@@ -24,12 +24,27 @@ export default function NewQuotePage() {
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [companyPrices, setCompanyPrices] = useState<CompanyPrice[]>([]);
+  const [inputMode, setInputMode] = useState<"select" | "manual">("select");
   const [companyId, setCompanyId] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientCeoName, setRecipientCeoName] = useState("");
+  const [recipientBizNumber, setRecipientBizNumber] = useState("");
+  const [recipientBizType, setRecipientBizType] = useState("");
+  const [recipientBizCategory, setRecipientBizCategory] = useState("");
+  const [recipientAddress, setRecipientAddress] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<QuoteItemDraft[]>([]);
+  const [shippingFee, setShippingFee] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // 이전 견적서 불러오기
+  const [showQuoteLoader, setShowQuoteLoader] = useState(false);
+  const [pastQuotes, setPastQuotes] = useState<QuoteWithItems[]>([]);
+  const [loadingPast, setLoadingPast] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -45,29 +60,80 @@ export default function NewQuotePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function addItem() {
-    if (products.length > 0) {
-      const p = products[0];
-      setItems((prev) => [...prev, {
-        product_id: p.id,
-        product_name: p.name,
-        specification: "",
-        unit: p.unit,
-        quantity: 1,
-        unit_price: p.selling_price,
-        amount: p.selling_price,
-      }]);
-    } else {
-      setItems((prev) => [...prev, {
-        product_id: null,
-        product_name: "",
-        specification: "",
-        unit: "EA",
-        quantity: 1,
-        unit_price: 0,
-        amount: 0,
-      }]);
+  // 거래처별 단가 로드
+  async function loadCompanyPrices(cid: string) {
+    if (!cid) { setCompanyPrices([]); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from("company_prices").select("*").eq("company_id", cid);
+    setCompanyPrices(data || []);
+  }
+
+  function getProductPrice(product: Product): number {
+    const cp = companyPrices.find((p) => p.product_id === product.id);
+    return cp ? cp.custom_price : product.selling_price;
+  }
+
+  function handleCompanySelect(id: string) {
+    setCompanyId(id);
+    loadCompanyPrices(id);
+    if (id) {
+      const c = companies.find((co) => co.id === id);
+      if (c) {
+        setRecipientName(c.name);
+        setRecipientCeoName(c.ceo_name);
+        setRecipientBizNumber(c.biz_number);
+        setRecipientBizType(c.biz_type || "");
+        setRecipientBizCategory(c.biz_category || "");
+        setRecipientAddress(c.address || "");
+        setRecipientPhone(c.phone || "");
+      }
     }
+  }
+
+  // 이전 견적서 목록 불러오기
+  async function loadPastQuotes() {
+    setShowQuoteLoader(true);
+    setLoadingPast(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data } = await db
+      .from("quotes")
+      .select("*, companies(*), quote_items(*)")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setPastQuotes((data as QuoteWithItems[]) || []);
+    setLoadingPast(false);
+  }
+
+  // 이전 견적서에서 항목 복사
+  function importFromQuote(q: QuoteWithItems) {
+    setItems(
+      q.quote_items.map((item) => ({
+        product_id: item.product_id || null,
+        product_name: item.product_name,
+        specification: item.specification || "",
+        unit: item.unit,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        amount: item.amount,
+      })),
+    );
+    setShippingFee(q.shipping_fee || 0);
+    if (q.notes) setNotes(q.notes);
+    setShowQuoteLoader(false);
+  }
+
+  function addItem() {
+    setItems((prev) => [...prev, {
+      product_id: null,
+      product_name: "",
+      specification: "",
+      unit: "EA",
+      quantity: 1,
+      unit_price: 0,
+      amount: 0,
+    }]);
   }
 
   function updateItem(index: number, field: string, value: string | number | null) {
@@ -79,7 +145,7 @@ export default function NewQuotePage() {
         if (p) {
           item.product_name = p.name;
           item.unit = p.unit;
-          item.unit_price = p.selling_price;
+          item.unit_price = getProductPrice(p);
         }
       }
       item.amount = item.quantity * item.unit_price;
@@ -94,24 +160,34 @@ export default function NewQuotePage() {
 
   const supplyAmount = items.reduce((sum, i) => sum + i.amount, 0);
   const taxAmount = Math.round(supplyAmount * 0.1);
-  const totalAmount = supplyAmount + taxAmount;
+  const totalAmount = supplyAmount + taxAmount + shippingFee;
+
+  const isRecipientValid = inputMode === "select" ? !!companyId : !!recipientName.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!companyId || items.length === 0) return;
+    if (!isRecipientValid || items.length === 0) return;
     setSaving(true);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const { data: quote, error } = await db.from("quotes").insert({
       quote_number: generateQuoteNumber(),
-      company_id: companyId,
+      company_id: inputMode === "select" ? companyId : null,
       quote_date: quoteDate,
       valid_until: validUntil || null,
       supply_amount: supplyAmount,
       tax_amount: taxAmount,
       total_amount: totalAmount,
+      shipping_fee: shippingFee,
       notes: notes || null,
+      recipient_name: recipientName || null,
+      recipient_ceo_name: recipientCeoName || null,
+      recipient_biz_number: recipientBizNumber || null,
+      recipient_biz_type: recipientBizType || null,
+      recipient_biz_category: recipientBizCategory || null,
+      recipient_address: recipientAddress || null,
+      recipient_phone: recipientPhone || null,
     }).select().single();
 
     if (error || !quote) {
@@ -146,47 +222,186 @@ export default function NewQuotePage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
+        {/* 거래처 정보 */}
         <div className="rounded-2xl border border-border bg-bg-card p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">기본 정보</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-text-primary">거래처 정보</h2>
+            <div className="flex rounded-xl border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setInputMode("select")}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+                  inputMode === "select"
+                    ? "bg-primary text-bg-dark"
+                    : "bg-bg-dark text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                <Building2 size={14} /> 거래처 선택
+              </button>
+              <button
+                type="button"
+                onClick={() => { setInputMode("manual"); setCompanyId(""); setCompanyPrices([]); }}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+                  inputMode === "manual"
+                    ? "bg-primary text-bg-dark"
+                    : "bg-bg-dark text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                <PenLine size={14} /> 직접 입력
+              </button>
+            </div>
+          </div>
+
+          {inputMode === "select" ? (
             <div>
               <label className="block text-sm text-text-secondary mb-1">
                 거래처 <span className="text-red-400">*</span>
               </label>
-              <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} required className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors">
+              <select
+                value={companyId}
+                onChange={(e) => handleCompanySelect(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
+              >
                 <option value="">거래처 선택</option>
                 {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
               </select>
+              {companyPrices.length > 0 && (
+                <p className="text-xs text-emerald-400 mt-1">이 거래처의 별도 단가가 {companyPrices.length}개 적용됩니다.</p>
+              )}
             </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  상호명 <span className="text-red-400">*</span>
+                </label>
+                <input type="text" value={recipientName} onChange={(e) => setRecipientName(e.target.value)} required
+                  placeholder="거래처 상호명"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">대표자명</label>
+                <input type="text" value={recipientCeoName} onChange={(e) => setRecipientCeoName(e.target.value)}
+                  placeholder="대표자명"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">사업자번호</label>
+                <input type="text" value={recipientBizNumber} onChange={(e) => setRecipientBizNumber(e.target.value)}
+                  placeholder="000-00-00000"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">업태</label>
+                  <input type="text" value={recipientBizType} onChange={(e) => setRecipientBizType(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">종목</label>
+                  <input type="text" value={recipientBizCategory} onChange={(e) => setRecipientBizCategory(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">주소</label>
+                <input type="text" value={recipientAddress} onChange={(e) => setRecipientAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">연락처</label>
+                <input type="text" value={recipientPhone} onChange={(e) => setRecipientPhone(e.target.value)}
+                  placeholder="000-0000-0000"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 기본 정보 */}
+        <div className="rounded-2xl border border-border bg-bg-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-text-primary">견적 정보</h2>
+          <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-text-secondary mb-1">견적일</label>
-              <input type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              <input type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} title="견적일" className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">유효기간</label>
-              <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
+              <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} title="유효기간" className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors" />
             </div>
           </div>
           <div>
             <label className="block text-sm text-text-secondary mb-1">비고</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors resize-none" />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="비고 사항을 입력하세요" className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors resize-none" />
           </div>
         </div>
 
+        {/* 견적 항목 */}
         <div className="rounded-2xl border border-border bg-bg-card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-text-primary">견적 항목</h2>
-            <button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors">
-              <Plus size={16} /> 항목 추가
-            </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={loadPastQuotes} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 transition-colors">
+                <Copy size={16} /> 이전 견적서 불러오기
+              </button>
+              <button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors">
+                <Plus size={16} /> 항목 추가
+              </button>
+            </div>
           </div>
+
+          {/* 이전 견적서 불러오기 모달 */}
+          {showQuoteLoader && (
+            <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-text-primary">이전 견적서에서 항목 불러오기</h3>
+                <button type="button" onClick={() => setShowQuoteLoader(false)} className="p-1 rounded-lg hover:bg-bg-card text-text-muted hover:text-text-primary" aria-label="닫기">
+                  <X size={16} />
+                </button>
+              </div>
+              {loadingPast ? (
+                <p className="text-sm text-text-muted text-center py-4">로딩 중...</p>
+              ) : pastQuotes.length === 0 ? (
+                <p className="text-sm text-text-muted text-center py-4">이전 견적서가 없습니다.</p>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {pastQuotes.map((q) => (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => importFromQuote(q)}
+                      className="w-full text-left px-4 py-3 rounded-lg bg-bg-dark hover:bg-bg-card-hover border border-border transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-mono text-text-muted">{q.quote_number}</span>
+                          <span className="mx-2 text-text-primary font-medium">
+                            {q.companies?.name || q.recipient_name || "—"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-text-primary">{formatNumber(q.total_amount)}원</span>
+                          <span className="ml-2 text-xs text-text-muted">{formatDate(q.quote_date)}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-text-muted mt-1">
+                        {q.quote_items.map((item) => item.product_name).join(", ")}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {items.length === 0 ? (
             <p className="text-center py-8 text-text-muted">항목을 추가해주세요.</p>
           ) : (
             <div className="space-y-3">
               <div className="hidden lg:grid grid-cols-12 gap-3 text-xs text-text-muted px-1">
-                <div className="col-span-3">상품</div>
+                <div className="col-span-3">품목</div>
                 <div className="col-span-2">규격</div>
                 <div className="col-span-1">단위</div>
                 <div className="col-span-1">수량</div>
@@ -197,12 +412,20 @@ export default function NewQuotePage() {
               {items.map((item, i) => (
                 <div key={i} className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center rounded-xl border border-border p-3">
                   <div className="lg:col-span-3">
-                    <select value={item.product_id || ""} onChange={(e) => updateItem(i, "product_id", e.target.value || null)} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
+                    <select value={item.product_id || ""} onChange={(e) => updateItem(i, "product_id", e.target.value || null)} title="품목 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
                       <option value="">직접 입력</option>
-                      {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                      {products.map((p) => {
+                        const price = getProductPrice(p);
+                        const isCustom = companyPrices.some((cp) => cp.product_id === p.id);
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({formatNumber(price)}원{isCustom ? " ★" : ""})
+                          </option>
+                        );
+                      })}
                     </select>
                     {!item.product_id && (
-                      <input type="text" placeholder="품목명" value={item.product_name} onChange={(e) => updateItem(i, "product_name", e.target.value)} className="w-full mt-2 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" required />
+                      <input type="text" placeholder="품목명 직접 입력" value={item.product_name} onChange={(e) => updateItem(i, "product_name", e.target.value)} className="w-full mt-2 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" required />
                     )}
                   </div>
                   <div className="lg:col-span-2">
@@ -237,6 +460,20 @@ export default function NewQuotePage() {
               <span className="text-text-secondary">세액 (10%)</span>
               <span className="text-text-primary">{formatNumber(taxAmount)}원</span>
             </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-text-secondary">배송비 <span className="text-xs text-text-muted">(비과세)</span></span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={shippingFee}
+                  onChange={(e) => setShippingFee(Number(e.target.value))}
+                  placeholder="0"
+                  className="w-32 px-3 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary"
+                />
+                <span className="text-text-primary">원</span>
+              </div>
+            </div>
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="text-text-secondary font-medium">합계</span>
               <span className="text-2xl font-bold text-text-primary">{formatNumber(totalAmount)}원</span>
@@ -246,7 +483,7 @@ export default function NewQuotePage() {
 
         <div className="flex gap-3">
           <Link href="/admin/quotes" className="flex-1 py-3 text-center rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</Link>
-          <button type="submit" disabled={saving || !companyId || items.length === 0} className="flex-1 py-3 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50">
+          <button type="submit" disabled={saving || !isRecipientValid || items.length === 0} className="flex-1 py-3 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50">
             {saving ? "저장 중..." : "견적서 저장"}
           </button>
         </div>

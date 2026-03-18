@@ -29,8 +29,9 @@ export default function QuotesPage() {
   }, []);
 
   const filtered = quotes.filter((q) => {
+    const companyName = q.companies?.name || q.recipient_name || "";
     const matchSearch =
-      q.quote_number.includes(search) || q.companies.name.includes(search);
+      q.quote_number.includes(search) || companyName.includes(search);
     const matchStatus = statusFilter === "all" || q.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -61,6 +62,7 @@ export default function QuotesPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
+          title="상태 필터"
           className="px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary focus:outline-none focus:border-primary transition-colors"
         >
           <option value="all">전체 상태</option>
@@ -104,7 +106,10 @@ export default function QuotesPage() {
                 return (
                   <tr key={q.id} className="border-b border-border hover:bg-bg-card-hover transition-colors">
                     <td className="px-4 py-3 text-text-primary font-mono text-xs">{q.quote_number}</td>
-                    <td className="px-4 py-3 text-text-primary font-medium">{q.companies.name}</td>
+                    <td className="px-4 py-3 text-text-primary font-medium">
+                      {q.companies?.name || q.recipient_name || "—"}
+                      {!q.companies && <span className="ml-1 text-xs text-yellow-500">(직접)</span>}
+                    </td>
                     <td className="px-4 py-3 text-text-secondary hidden md:table-cell">{formatDate(q.quote_date)}</td>
                     <td className="px-4 py-3 text-text-secondary hidden lg:table-cell">
                       {q.valid_until ? formatDate(q.valid_until) : "—"}

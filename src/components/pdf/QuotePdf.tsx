@@ -48,6 +48,13 @@ interface Props { quote: QuoteWithItems; companyInfo: CompanyInfo | null; }
 
 export default function QuotePdf({ quote, companyInfo }: Props) {
   const c = quote.companies;
+  const rName = c?.name || quote.recipient_name || "—";
+  const rCeo = c?.ceo_name || quote.recipient_ceo_name || "—";
+  const rBiz = c?.biz_number || quote.recipient_biz_number || "—";
+  const rType = c?.biz_type || quote.recipient_biz_type || "—";
+  const rCat = c?.biz_category || quote.recipient_biz_category || "—";
+  const rAddr = c?.address || quote.recipient_address || "—";
+  const rPhone = c?.phone || quote.recipient_phone || "—";
   const items = quote.quote_items;
   const emptyRows = Math.max(0, 10 - items.length);
 
@@ -79,12 +86,12 @@ export default function QuotePdf({ quote, companyInfo }: Props) {
           </View>
           <View style={s.infoBox}>
             <Text style={s.infoTitle}>공급받는자</Text>
-            <View style={s.infoRow}><Text style={s.infoLabel}>상호</Text><Text style={{...s.infoValue, fontWeight: 700}}>{c.name}</Text></View>
-            <View style={s.infoRow}><Text style={s.infoLabel}>대표자</Text><Text style={s.infoValue}>{c.ceo_name}</Text></View>
-            <View style={s.infoRow}><Text style={s.infoLabel}>사업자번호</Text><Text style={s.infoValue}>{c.biz_number}</Text></View>
-            <View style={s.infoRow}><Text style={s.infoLabel}>업태/종목</Text><Text style={s.infoValue}>{c.biz_type || "—"} / {c.biz_category || "—"}</Text></View>
-            <View style={s.infoRow}><Text style={s.infoLabel}>주소</Text><Text style={s.infoValue}>{c.address || "—"}</Text></View>
-            <View style={s.infoRow}><Text style={s.infoLabel}>연락처</Text><Text style={s.infoValue}>{c.phone || "—"}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>상호</Text><Text style={{...s.infoValue, fontWeight: 700}}>{rName}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>대표자</Text><Text style={s.infoValue}>{rCeo}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>사업자번호</Text><Text style={s.infoValue}>{rBiz}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>업태/종목</Text><Text style={s.infoValue}>{rType} / {rCat}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>주소</Text><Text style={s.infoValue}>{rAddr}</Text></View>
+            <View style={s.infoRow}><Text style={s.infoLabel}>연락처</Text><Text style={s.infoValue}>{rPhone}</Text></View>
           </View>
         </View>
 
