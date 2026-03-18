@@ -456,6 +456,9 @@ export type Database = {
           status: string;
           paid_date: string | null;
           notes: string | null;
+          tax_invoice_issued: boolean;
+          tax_invoice_date: string | null;
+          tax_invoice_number: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -470,6 +473,9 @@ export type Database = {
           status?: string;
           paid_date?: string | null;
           notes?: string | null;
+          tax_invoice_issued?: boolean;
+          tax_invoice_date?: string | null;
+          tax_invoice_number?: string | null;
         };
         Update: {
           billing_number?: string;
@@ -482,6 +488,9 @@ export type Database = {
           status?: string;
           paid_date?: string | null;
           notes?: string | null;
+          tax_invoice_issued?: boolean;
+          tax_invoice_date?: string | null;
+          tax_invoice_number?: string | null;
         };
       };
       payments: {
