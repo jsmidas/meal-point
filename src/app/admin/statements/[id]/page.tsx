@@ -197,7 +197,7 @@ export default function StatementDetailPage() {
       )}
 
       {/* 거래명세서 미리보기 (인쇄용) */}
-      <div className="bg-white text-black rounded-2xl border border-border max-w-4xl mx-auto print:border-none print:rounded-none print:max-w-none overflow-hidden">
+      <div className="bg-white text-black rounded-2xl border border-border max-w-4xl mx-auto print:border-none print:rounded-none print:max-w-none print:m-0 print:shadow-none overflow-hidden">
         {/* 상단 헤더 바 */}
         <div className="bg-gradient-to-r from-emerald-700 to-emerald-500 px-8 py-6 text-white">
           <div className="flex items-center justify-between">

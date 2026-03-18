@@ -28,3 +28,37 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* 인쇄 스타일 */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html, body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    background: white !important;
+  }
+
+  /* 사이드바 & 모바일 헤더 숨김 */
+  aside, nav {
+    display: none !important;
+  }
+
+  /* main 영역 전체 너비 사용 */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* flex 레이아웃 해제 */
+  .flex.min-h-screen {
+    display: block !important;
+    background: white !important;
+  }
+}
