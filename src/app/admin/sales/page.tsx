@@ -390,13 +390,17 @@ export default function SalesPage() {
 
   // 달력용: 일자별 판매 집계
   const dailySummary = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number; logs: SalesLog[] }>();
+    const map = new Map<string, { count: number; amount: number; logs: SalesLog[]; companies: string[] }>();
     for (const log of monthLogs) {
       const date = (log.log_date || log.created_at).slice(0, 10);
-      const existing = map.get(date) || { count: 0, amount: 0, logs: [] };
+      const existing = map.get(date) || { count: 0, amount: 0, logs: [], companies: [] };
       existing.count += 1;
       existing.amount += log.quantity * (log.unit_price || 0);
       existing.logs.push(log);
+      const companyName = log.companies?.name;
+      if (companyName && !existing.companies.includes(companyName)) {
+        existing.companies.push(companyName);
+      }
       map.set(date, existing);
     }
     return map;
@@ -787,6 +791,11 @@ export default function SalesPage() {
                         <div className="text-[10px] text-text-muted">
                           {dayData.count}건
                         </div>
+                        {dayData.companies.map((name) => (
+                          <div key={name} className="text-[10px] text-primary/80 truncate leading-tight">
+                            {name}
+                          </div>
+                        ))}
                       </div>
                     )}
                     {(isPast || isToday) && !dayData && (
