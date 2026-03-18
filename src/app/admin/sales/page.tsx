@@ -16,7 +16,9 @@ import {
   Receipt,
   Star,
   PenLine,
+  FileText,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
@@ -44,6 +46,7 @@ function newManualItem(): SaleItem {
 
 export default function SalesPage() {
   const supabase = createClient();
+  const router = useRouter();
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -400,10 +403,16 @@ export default function SalesPage() {
                   <th className="px-4 py-3 text-right text-text-muted font-medium">건수</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">판매 금액</th>
+                  <th className="px-4 py-3 text-center text-text-muted font-medium">명세서</th>
                 </tr>
               </thead>
               <tbody>
-                {customerSummary.map((s) => (
+                {customerSummary.map((s) => {
+                  const [y, m] = month.split("-").map(Number);
+                  const from = `${y}-${String(m).padStart(2, "0")}-01`;
+                  const lastDay = new Date(y, m, 0).getDate();
+                  const to = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+                  return (
                   <tr
                     key={s.id}
                     className="border-b border-border hover:bg-bg-card-hover transition-colors"
@@ -416,8 +425,21 @@ export default function SalesPage() {
                     <td className="px-4 py-3 text-right text-accent font-bold">
                       {formatNumber(s.amount)}원
                     </td>
+                    <td className="px-4 py-3 text-center">
+                      {s.id !== "__none__" && (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/admin/statements/new?salesCompanyId=${s.id}&salesFrom=${from}&salesTo=${to}`)}
+                          title="거래명세서 생성"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                        >
+                          <FileText size={12} /> 명세서
+                        </button>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr className="bg-bg-dark font-bold">
                   <td className="px-4 py-3 text-text-primary">합계</td>
                   <td className="px-4 py-3 text-right text-text-primary">
@@ -429,6 +451,7 @@ export default function SalesPage() {
                   <td className="px-4 py-3 text-right text-accent">
                     {formatNumber(monthTotal.totalAmount)}원
                   </td>
+                  <td />
                 </tr>
               </tbody>
             </table>
