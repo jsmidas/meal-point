@@ -29,16 +29,17 @@ interface SaleItem {
   unit: string;
   quantity: number;
   unit_price: number;
+  box_quantity: number; // 1이면 낱개, >1이면 박스 판매
 }
 
 let itemKeyCounter = 0;
 
 function newItem(): SaleItem {
-  return { key: ++itemKeyCounter, type: "product", product_id: "", product_name: "", unit: "", quantity: 1, unit_price: 0 };
+  return { key: ++itemKeyCounter, type: "product", product_id: "", product_name: "", unit: "", quantity: 1, unit_price: 0, box_quantity: 1 };
 }
 
 function newManualItem(): SaleItem {
-  return { key: ++itemKeyCounter, type: "manual", product_id: "", product_name: "", unit: "식", quantity: 1, unit_price: 0 };
+  return { key: ++itemKeyCounter, type: "manual", product_id: "", product_name: "", unit: "식", quantity: 1, unit_price: 0, box_quantity: 1 };
 }
 
 export default function SalesPage() {
@@ -174,21 +175,32 @@ export default function SalesPage() {
     setFormItems((prev) =>
       prev.map((item) => {
         if (item.type !== "product" || !item.product_id) return item;
-        const price = getProductPrice(item.product_id);
-        return { ...item, unit_price: price };
+        const perUnitPrice = getProductPrice(item.product_id);
+        const boxQty = item.box_quantity > 1 ? item.box_quantity : 1;
+        return { ...item, unit_price: item.unit === "박스" ? perUnitPrice * boxQty : perUnitPrice };
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyPrices]);
 
-  // 품목 선택 시
+  // 품목 선택 시: 박스 상품이면 박스 단위/단가를 기본으로
   function handleItemProductChange(index: number, productId: string) {
     const prod = products.find((p) => p.id === productId);
-    const price = getProductPrice(productId);
+    const perUnitPrice = getProductPrice(productId);
+    const boxQty = prod?.box_quantity ?? 1;
+    const isBox = boxQty > 1;
+
     setFormItems((prev) =>
       prev.map((item, i) =>
         i === index
-          ? { ...item, product_id: productId, product_name: prod?.name || "", unit: prod?.unit || "", unit_price: price }
+          ? {
+              ...item,
+              product_id: productId,
+              product_name: prod?.name || "",
+              unit: isBox ? "박스" : (prod?.unit || ""),
+              unit_price: isBox ? perUnitPrice * boxQty : perUnitPrice,
+              box_quantity: boxQty,
+            }
           : item
       )
     );
@@ -227,18 +239,23 @@ export default function SalesPage() {
     const db = supabase as any;
 
     for (const item of validItems) {
-      // 판매(출고) 로그
+      // 실제 개수: 박스 판매면 박스 수 × 박스당 수량
+      const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
+
+      // 판매(출고) 로그 — quantity는 화면에 보이는 수량, reason에 박스 정보 포함
       await db.from("inventory_logs").insert({
         product_id: item.type === "product" ? item.product_id : null,
         type: "out",
-        quantity: item.quantity,
-        reason: item.type === "manual" ? item.product_name : (formNotes || null),
+        quantity: actualQty,
+        reason: item.type === "manual"
+          ? item.product_name
+          : (formNotes || (item.box_quantity > 1 ? `${item.quantity}박스` : null)),
         company_id: formCompanyId || null,
-        unit_price: item.unit_price || 0,
+        unit_price: item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0),
         log_date: formDate,
       });
 
-      // 재고 차감 (상품 품목만)
+      // 재고 차감 (상품 품목만 - 실제 개수 기준)
       if (item.type === "product" && item.product_id) {
         const { data: inv } = await db
           .from("inventory")
@@ -246,7 +263,7 @@ export default function SalesPage() {
           .eq("product_id", item.product_id)
           .maybeSingle();
 
-        const newStock = Math.max(0, (inv?.current_stock || 0) - item.quantity);
+        const newStock = Math.max(0, (inv?.current_stock || 0) - actualQty);
 
         if (inv) {
           await db
@@ -486,6 +503,17 @@ export default function SalesPage() {
                       </td>
                       <td className="px-4 py-3 text-right text-red-400 font-bold">
                         {formatNumber(log.quantity)}
+                        <span className="text-text-muted font-normal text-xs ml-1">
+                          {log.products?.unit || (isManual ? "식" : "")}
+                        </span>
+                        {(() => {
+                          const boxQty = log.products?.box_quantity ?? 1;
+                          return boxQty > 1 && log.quantity >= boxQty ? (
+                            <div className="text-xs text-text-muted font-normal">
+                              ({(log.quantity / boxQty).toFixed(1)}박스)
+                            </div>
+                          ) : null;
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right text-text-secondary">
                         {log.unit_price > 0 ? formatNumber(log.unit_price) : "-"}
@@ -632,8 +660,8 @@ export default function SalesPage() {
                           )}
                         </div>
 
-                        {/* 수량 */}
-                        <div className="w-20">
+                        {/* 수량 + 단위 */}
+                        <div className="w-24 flex items-center gap-1">
                           <input
                             type="number"
                             min={1}
@@ -641,8 +669,9 @@ export default function SalesPage() {
                             onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })}
                             aria-label={`품목 ${idx + 1} 수량`}
                             placeholder="수량"
-                            className="w-full px-3 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm text-right focus:outline-none focus:border-primary"
+                            className="w-16 px-2 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm text-right focus:outline-none focus:border-primary"
                           />
+                          <span className="text-xs text-text-muted whitespace-nowrap">{item.unit || ""}</span>
                         </div>
 
                         {/* 단가 */}
@@ -679,18 +708,21 @@ export default function SalesPage() {
                       {item.type === "product" && item.product_id && (() => {
                         const prod = products.find((p) => p.id === item.product_id);
                         const isCustom = hasCustomPrice(item.product_id);
+                        const boxQty = prod?.box_quantity ?? 1;
+                        const isBox = boxQty > 1;
+                        const perUnitPrice = isBox ? Math.round(item.unit_price / boxQty) : item.unit_price;
                         return (
                           <div className="flex items-center gap-3 mt-1.5 ml-1 text-xs text-text-muted">
-                            {prod && <span>{prod.unit}{(prod.box_quantity ?? 1) > 1 ? ` · ${prod.box_quantity}개/박스` : ""}</span>}
+                            {isBox && (
+                              <span className="text-primary">{boxQty}개/박스 · 개당 {formatNumber(perUnitPrice)}원</span>
+                            )}
                             {isCustom && (
                               <span className="inline-flex items-center gap-0.5 text-yellow-500">
-                                <Star size={10} /> 업체별 단가 적용
+                                <Star size={10} /> 업체별 단가
                               </span>
                             )}
-                            {prod && prod.selling_price !== item.unit_price && (
-                              <span className="text-text-muted">
-                                기본가: {formatNumber(prod.selling_price)}원
-                              </span>
+                            {isBox && item.quantity > 0 && (
+                              <span>= {formatNumber(item.quantity * boxQty)}개</span>
                             )}
                           </div>
                         );
