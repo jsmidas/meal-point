@@ -538,7 +538,7 @@ export type Database = {
       inventory_logs: {
         Row: {
           id: string;
-          product_id: string;
+          product_id: string | null;
           type: string;
           quantity: number;
           reason: string | null;
@@ -550,7 +550,7 @@ export type Database = {
           created_at: string;
         };
         Insert: {
-          product_id: string;
+          product_id?: string | null;
           type: string;
           quantity: number;
           reason?: string | null;
@@ -561,7 +561,7 @@ export type Database = {
           log_date?: string;
         };
         Update: {
-          product_id?: string;
+          product_id?: string | null;
           type?: string;
           quantity?: number;
           reason?: string | null;

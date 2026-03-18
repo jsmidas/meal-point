@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
@@ -14,9 +14,32 @@ import {
   Building2,
   ShoppingCart,
   Receipt,
+  Star,
+  PenLine,
 } from "lucide-react";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
+type CompanyPrice = { product_id: string; custom_price: number };
+
+interface SaleItem {
+  key: number;
+  type: "product" | "manual";
+  product_id: string;
+  product_name: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+}
+
+let itemKeyCounter = 0;
+
+function newItem(): SaleItem {
+  return { key: ++itemKeyCounter, type: "product", product_id: "", product_name: "", unit: "", quantity: 1, unit_price: 0 };
+}
+
+function newManualItem(): SaleItem {
+  return { key: ++itemKeyCounter, type: "manual", product_id: "", product_name: "", unit: "식", quantity: 1, unit_price: 0 };
+}
 
 export default function SalesPage() {
   const supabase = createClient();
@@ -34,14 +57,12 @@ export default function SalesPage() {
 
   // 판매 등록 모달
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({
-    product_id: "",
-    company_id: "",
-    quantity: 1,
-    unit_price: 0,
-    log_date: new Date().toISOString().slice(0, 10),
-    reason: "",
-  });
+  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formCompanyId, setFormCompanyId] = useState("");
+  const [formItems, setFormItems] = useState<SaleItem[]>([newItem()]);
+  const [formNotes, setFormNotes] = useState("");
+  const [companyPrices, setCompanyPrices] = useState<CompanyPrice[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   function changeMonth(delta: number) {
     const [y, m] = month.split("-").map(Number);
@@ -103,12 +124,9 @@ export default function SalesPage() {
     return { totalQty, totalAmount };
   }, [monthLogs]);
 
-  // 거래처별 판매 집계 (정산 기초)
+  // 거래처별 판매 집계
   const customerSummary = useMemo(() => {
-    const map = new Map<
-      string,
-      { name: string; qty: number; amount: number; count: number }
-    >();
+    const map = new Map<string, { name: string; qty: number; amount: number; count: number }>();
     for (const log of monthLogs) {
       const key = log.company_id || "__none__";
       const name = log.companies?.name || "(거래처 미지정)";
@@ -123,93 +141,158 @@ export default function SalesPage() {
       .sort((a, b) => b.amount - a.amount);
   }, [monthLogs]);
 
-  function resetForm() {
-    setForm({
-      product_id: "",
-      company_id: "",
-      quantity: 1,
-      unit_price: 0,
-      log_date: new Date().toISOString().slice(0, 10),
-      reason: "",
-    });
+  // 업체별 단가 로드
+  const loadCompanyPrices = useCallback(async (companyId: string) => {
+    if (!companyId) { setCompanyPrices([]); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data } = await db.from("company_prices").select("product_id, custom_price").eq("company_id", companyId);
+    setCompanyPrices(data || []);
+  }, [supabase]);
+
+  // 업체별 단가 또는 기본 판매단가
+  function getProductPrice(productId: string): number {
+    const cp = companyPrices.find((p) => p.product_id === productId);
+    if (cp) return cp.custom_price;
+    const prod = products.find((p) => p.id === productId);
+    return prod?.selling_price || 0;
   }
 
-  // 상품 선택 시 판매단가 자동 세팅
-  function handleProductChange(productId: string) {
-    const product = products.find((p) => p.id === productId);
-    setForm({
-      ...form,
-      product_id: productId,
-      unit_price: product?.selling_price || 0,
-    });
+  function hasCustomPrice(productId: string): boolean {
+    return companyPrices.some((p) => p.product_id === productId);
+  }
+
+  // 업체 변경 시 단가 재적용
+  async function handleCompanyChange(companyId: string) {
+    setFormCompanyId(companyId);
+    await loadCompanyPrices(companyId);
+  }
+
+  // 업체 변경 후 기존 품목들의 단가 갱신 (companyPrices가 로드된 후)
+  useEffect(() => {
+    if (!showModal) return;
+    setFormItems((prev) =>
+      prev.map((item) => {
+        if (item.type !== "product" || !item.product_id) return item;
+        const price = getProductPrice(item.product_id);
+        return { ...item, unit_price: price };
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyPrices]);
+
+  // 품목 선택 시
+  function handleItemProductChange(index: number, productId: string) {
+    const prod = products.find((p) => p.id === productId);
+    const price = getProductPrice(productId);
+    setFormItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? { ...item, product_id: productId, product_name: prod?.name || "", unit: prod?.unit || "", unit_price: price }
+          : item
+      )
+    );
+  }
+
+  function updateItem(index: number, updates: Partial<SaleItem>) {
+    setFormItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...updates } : item)));
+  }
+
+  function removeItem(index: number) {
+    setFormItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // 합계
+  const formTotal = useMemo(() => {
+    return formItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  }, [formItems]);
+
+  function resetForm() {
+    setFormDate(new Date().toISOString().slice(0, 10));
+    setFormCompanyId("");
+    setFormItems([newItem()]);
+    setFormNotes("");
+    setCompanyPrices([]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.product_id || form.quantity <= 0) return;
+    const validItems = formItems.filter((item) =>
+      item.type === "product" ? item.product_id && item.quantity > 0 : item.product_name && item.quantity > 0
+    );
+    if (validItems.length === 0 || !formCompanyId) return;
+
+    setSubmitting(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    // 판매(출고) 로그
-    await db.from("inventory_logs").insert({
-      product_id: form.product_id,
-      type: "out",
-      quantity: form.quantity,
-      reason: form.reason || null,
-      company_id: form.company_id || null,
-      unit_price: form.unit_price || 0,
-      log_date: form.log_date,
-    });
-
-    // 재고 차감
-    const { data: inv } = await db
-      .from("inventory")
-      .select("*")
-      .eq("product_id", form.product_id)
-      .maybeSingle();
-
-    const newStock = Math.max(0, (inv?.current_stock || 0) - form.quantity);
-
-    if (inv) {
-      await db
-        .from("inventory")
-        .update({ current_stock: newStock, last_out_date: form.log_date })
-        .eq("product_id", form.product_id);
-    } else {
-      await db.from("inventory").insert({
-        product_id: form.product_id,
-        current_stock: 0,
-        last_out_date: form.log_date,
+    for (const item of validItems) {
+      // 판매(출고) 로그
+      await db.from("inventory_logs").insert({
+        product_id: item.type === "product" ? item.product_id : null,
+        type: "out",
+        quantity: item.quantity,
+        reason: item.type === "manual" ? item.product_name : (formNotes || null),
+        company_id: formCompanyId || null,
+        unit_price: item.unit_price || 0,
+        log_date: formDate,
       });
+
+      // 재고 차감 (상품 품목만)
+      if (item.type === "product" && item.product_id) {
+        const { data: inv } = await db
+          .from("inventory")
+          .select("*")
+          .eq("product_id", item.product_id)
+          .maybeSingle();
+
+        const newStock = Math.max(0, (inv?.current_stock || 0) - item.quantity);
+
+        if (inv) {
+          await db
+            .from("inventory")
+            .update({ current_stock: newStock, last_out_date: formDate })
+            .eq("product_id", item.product_id);
+        } else {
+          await db.from("inventory").insert({
+            product_id: item.product_id,
+            current_stock: 0,
+            last_out_date: formDate,
+          });
+        }
+      }
     }
 
     setShowModal(false);
     resetForm();
+    setSubmitting(false);
     fetchData();
   }
 
   async function handleDelete(log: SalesLog) {
     if (
       !confirm(
-        `이 판매 기록을 삭제하시겠습니까?\n${log.products?.name || ""} ${formatNumber(log.quantity)}개`
+        `이 판매 기록을 삭제하시겠습니까?\n${log.products?.name || log.reason || ""} ${formatNumber(log.quantity)}개`
       )
     )
       return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    // 재고 복원
-    const { data: inv } = await db
-      .from("inventory")
-      .select("*")
-      .eq("product_id", log.product_id)
-      .maybeSingle();
-
-    if (inv) {
-      await db
+    // 재고 복원 (상품 품목만)
+    if (log.product_id) {
+      const { data: inv } = await db
         .from("inventory")
-        .update({ current_stock: inv.current_stock + log.quantity })
-        .eq("product_id", log.product_id);
+        .select("*")
+        .eq("product_id", log.product_id)
+        .maybeSingle();
+
+      if (inv) {
+        await db
+          .from("inventory")
+          .update({ current_stock: inv.current_stock + log.quantity })
+          .eq("product_id", log.product_id);
+      }
     }
 
     await db.from("inventory_logs").delete().eq("id", log.id);
@@ -281,7 +364,7 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* 거래처별 판매 집계 (정산 기초) */}
+      {/* 거래처별 판매 집계 */}
       {customerSummary.length > 0 && (
         <div className="rounded-2xl border border-border bg-bg-card overflow-hidden mb-8">
           <div className="px-6 py-4 border-b border-border">
@@ -370,9 +453,8 @@ export default function SalesPage() {
                   <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">개당 단가</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium hidden md:table-cell">박스 환산</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">비고</th>
                   <th className="px-4 py-3 text-center text-text-muted font-medium">삭제</th>
                 </tr>
@@ -380,7 +462,7 @@ export default function SalesPage() {
               <tbody>
                 {monthLogs.map((log) => {
                   const amount = (log.unit_price || 0) * log.quantity;
-                  const boxQty = log.products?.box_quantity ?? 1;
+                  const isManual = !log.product_id;
                   return (
                     <tr
                       key={log.id}
@@ -390,7 +472,14 @@ export default function SalesPage() {
                         {formatDate(log.log_date || log.created_at)}
                       </td>
                       <td className="px-4 py-3 text-text-primary font-medium">
-                        {log.products?.name || log.product_id.slice(0, 8)}
+                        {isManual ? (
+                          <span className="inline-flex items-center gap-1">
+                            <PenLine size={12} className="text-yellow-500" />
+                            {log.reason || "(수작업)"}
+                          </span>
+                        ) : (
+                          log.products?.name || log.product_id?.slice(0, 8)
+                        )}
                       </td>
                       <td className="px-4 py-3 text-text-secondary">
                         {log.companies?.name || "-"}
@@ -404,10 +493,9 @@ export default function SalesPage() {
                       <td className="px-4 py-3 text-right text-text-secondary">
                         {amount > 0 ? `${formatNumber(amount)}원` : "-"}
                       </td>
-                      <td className="px-4 py-3 text-right text-text-muted text-xs hidden md:table-cell">
-                        {boxQty > 1 ? `${(log.quantity / boxQty).toFixed(1)}박스` : "-"}
+                      <td className="px-4 py-3 text-text-muted text-xs">
+                        {isManual ? "-" : (log.reason || "-")}
                       </td>
-                      <td className="px-4 py-3 text-text-muted text-xs">{log.reason || "-"}</td>
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => handleDelete(log)}
@@ -429,8 +517,8 @@ export default function SalesPage() {
       {/* 판매 등록 모달 */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-bg-card z-10">
               <h2 className="text-lg font-bold text-primary">판매 등록</h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -440,130 +528,207 @@ export default function SalesPage() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  상품 <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={form.product_id}
-                  onChange={(e) => handleProductChange(e.target.value)}
-                  required
-                  aria-label="판매 상품 선택"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
-                >
-                  <option value="">상품 선택</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.unit}{(p.box_quantity ?? 1) > 1 ? ` · ${p.box_quantity}개/박스` : ""})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  거래처 <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={form.company_id}
-                  onChange={(e) => setForm({ ...form, company_id: e.target.value })}
-                  required
-                  aria-label="거래처 선택"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
-                >
-                  <option value="">거래처 선택</option>
-                  {companies.filter((c) => {
-                    const ct = (c as any).company_type || "customer";
-                    return ct === "customer" || ct === "both";
-                  }).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              {/* 일자 & 거래처 */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">
-                    수량 <span className="text-red-400">*</span>
+                    판매일 <span className="text-red-400">*</span>
                   </label>
                   <input
-                    type="number"
-                    min={1}
-                    value={form.quantity}
-                    onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+                    type="date"
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
                     required
-                    aria-label="수량"
+                    aria-label="판매일"
                     className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-text-secondary mb-1">판매 단가 (원)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.unit_price}
-                    onChange={(e) => setForm({ ...form, unit_price: Number(e.target.value) })}
-                    aria-label="판매 단가"
+                  <label className="block text-sm text-text-secondary mb-1">
+                    거래처 <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={formCompanyId}
+                    onChange={(e) => handleCompanyChange(e.target.value)}
+                    required
+                    aria-label="거래처 선택"
                     className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
-                  />
+                  >
+                    <option value="">거래처 선택</option>
+                    {companies
+                      .filter((c) => {
+                        const ct = (c as any).company_type || "customer";
+                        return ct === "customer" || ct === "both";
+                      })
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                  </select>
                 </div>
               </div>
-              {form.quantity > 0 && form.unit_price > 0 && (() => {
-                const selectedProduct = products.find((p) => p.id === form.product_id);
-                const boxQty = selectedProduct?.box_quantity ?? 1;
-                const totalAmount = form.quantity * form.unit_price;
-                return (
-                  <div className="px-4 py-3 rounded-xl bg-bg-dark border border-border space-y-1">
-                    <div>
-                      <span className="text-sm text-text-muted">개당 단가: </span>
-                      <span className="text-sm font-bold text-text-primary">
-                        {formatNumber(form.unit_price)}원
-                      </span>
-                      {boxQty > 1 && (
-                        <>
-                          <span className="text-sm text-text-muted ml-2">/ 박스 단가: </span>
-                          <span className="text-sm font-bold text-primary">
-                            {formatNumber(form.unit_price * boxQty)}원
-                          </span>
-                          <span className="text-xs text-text-muted ml-1">({boxQty}개/박스)</span>
-                        </>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-sm text-text-muted">판매 금액: </span>
-                      <span className="text-sm font-bold text-accent">
-                        {formatNumber(totalAmount)}원
-                      </span>
-                      {boxQty > 1 && form.quantity >= boxQty && (
-                        <span className="text-xs text-text-muted ml-2">
-                          ({(form.quantity / boxQty).toFixed(1)}박스)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+
+              {/* 품목 리스트 */}
               <div>
-                <label className="block text-sm text-text-secondary mb-1">판매일</label>
-                <input
-                  type="date"
-                  value={form.log_date}
-                  onChange={(e) => setForm({ ...form, log_date: e.target.value })}
-                  aria-label="판매일"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-text-primary">
+                    품목 <span className="text-red-400">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormItems((prev) => [...prev, newItem()])}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+                    >
+                      <Plus size={12} /> 품목 추가
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormItems((prev) => [...prev, newManualItem()])}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-medium hover:bg-yellow-500/20 transition-colors"
+                    >
+                      <PenLine size={12} /> 수작업 항목
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {formItems.map((item, idx) => (
+                    <div
+                      key={item.key}
+                      className={`rounded-xl border p-3 ${
+                        item.type === "manual"
+                          ? "border-yellow-500/30 bg-yellow-500/5"
+                          : "border-border bg-bg-dark"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {/* 품목 선택 또는 직접입력 */}
+                        <div className="flex-1 min-w-0">
+                          {item.type === "product" ? (
+                            <select
+                              value={item.product_id}
+                              onChange={(e) => handleItemProductChange(idx, e.target.value)}
+                              aria-label={`품목 ${idx + 1} 선택`}
+                              className="w-full px-3 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm focus:outline-none focus:border-primary"
+                            >
+                              <option value="">상품 선택</option>
+                              {products.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.unit})
+                                  {hasCustomPrice(p.id) ? " ★" : ""}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={item.product_name}
+                              onChange={(e) => updateItem(idx, { product_name: e.target.value })}
+                              placeholder="항목명 (예: 배송비, 금형비, 기타)"
+                              aria-label={`수작업 항목 ${idx + 1} 이름`}
+                              className="w-full px-3 py-2 rounded-lg border border-yellow-500/30 bg-bg-card text-text-primary text-sm focus:outline-none focus:border-yellow-500"
+                            />
+                          )}
+                        </div>
+
+                        {/* 수량 */}
+                        <div className="w-20">
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })}
+                            aria-label={`품목 ${idx + 1} 수량`}
+                            placeholder="수량"
+                            className="w-full px-3 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm text-right focus:outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        {/* 단가 */}
+                        <div className="w-28">
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.unit_price}
+                            onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })}
+                            aria-label={`품목 ${idx + 1} 단가`}
+                            placeholder="단가"
+                            className="w-full px-3 py-2 rounded-lg border border-border bg-bg-card text-text-primary text-sm text-right focus:outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        {/* 금액 */}
+                        <div className="w-28 text-right py-2 text-sm font-bold text-accent">
+                          {formatNumber(item.quantity * item.unit_price)}원
+                        </div>
+
+                        {/* 삭제 */}
+                        <button
+                          type="button"
+                          onClick={() => removeItem(idx)}
+                          disabled={formItems.length <= 1}
+                          title="항목 삭제"
+                          className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* 품목 부가정보 */}
+                      {item.type === "product" && item.product_id && (() => {
+                        const prod = products.find((p) => p.id === item.product_id);
+                        const isCustom = hasCustomPrice(item.product_id);
+                        return (
+                          <div className="flex items-center gap-3 mt-1.5 ml-1 text-xs text-text-muted">
+                            {prod && <span>{prod.unit}{(prod.box_quantity ?? 1) > 1 ? ` · ${prod.box_quantity}개/박스` : ""}</span>}
+                            {isCustom && (
+                              <span className="inline-flex items-center gap-0.5 text-yellow-500">
+                                <Star size={10} /> 업체별 단가 적용
+                              </span>
+                            )}
+                            {prod && prod.selling_price !== item.unit_price && (
+                              <span className="text-text-muted">
+                                기본가: {formatNumber(prod.selling_price)}원
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {item.type === "manual" && (
+                        <div className="flex items-center gap-1 mt-1.5 ml-1 text-xs text-yellow-500/70">
+                          <PenLine size={10} /> 수작업 항목 (재고 차감 없음)
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {/* 합계 */}
+              <div className="rounded-xl bg-bg-dark border border-border p-4 flex items-center justify-between">
+                <span className="text-sm text-text-muted">
+                  합계 ({formItems.length}건)
+                </span>
+                <span className="text-xl font-black text-accent">
+                  {formatNumber(formTotal)}원
+                </span>
+              </div>
+
+              {/* 비고 */}
               <div>
                 <label className="block text-sm text-text-secondary mb-1">비고</label>
                 <input
                   type="text"
-                  value={form.reason}
-                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
                   placeholder="예: 정기 납품, 추가 주문"
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                 />
               </div>
+
+              {/* 액션 */}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
@@ -574,9 +739,10 @@ export default function SalesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors"
+                  disabled={submitting}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
                 >
-                  판매 등록
+                  {submitting ? "등록 중..." : "판매 등록"}
                 </button>
               </div>
             </form>

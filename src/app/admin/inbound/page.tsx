@@ -416,7 +416,7 @@ export default function InboundPage() {
                         {formatDate(log.log_date || log.created_at)}
                       </td>
                       <td className="px-4 py-3 text-text-primary font-medium">
-                        {log.products?.name || log.product_id.slice(0, 8)}
+                        {log.products?.name || log.product_id?.slice(0, 8) || "-"}
                       </td>
                       <td className="px-4 py-3 text-text-secondary">
                         {log.companies?.name || "-"}

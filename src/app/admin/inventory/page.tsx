@@ -442,7 +442,7 @@ export default function InventoryPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-primary font-medium">
-                        {productName(log.product_id)}
+                        {log.product_id ? productName(log.product_id) : (log.reason || "-")}
                       </td>
                       <td className="px-4 py-3 text-text-secondary">
                         {log.companies?.name || "-"}
