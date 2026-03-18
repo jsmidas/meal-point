@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-type SalesData = { amount: number; count: number };
+type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
+type SalesData = { amount: number; count: number; logs: SalesLog[] };
 
 type CompanyRow = {
   id: string;
@@ -51,6 +52,9 @@ export default function BillingPage() {
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payNotes, setPayNotes] = useState("");
 
+  // 판매 상세 모달
+  const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[] } | null>(null);
+
   // 청구 생성 모달
   const [billingModal, setBillingModal] = useState<{ companyId: string; companyName: string; salesAmount: number } | null>(null);
   const [billingSupply, setBillingSupply] = useState(0);
@@ -77,7 +81,7 @@ export default function BillingPage() {
     const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
 
     const [salesRes, stmtRes, billRes, compRes] = await Promise.all([
-      db.from("inventory_logs").select("company_id, quantity, unit_price").eq("type", "out").gte("log_date", from).lte("log_date", to),
+      db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date"),
       db.from("statements").select("*").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
@@ -90,9 +94,10 @@ export default function BillingPage() {
     const salesMap = new Map<string, SalesData>();
     for (const log of salesRes.data || []) {
       if (!log.company_id) continue;
-      const ex = salesMap.get(log.company_id) || { amount: 0, count: 0 };
+      const ex = salesMap.get(log.company_id) || { amount: 0, count: 0, logs: [] as SalesLog[] };
       ex.amount += log.quantity * (log.unit_price || 0);
       ex.count += 1;
+      ex.logs.push(log);
       salesMap.set(log.company_id, ex);
     }
 
@@ -118,7 +123,7 @@ export default function BillingPage() {
       .map((c) => ({
         id: c.id,
         name: c.name,
-        sales: salesMap.get(c.id) || { amount: 0, count: 0 },
+        sales: salesMap.get(c.id) || { amount: 0, count: 0, logs: [] },
         statements: stmtMap.get(c.id) || [],
         billing: billMap.get(c.id) || null,
       }))
@@ -391,7 +396,7 @@ export default function BillingPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => router.push(`/admin/sales`)}
+                      onClick={() => setSalesDetailModal({ companyName: row.name, logs: row.sales.logs })}
                       className="mt-2 text-[11px] text-primary/70 hover:text-primary underline"
                     >
                       판매 상세 보기
@@ -729,6 +734,75 @@ export default function BillingPage() {
           </div>
         </div>
       )}
+
+      {/* 판매 상세 모달 */}
+      {salesDetailModal && (() => {
+        const logs = salesDetailModal.logs;
+        const supply = logs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0);
+        const tax = Math.round(supply * 0.1);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+                <h2 className="text-base font-bold text-text-primary">
+                  판매 상세 — {salesDetailModal.companyName}
+                  <span className="ml-2 text-sm font-normal text-text-muted">{logs.length}건</span>
+                </h2>
+                <button type="button" onClick={() => setSalesDetailModal(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-bg-dark">
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3 text-left text-text-muted font-medium">날짜</th>
+                      <th className="px-4 py-3 text-left text-text-muted font-medium">품목</th>
+                      <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
+                      <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
+                      <th className="px-4 py-3 text-right text-text-muted font-medium">공급가</th>
+                      <th className="px-4 py-3 text-right text-text-muted font-medium">부가세</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => {
+                      const lineSupply = log.quantity * (log.unit_price || 0);
+                      const lineTax = Math.round(lineSupply * 0.1);
+                      return (
+                        <tr key={log.id} className="border-b border-border/50 hover:bg-bg-card-hover transition-colors">
+                          <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">{log.log_date}</td>
+                          <td className="px-4 py-3 text-text-primary">
+                            {log.products?.name || log.reason || "(기타)"}
+                          </td>
+                          <td className="px-4 py-3 text-right text-text-secondary">
+                            {formatNumber(log.quantity)}
+                            <span className="text-text-muted text-xs ml-0.5">{log.products?.unit || ""}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-text-secondary text-xs">{formatNumber(log.unit_price || 0)}</td>
+                          <td className="px-4 py-3 text-right font-medium text-accent">{formatNumber(lineSupply)}원</td>
+                          <td className="px-4 py-3 text-right text-text-muted text-xs">{formatNumber(lineTax)}원</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-border px-6 py-4 shrink-0 bg-bg-dark/60 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-muted">공급가 합계</span>
+                  <span className="font-bold text-text-primary">{formatNumber(supply)}원</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-muted">부가세 (10%)</span>
+                  <span className="text-text-primary">{formatNumber(tax)}원</span>
+                </div>
+                <div className="flex justify-between text-base font-bold border-t border-border pt-2 mt-1">
+                  <span className="text-text-primary">합계</span>
+                  <span className="text-accent">{formatNumber(supply + tax)}원</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
