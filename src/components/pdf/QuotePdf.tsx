@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Document, Page, Text, View, StyleSheet, Font,
+  Document, Page, Text, View, StyleSheet, Font, Image,
 } from "@react-pdf/renderer";
 import type { QuoteWithItems, CompanyInfo } from "@/lib/supabase/types";
 
@@ -54,6 +54,11 @@ export default function QuotePdf({ quote, companyInfo }: Props) {
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        {companyInfo?.logo_image_url && (
+          <View style={{ alignItems: "center", marginBottom: 8 }}>
+            <Image src={companyInfo.logo_image_url} style={{ height: 40, objectFit: "contain" }} />
+          </View>
+        )}
         <Text style={s.title}>견 적 서</Text>
         <View style={s.headerRow}>
           <Text>작성일: {fmtDate(quote.quote_date)}</Text>

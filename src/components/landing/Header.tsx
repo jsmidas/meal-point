@@ -19,6 +19,7 @@ export default function Header() {
   const [auth, setAuth] = useState<{ authenticated: boolean; role?: string; name?: string }>({
     authenticated: false,
   });
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -31,6 +32,17 @@ export default function Header() {
       .then((res) => res.json())
       .then((data) => setAuth(data))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      const supabase = createClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from("company_info").select("logo_image_url").limit(1).single()
+        .then(({ data }: { data: { logo_image_url: string | null } | null }) => {
+          if (data?.logo_image_url) setLogoUrl(data.logo_image_url);
+        });
+    });
   }, []);
 
   async function handleLogout() {
@@ -55,34 +67,38 @@ export default function Header() {
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="url(#logoGrad)" />
-            <path
-              d="M8 22V12a2 2 0 012-2h12a2 2 0 012 2v10"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M6 22h20"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <circle cx="16" cy="16" r="3" stroke="#fff" strokeWidth="1.5" />
-            <defs>
-              <linearGradient
-                id="logoGrad"
-                x1="0"
-                y1="0"
-                x2="32"
-                y2="32"
-              >
-                <stop stopColor="#E8A04A" />
-                <stop offset="1" stopColor="#7C6AEF" />
-              </linearGradient>
-            </defs>
-          </svg>
+          {logoUrl ? (
+            <img src={logoUrl} alt="밀포인트" className="h-8 w-auto object-contain" />
+          ) : (
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="url(#logoGrad)" />
+              <path
+                d="M8 22V12a2 2 0 012-2h12a2 2 0 012 2v10"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M6 22h20"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <circle cx="16" cy="16" r="3" stroke="#fff" strokeWidth="1.5" />
+              <defs>
+                <linearGradient
+                  id="logoGrad"
+                  x1="0"
+                  y1="0"
+                  x2="32"
+                  y2="32"
+                >
+                  <stop stopColor="#E8A04A" />
+                  <stop offset="1" stopColor="#7C6AEF" />
+                </linearGradient>
+              </defs>
+            </svg>
+          )}
           <span className="text-lg font-bold text-text-primary">밀포인트</span>
         </Link>
 

@@ -103,6 +103,12 @@ export default function StatementDetailPage() {
 
       {/* 거래명세서 미리보기 (인쇄용) */}
       <div className="bg-white text-black rounded-2xl border border-border p-8 max-w-4xl mx-auto print:border-none print:rounded-none print:p-4 print:max-w-none">
+        {/* 로고 */}
+        {companyInfo?.logo_image_url && (
+          <div className="flex justify-center mb-4">
+            <img src={companyInfo.logo_image_url} alt={companyInfo.name} className="h-16 object-contain" />
+          </div>
+        )}
         {/* 제목 */}
         <h2 className="text-2xl font-bold text-center mb-8 tracking-widest">
           거 래 명 세 서

@@ -202,7 +202,7 @@ export default function ProductsPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Link
-                        href={`/admin/products/${product.id}`}
+                        href={`/admin/pages/${product.id}`}
                         className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-accent transition-colors"
                         title="상세페이지 편집"
                       >

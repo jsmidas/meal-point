@@ -7,6 +7,7 @@ import {
   View,
   StyleSheet,
   Font,
+  Image,
 } from "@react-pdf/renderer";
 import type { StatementWithItems, CompanyInfo } from "@/lib/supabase/types";
 
@@ -155,6 +156,11 @@ export default function StatementPdf({ statement, companyInfo }: Props) {
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        {companyInfo?.logo_image_url && (
+          <View style={{ alignItems: "center", marginBottom: 8 }}>
+            <Image src={companyInfo.logo_image_url} style={{ height: 40, objectFit: "contain" }} />
+          </View>
+        )}
         <Text style={s.title}>거 래 명 세 서</Text>
 
         <View style={s.headerRow}>

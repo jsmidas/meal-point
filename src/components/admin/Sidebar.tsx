@@ -21,6 +21,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   BadgeDollarSign,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -40,6 +41,7 @@ const navItems = [
   { href: "/admin/billing", label: "월 정산/청구", icon: Receipt },
   { href: "/admin/pnl", label: "손익 현황", icon: TrendingUp },
   { href: "/admin/popups", label: "팝업 관리", icon: Bell },
+  { href: "/admin/settings", label: "회사 설정", icon: Settings },
 ];
 
 export default function Sidebar() {

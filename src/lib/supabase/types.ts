@@ -22,6 +22,7 @@ export type Database = {
           bank_account: string | null;
           bank_holder: string | null;
           stamp_image_url: string | null;
+          logo_image_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -38,6 +39,7 @@ export type Database = {
           bank_account?: string | null;
           bank_holder?: string | null;
           stamp_image_url?: string | null;
+          logo_image_url?: string | null;
         };
         Update: {
           name?: string;
@@ -52,6 +54,7 @@ export type Database = {
           bank_account?: string | null;
           bank_holder?: string | null;
           stamp_image_url?: string | null;
+          logo_image_url?: string | null;
         };
       };
       companies: {
