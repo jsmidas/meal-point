@@ -50,7 +50,7 @@ export default function SalesPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  const [tab, setTab] = useState<"list" | "calendar">("list");
+  const [tab, setTab] = useState<"list" | "calendar">("calendar");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
@@ -423,7 +423,7 @@ export default function SalesPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
         <h1 className="text-2xl font-bold text-text-primary">판매 관리</h1>
         <div className="flex items-center gap-3">
           {/* 탭 */}
@@ -465,7 +465,7 @@ export default function SalesPage() {
       </div>
 
       {/* 월 네비게이션 */}
-      <div className="flex items-center justify-center gap-4 mb-6">
+      <div className="flex items-center justify-center gap-4 mb-3">
         <button
           type="button"
           onClick={() => changeMonth(-1)}
