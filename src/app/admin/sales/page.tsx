@@ -20,7 +20,6 @@ import {
   CalendarDays,
   List,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
@@ -49,7 +48,6 @@ function newManualItem(): SaleItem {
 
 export default function SalesPage() {
   const supabase = createClient();
-  const router = useRouter();
 
   const [tab, setTab] = useState<"list" | "calendar">("calendar");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -855,7 +853,6 @@ export default function SalesPage() {
                     onClick={() => setSelectedDate(isSelected ? null : dateStr)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      setFormDate(dateStr);
                       resetForm();
                       setFormDate(dateStr);
                       setShowModal(true);
