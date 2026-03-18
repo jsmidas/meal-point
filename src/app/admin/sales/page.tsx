@@ -60,6 +60,7 @@ export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
 
   // 월 네비게이션
   const [month, setMonth] = useState(() => {
@@ -451,6 +452,55 @@ export default function SalesPage() {
     return map;
   }, [orders, month]);
 
+  // 업체별+일자별 판매현황 (목록 탭용)
+  type DailyCompanyRow = {
+    key: string;
+    date: string;
+    companyId: string;
+    companyName: string;
+    logs: SalesLog[];
+    amount: number;
+  };
+  const dailyCompanyRows = useMemo((): DailyCompanyRow[] => {
+    const map = new Map<string, DailyCompanyRow>();
+    for (const log of monthLogs) {
+      const date = (log.log_date || log.created_at).slice(0, 10);
+      const companyId = log.company_id || "__none__";
+      const key = `${date}::${companyId}`;
+      const existing = map.get(key) || {
+        key, date, companyId,
+        companyName: log.companies?.name || "(미지정)",
+        logs: [], amount: 0,
+      };
+      existing.logs.push(log);
+      existing.amount += log.quantity * (log.unit_price || 0);
+      map.set(key, existing);
+    }
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date) || a.companyName.localeCompare(b.companyName));
+  }, [monthLogs]);
+
+  // 이번 달 발행된 명세서 (거래처별)
+  const monthStatementsByCompany = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const prefix = `${y}-${String(m).padStart(2, "0")}`;
+    const map = new Map<string, { id: string; statement_number: string; statement_date: string }[]>();
+    for (const s of statements) {
+      if (s.statement_date?.startsWith(prefix) && s.company_id) {
+        const arr = map.get(s.company_id) || [];
+        arr.push({ id: s.id, statement_number: s.statement_number, statement_date: s.statement_date });
+        map.set(s.company_id, arr);
+      }
+    }
+    return map;
+  }, [statements, month]);
+
+  // 선택된 행들의 공급가 합계
+  const selectedSupply = useMemo(() => {
+    return dailyCompanyRows
+      .filter(r => selectedRowKeys.has(r.key))
+      .reduce((sum, r) => sum + r.amount, 0);
+  }, [dailyCompanyRows, selectedRowKeys]);
+
   // 달력 날짜 배열 생성 (일~토 기준)
   const calendarDays = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -566,72 +616,156 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* 거래처별 판매 집계 */}
-      {customerSummary.length > 0 && (
-        <div className="rounded-2xl border border-border bg-bg-card overflow-hidden mb-8">
-          <div className="px-6 py-4 border-b border-border">
-            <h2 className="text-lg font-semibold text-text-primary">
-              거래처별 판매 집계
-              <span className="text-sm text-text-muted font-normal ml-2">
-                (정산/청구 기초 데이터)
-              </span>
-            </h2>
+      {/* 선택 요약 바 */}
+      {selectedRowKeys.size > 0 && (() => {
+        const selectedRows = dailyCompanyRows.filter(r => selectedRowKeys.has(r.key));
+        const companyIds = [...new Set(selectedRows.map(r => r.companyId))];
+        const supply = selectedSupply;
+        const tax = Math.round(supply * 0.1);
+        const total = supply + tax;
+        return (
+          <div className="mb-4 px-5 py-3 rounded-xl border border-primary/40 bg-primary/5 flex flex-wrap items-center gap-4">
+            <span className="text-sm text-text-secondary">{selectedRowKeys.size}개 선택</span>
+            <span className="text-sm text-text-secondary">공급가: <span className="font-bold text-text-primary">{formatNumber(supply)}원</span></span>
+            <span className="text-sm text-text-secondary">부가세(10%): <span className="font-bold text-text-primary">{formatNumber(tax)}원</span></span>
+            <span className="text-sm text-text-secondary">합계: <span className="font-bold text-accent">{formatNumber(total)}원</span></span>
+            <div className="flex gap-2 ml-auto">
+              {companyIds.length > 1 && (
+                <span className="text-xs text-red-400">※ 동일 거래처만 선택 가능</span>
+              )}
+              {companyIds.length === 1 && companyIds[0] !== "__none__" && (
+                <Link
+                  href={`/admin/statements/new?logIds=${selectedRows.flatMap(r => r.logs.map(l => l.id)).join(",")}&companyId=${companyIds[0]}`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors"
+                >
+                  <FileText size={14} /> 명세서 발행
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedRowKeys(new Set())}
+                className="px-3 py-2 rounded-xl border border-border text-text-muted text-sm hover:text-text-primary transition-colors"
+              >
+                선택 해제
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 업체별·일자별 판매현황 */}
+      {loading ? (
+        <div className="text-center py-20 text-text-muted">로딩 중...</div>
+      ) : dailyCompanyRows.length === 0 ? (
+        <div className="text-center py-20">
+          <ShoppingCart size={48} className="mx-auto text-text-muted mb-4" />
+          <p className="text-text-secondary">{monthLabel}에 등록된 판매 내역이 없습니다.</p>
+          <button
+            type="button"
+            onClick={() => { resetForm(); setShowModal(true); }}
+            className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm"
+          >
+            <Plus size={18} /> 판매 등록
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-border bg-bg-card overflow-hidden mb-6">
+          <div className="px-6 py-3 border-b border-border flex items-center justify-between">
+            <h2 className="text-base font-semibold text-text-primary">{monthLabel} 판매 내역</h2>
+            <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedRowKeys.size === dailyCompanyRows.length && dailyCompanyRows.length > 0}
+                onChange={(e) => {
+                  if (e.target.checked) setSelectedRowKeys(new Set(dailyCompanyRows.map(r => r.key)));
+                  else setSelectedRowKeys(new Set());
+                }}
+                className="rounded"
+              />
+              전체 선택
+            </label>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-bg-dark">
+                  <th className="px-3 py-3 w-8" aria-label="선택" />
+                  <th className="px-4 py-3 text-left text-text-muted font-medium">날짜</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">건수</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">판매 금액</th>
+                  <th className="px-4 py-3 text-left text-text-muted font-medium">판매품목</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">공급가</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">부가세</th>
                   <th className="px-4 py-3 text-center text-text-muted font-medium">명세서</th>
                 </tr>
               </thead>
               <tbody>
-                {customerSummary.map((s) => {
-                  const [y, m] = month.split("-").map(Number);
-                  const from = `${y}-${String(m).padStart(2, "0")}-01`;
-                  const lastDay = new Date(y, m, 0).getDate();
-                  const to = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+                {dailyCompanyRows.map((row) => {
+                  const isSelected = selectedRowKeys.has(row.key);
+                  const tax = Math.round(row.amount * 0.1);
+                  const stmts = monthStatementsByCompany.get(row.companyId);
+                  // 품목 요약: 첫 품목명 + 나머지 수
+                  const productNames = [...new Set(row.logs.map(l => l.products?.name || l.reason || "(기타)"))];
+                  const productSummary = productNames.length > 1
+                    ? `${productNames[0]} 외 ${productNames.length - 1}종`
+                    : productNames[0] || "-";
                   return (
-                  <tr
-                    key={s.id}
-                    className="border-b border-border hover:bg-bg-card-hover transition-colors"
-                  >
-                    <td className="px-4 py-3 text-text-primary font-medium">{s.name}</td>
-                    <td className="px-4 py-3 text-right text-text-secondary">{s.count}건</td>
-                    <td className="px-4 py-3 text-right text-text-secondary">
-                      {formatNumber(s.qty)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-accent font-bold">
-                      {formatNumber(s.amount)}원
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {s.id !== "__none__" && (
-                        <Link
-                          href={`/admin/statements/new?salesCompanyId=${s.id}&salesFrom=${from}&salesTo=${to}`}
-                          title="거래명세서 생성"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
-                        >
-                          <FileText size={12} /> 명세서
-                        </Link>
-                      )}
-                    </td>
-                  </tr>
+                    <tr
+                      key={row.key}
+                      className={`border-b border-border transition-colors cursor-pointer ${isSelected ? "bg-primary/5" : "hover:bg-bg-card-hover"}`}
+                      onClick={() => {
+                        setSelectedRowKeys(prev => {
+                          const next = new Set(prev);
+                          if (next.has(row.key)) next.delete(row.key);
+                          else next.add(row.key);
+                          return next;
+                        });
+                      }}
+                    >
+                      <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`${row.date} ${row.companyName} 선택`}
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedRowKeys(prev => {
+                              const next = new Set(prev);
+                              if (next.has(row.key)) next.delete(row.key);
+                              else next.add(row.key);
+                              return next;
+                            });
+                          }}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">{row.date}</td>
+                      <td className="px-4 py-3 text-text-primary font-medium">{row.companyName}</td>
+                      <td className="px-4 py-3 text-text-secondary text-xs">{productSummary}</td>
+                      <td className="px-4 py-3 text-right font-bold text-accent">{formatNumber(row.amount)}원</td>
+                      <td className="px-4 py-3 text-right text-text-muted text-xs">{formatNumber(tax)}원</td>
+                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                        {stmts && stmts.length > 0 ? (
+                          <div className="flex flex-col gap-1 items-center">
+                            {stmts.map(s => (
+                              <Link
+                                key={s.id}
+                                href={`/admin/statements/${s.id}`}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs hover:bg-emerald-500/20 transition-colors"
+                              >
+                                <FileText size={11} /> 발행됨
+                              </Link>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-text-muted/40 text-xs">-</span>
+                        )}
+                      </td>
+                    </tr>
                   );
                 })}
                 <tr className="bg-bg-dark font-bold">
-                  <td className="px-4 py-3 text-text-primary">합계</td>
-                  <td className="px-4 py-3 text-right text-text-primary">
-                    {monthLogs.length}건
-                  </td>
-                  <td className="px-4 py-3 text-right text-text-primary">
-                    {formatNumber(monthTotal.totalQty)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-accent">
-                    {formatNumber(monthTotal.totalAmount)}원
-                  </td>
+                  <td colSpan={4} className="px-4 py-3 text-right text-text-muted text-xs">합계</td>
+                  <td className="px-4 py-3 text-right text-accent">{formatNumber(monthTotal.totalAmount)}원</td>
+                  <td className="px-4 py-3 text-right text-text-muted text-xs">{formatNumber(Math.round(monthTotal.totalAmount * 0.1))}원</td>
                   <td />
                 </tr>
               </tbody>
@@ -640,120 +774,36 @@ export default function SalesPage() {
         </div>
       )}
 
-      {/* 판매 내역 테이블 */}
-      {loading ? (
-        <div className="text-center py-20 text-text-muted">로딩 중...</div>
-      ) : monthLogs.length === 0 ? (
-        <div className="text-center py-20">
-          <ShoppingCart size={48} className="mx-auto text-text-muted mb-4" />
-          <p className="text-text-secondary">
-            {monthLabel}에 등록된 판매 내역이 없습니다.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              resetForm();
-              setShowModal(true);
-            }}
-            className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm"
-          >
-            <Plus size={18} /> 판매 등록
-          </button>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-border bg-bg-card overflow-hidden">
-          <div className="px-6 py-4 border-b border-border">
-            <h2 className="text-lg font-semibold text-text-primary">
-              {monthLabel} 판매 내역
-            </h2>
+      {/* 이번 달 발행된 명세서 */}
+      {statements.some(s => {
+        const [y, m] = month.split("-").map(Number);
+        return s.statement_date?.startsWith(`${y}-${String(m).padStart(2, "0")}`);
+      }) && (
+        <div className="rounded-2xl border border-border bg-bg-card overflow-hidden mb-6">
+          <div className="px-6 py-3 border-b border-border">
+            <h2 className="text-base font-semibold text-text-primary">발행된 거래명세서</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-bg-dark">
-                  <th className="px-4 py-3 text-left text-text-muted font-medium">판매일</th>
-                  <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
-                  <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
-                  <th className="px-4 py-3 text-left text-text-muted font-medium">비고</th>
-                  <th className="px-4 py-3 text-center text-text-muted font-medium">관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthLogs.map((log) => {
-                  const amount = (log.unit_price || 0) * log.quantity;
-                  const isManual = !log.product_id;
-                  return (
-                    <tr
-                      key={log.id}
-                      className="border-b border-border hover:bg-bg-card-hover transition-colors"
-                    >
-                      <td className="px-4 py-3 text-text-secondary text-xs">
-                        {formatDate(log.log_date || log.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-text-primary font-medium">
-                        {isManual ? (
-                          <span className="inline-flex items-center gap-1">
-                            <PenLine size={12} className="text-yellow-500" />
-                            {log.reason || "(수작업)"}
-                          </span>
-                        ) : (
-                          log.products?.name || log.product_id?.slice(0, 8)
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary">
-                        {log.companies?.name || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right text-red-400 font-bold">
-                        {formatNumber(log.quantity)}
-                        <span className="text-text-muted font-normal text-xs ml-1">
-                          {log.products?.unit || (isManual ? "식" : "")}
-                        </span>
-                        {(() => {
-                          const boxQty = log.products?.box_quantity ?? 1;
-                          return boxQty > 1 && log.quantity >= boxQty ? (
-                            <div className="text-xs text-text-muted font-normal">
-                              ({(log.quantity / boxQty).toFixed(1)}박스)
-                            </div>
-                          ) : null;
-                        })()}
-                      </td>
-                      <td className="px-4 py-3 text-right text-text-secondary">
-                        {log.unit_price > 0 ? formatNumber(log.unit_price) : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right text-text-secondary">
-                        {amount > 0 ? `${formatNumber(amount)}원` : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-text-muted text-xs">
-                        {isManual ? "-" : (log.reason || "-")}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(log)}
-                            title="수정"
-                            className="p-1.5 rounded-lg hover:bg-primary/10 text-text-muted hover:text-primary transition-colors"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(log)}
-                            title="삭제"
-                            className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="divide-y divide-border">
+            {statements
+              .filter(s => {
+                const [y, m] = month.split("-").map(Number);
+                return s.statement_date?.startsWith(`${y}-${String(m).padStart(2, "0")}`);
+              })
+              .sort((a, b) => b.statement_date.localeCompare(a.statement_date))
+              .map(s => (
+                <div key={s.id} className="px-6 py-3 flex items-center gap-4">
+                  <span className="text-xs text-text-muted w-24">{s.statement_date}</span>
+                  <span className="text-sm text-text-primary flex-1">{s.companies?.name || "-"}</span>
+                  <span className="text-xs text-text-muted">{s.statement_number}</span>
+                  <Link
+                    href={`/admin/statements/${s.id}`}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
+                  >
+                    <FileText size={12} /> 보기
+                  </Link>
+                </div>
+              ))
+            }
           </div>
         </div>
       )}
@@ -803,6 +853,13 @@ export default function SalesPage() {
                     key={dateStr}
                     title={`${dateStr} ${isFuture ? "예정" : "판매"} 현황`}
                     onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setFormDate(dateStr);
+                      resetForm();
+                      setFormDate(dateStr);
+                      setShowModal(true);
+                    }}
                     className={`border-b border-r border-border min-h-[90px] p-2 text-left transition-colors relative ${
                       isSelected
                         ? "bg-primary/10 border-primary/30"
@@ -908,6 +965,7 @@ export default function SalesPage() {
                 </h2>
                 <button
                   type="button"
+                  title="닫기"
                   onClick={() => setSelectedDate(null)}
                   className="text-text-muted hover:text-text-primary"
                 >

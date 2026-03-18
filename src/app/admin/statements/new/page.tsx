@@ -22,6 +22,8 @@ function NewStatementForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
+  const logIds = searchParams.get("logIds")?.split(",").filter(Boolean) || [];
+  const presetCompanyId = searchParams.get("companyId") || "";
 
   const supabase = createClient();
 
@@ -84,6 +86,51 @@ function NewStatementForm() {
             .select("*")
             .eq("company_id", o.company_id);
           setCompanyPrices(prices || []);
+        }
+      }
+
+      // 판매 로그 ID 기반 자동 채움
+      if (logIds.length > 0) {
+        const cId = presetCompanyId || "";
+        if (cId) {
+          setCompanyId(cId);
+          const { data: prices } = await db.from("company_prices").select("*").eq("company_id", cId);
+          setCompanyPrices(prices || []);
+        }
+        const { data: logs } = await db
+          .from("inventory_logs")
+          .select("*, products(*)")
+          .in("id", logIds)
+          .order("log_date");
+        if (logs && logs.length > 0) {
+          if (!cId && logs[0]?.company_id) {
+            setCompanyId(logs[0].company_id);
+            const { data: prices } = await db.from("company_prices").select("*").eq("company_id", logs[0].company_id);
+            setCompanyPrices(prices || []);
+          }
+          const productMap = new Map<string, StatementItemDraft>();
+          for (const log of logs) {
+            const key = log.product_id || `manual_${log.reason || "기타"}`;
+            const existing = productMap.get(key);
+            if (existing) {
+              existing.quantity += log.quantity;
+              existing.amount = existing.quantity * existing.unit_price;
+            } else {
+              productMap.set(key, {
+                product_id: log.product_id || null,
+                product_name: log.products?.name || log.reason || "기타",
+                specification: "",
+                unit: log.products?.unit || "식",
+                quantity: log.quantity,
+                unit_price: log.unit_price || 0,
+                amount: log.quantity * (log.unit_price || 0),
+              });
+            }
+          }
+          setItems(Array.from(productMap.values()));
+          // 최신 날짜로 명세서 날짜 설정
+          const lastDate = logs[logs.length - 1]?.log_date;
+          if (lastDate) setStatementDate(lastDate);
         }
       }
 
