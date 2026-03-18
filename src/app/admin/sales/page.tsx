@@ -21,6 +21,7 @@ import {
   List,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
@@ -55,6 +56,7 @@ export default function SalesPage() {
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
   const [orders, setOrders] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [statements, setStatements] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +93,7 @@ export default function SalesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    const [logRes, prodRes, compRes, orderRes] = await Promise.all([
+    const [logRes, prodRes, compRes, orderRes, stmtRes] = await Promise.all([
       db
         .from("inventory_logs")
         .select("*, companies(*), products(*)")
@@ -101,12 +103,14 @@ export default function SalesPage() {
       db.from("products").select("*").eq("is_active", true).order("name"),
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("orders").select("*, companies(name)").order("order_date", { ascending: true }).limit(500),
+      db.from("statements").select("id, company_id, statement_date, companies(name)").order("statement_date", { ascending: false }).limit(300),
     ]);
 
     setLogs(logRes.data || []);
     setProducts(prodRes.data || []);
     setCompanies(compRes.data || []);
     setOrders(orderRes.data || []);
+    setStatements(stmtRes.data || []);
     setLoading(false);
   }
 
@@ -393,10 +397,10 @@ export default function SalesPage() {
 
   // 달력용: 일자별 판매 집계
   const dailySummary = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number; logs: SalesLog[]; companies: string[] }>();
+    const map = new Map<string, { count: number; amount: number; logs: SalesLog[]; companies: string[]; companyIds: string[] }>();
     for (const log of monthLogs) {
       const date = (log.log_date || log.created_at).slice(0, 10);
-      const existing = map.get(date) || { count: 0, amount: 0, logs: [], companies: [] };
+      const existing = map.get(date) || { count: 0, amount: 0, logs: [], companies: [], companyIds: [] };
       existing.count += 1;
       existing.amount += log.quantity * (log.unit_price || 0);
       existing.logs.push(log);
@@ -404,10 +408,27 @@ export default function SalesPage() {
       if (companyName && !existing.companies.includes(companyName)) {
         existing.companies.push(companyName);
       }
+      const companyId = log.company_id;
+      if (companyId && !existing.companyIds.includes(companyId)) {
+        existing.companyIds.push(companyId);
+      }
       map.set(date, existing);
     }
     return map;
   }, [monthLogs]);
+
+  // 이번 달 거래명세서 발행된 company_id Set
+  const monthStatementCompanyIds = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const prefix = `${y}-${String(m).padStart(2, "0")}`;
+    const set = new Set<string>();
+    for (const s of statements) {
+      if (s.statement_date?.startsWith(prefix) && s.company_id) {
+        set.add(s.company_id);
+      }
+    }
+    return set;
+  }, [statements, month]);
 
   // 주문 기반 예정 집계 (미래 날짜용)
   const orderSummary = useMemo(() => {
@@ -588,14 +609,13 @@ export default function SalesPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {s.id !== "__none__" && (
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/admin/statements/new?salesCompanyId=${s.id}&salesFrom=${from}&salesTo=${to}`)}
+                        <Link
+                          href={`/admin/statements/new?salesCompanyId=${s.id}&salesFrom=${from}&salesTo=${to}`}
                           title="거래명세서 생성"
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
                         >
                           <FileText size={12} /> 명세서
-                        </button>
+                        </Link>
                       )}
                     </td>
                   </tr>
@@ -810,8 +830,8 @@ export default function SalesPage() {
                       {day}
                     </span>
 
-                    {/* 실제 판매 현황 (지난날 + 오늘) */}
-                    {(isPast || isToday) && dayData && (
+                    {/* 실제 판매 현황 (모든 날짜 - 과거/오늘/미래 모두) */}
+                    {dayData && (
                       <div className="space-y-0.5">
                         <div className="text-xs font-bold text-accent leading-tight">
                           {formatNumber(dayData.amount)}원
@@ -819,19 +839,24 @@ export default function SalesPage() {
                         <div className="text-[10px] text-text-muted">
                           {dayData.count}건
                         </div>
-                        {dayData.companies.map((name) => (
-                          <div key={name} className="text-[10px] text-primary/80 truncate leading-tight">
-                            {name}
-                          </div>
-                        ))}
+                        {dayData.companies.map((name, ci) => {
+                          const cid = dayData.companyIds[ci];
+                          const hasStmt = cid ? monthStatementCompanyIds.has(cid) : false;
+                          return (
+                            <div key={name} className="text-[10px] text-primary/80 truncate leading-tight flex items-center gap-0.5">
+                              {hasStmt && <span className="text-emerald-400 font-bold">✓</span>}
+                              {name}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
-                    {(isPast || isToday) && !dayData && (
+                    {!dayData && (isPast || isToday) && (
                       <div className="text-[10px] text-text-muted/40 mt-1">-</div>
                     )}
 
-                    {/* 미래 날짜: 주문 예정 내역 */}
-                    {isFuture && orderData && (
+                    {/* 미래 날짜: 실제 판매 없을 때만 주문 예정 내역 표시 */}
+                    {isFuture && !dayData && orderData && (
                       <div className="space-y-0.5">
                         <div className="text-xs font-bold text-sky-400 leading-tight">
                           {formatNumber(orderData.amount)}원
@@ -846,7 +871,7 @@ export default function SalesPage() {
                         ))}
                       </div>
                     )}
-                    {isFuture && !orderData && (
+                    {isFuture && !dayData && !orderData && (
                       <div className="text-[10px] text-slate-500/60 mt-1">예정</div>
                     )}
                   </button>
