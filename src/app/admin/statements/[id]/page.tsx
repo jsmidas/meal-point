@@ -35,7 +35,7 @@ export default function StatementDetailPage() {
           .select("*, companies(*), statement_items(*)")
           .eq("id", id)
           .single(),
-        db.from("company_info").select("*").limit(1).single(),
+        db.from("company_info").select("*").limit(1).maybeSingle(),
       ]);
 
       setStatement(stRes.data as StatementWithItems | null);

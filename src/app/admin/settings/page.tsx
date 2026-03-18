@@ -39,7 +39,7 @@ export default function SettingsPage() {
   async function fetchCompanyInfo() {
     setLoading(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any).from("company_info").select("*").limit(1).single();
+    const { data } = await (supabase as any).from("company_info").select("*").limit(1).maybeSingle();
     if (data) {
       setCompanyInfo(data);
       setForm({

@@ -38,7 +38,7 @@ export default function Header() {
     import("@/lib/supabase/client").then(({ createClient }) => {
       const supabase = createClient();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("company_info").select("logo_image_url").limit(1).single()
+      (supabase as any).from("company_info").select("logo_image_url").limit(1).maybeSingle()
         .then(({ data }: { data: { logo_image_url: string | null } | null }) => {
           if (data?.logo_image_url) setLogoUrl(data.logo_image_url);
         });

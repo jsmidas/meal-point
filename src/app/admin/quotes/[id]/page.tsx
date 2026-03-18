@@ -30,7 +30,7 @@ export default function QuoteDetailPage() {
       const db = supabase as any;
       const [qRes, ciRes] = await Promise.all([
         db.from("quotes").select("*, companies(*), quote_items(*)").eq("id", id).single(),
-        db.from("company_info").select("*").limit(1).single(),
+        db.from("company_info").select("*").limit(1).maybeSingle(),
       ]);
       setQuote(qRes.data as QuoteWithItems | null);
       setCompanyInfo(ciRes.data as CompanyInfo | null);
