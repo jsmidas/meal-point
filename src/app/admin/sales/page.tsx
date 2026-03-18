@@ -17,6 +17,7 @@ import {
   Star,
   PenLine,
   FileText,
+  Edit2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -59,8 +60,9 @@ export default function SalesPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  // 판매 등록 모달
+  // 판매 등록/수정 모달
   const [showModal, setShowModal] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null); // null=신규, string=수정
   const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
   const [formCompanyId, setFormCompanyId] = useState("");
   const [formItems, setFormItems] = useState<SaleItem[]>([newItem()]);
@@ -228,6 +230,50 @@ export default function SalesPage() {
     setFormItems([newItem()]);
     setFormNotes("");
     setCompanyPrices([]);
+    setEditingLogId(null);
+  }
+
+  // 수정 모달 열기
+  async function openEditModal(log: SalesLog) {
+    const isManual = !log.product_id;
+    const prod = log.products;
+    const boxQty = prod?.box_quantity ?? 1;
+
+    setEditingLogId(log.id);
+    setFormDate(log.log_date || log.created_at.slice(0, 10));
+    setFormCompanyId(log.company_id || "");
+    setFormNotes(isManual ? "" : (log.reason || ""));
+
+    // 업체별 단가 로드
+    if (log.company_id) {
+      await loadCompanyPrices(log.company_id);
+    }
+
+    if (isManual) {
+      setFormItems([{
+        key: ++itemKeyCounter,
+        type: "manual",
+        product_id: "",
+        product_name: log.reason || "",
+        unit: "식",
+        quantity: log.quantity,
+        unit_price: log.unit_price,
+        box_quantity: 1,
+      }]);
+    } else {
+      setFormItems([{
+        key: ++itemKeyCounter,
+        type: "product",
+        product_id: log.product_id || "",
+        product_name: prod?.name || "",
+        unit: boxQty > 1 ? "박스" : (prod?.unit || ""),
+        quantity: boxQty > 1 ? Math.round(log.quantity / boxQty) : log.quantity,
+        unit_price: boxQty > 1 ? log.unit_price * boxQty : log.unit_price,
+        box_quantity: boxQty,
+      }]);
+    }
+
+    setShowModal(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -241,11 +287,30 @@ export default function SalesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
+    // 수정 모드: 기존 기록 삭제 후 재등록
+    if (editingLogId) {
+      const oldLog = logs.find((l) => l.id === editingLogId);
+      if (oldLog && oldLog.product_id) {
+        // 기존 재고 복원
+        const { data: inv } = await db
+          .from("inventory")
+          .select("*")
+          .eq("product_id", oldLog.product_id)
+          .maybeSingle();
+        if (inv) {
+          await db.from("inventory")
+            .update({ current_stock: inv.current_stock + oldLog.quantity })
+            .eq("product_id", oldLog.product_id);
+        }
+      }
+      await db.from("inventory_logs").delete().eq("id", editingLogId);
+    }
+
     for (const item of validItems) {
       // 실제 개수: 박스 판매면 박스 수 × 박스당 수량
       const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
 
-      // 판매(출고) 로그 — quantity는 화면에 보이는 수량, reason에 박스 정보 포함
+      // 판매(출고) 로그
       await db.from("inventory_logs").insert({
         product_id: item.type === "product" ? item.product_id : null,
         type: "out",
@@ -496,7 +561,7 @@ export default function SalesPage() {
                   <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">비고</th>
-                  <th className="px-4 py-3 text-center text-text-muted font-medium">삭제</th>
+                  <th className="px-4 py-3 text-center text-text-muted font-medium">관리</th>
                 </tr>
               </thead>
               <tbody>
@@ -548,13 +613,22 @@ export default function SalesPage() {
                         {isManual ? "-" : (log.reason || "-")}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => handleDelete(log)}
-                          title="삭제"
-                          className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => openEditModal(log)}
+                            title="수정"
+                            className="p-1.5 rounded-lg hover:bg-primary/10 text-text-muted hover:text-primary transition-colors"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(log)}
+                            title="삭제"
+                            className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -570,7 +644,7 @@ export default function SalesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-bg-card z-10">
-              <h2 className="text-lg font-bold text-primary">판매 등록</h2>
+              <h2 className="text-lg font-bold text-primary">{editingLogId ? "판매 수정" : "판매 등록"}</h2>
               <button
                 onClick={() => setShowModal(false)}
                 title="닫기"
@@ -797,7 +871,7 @@ export default function SalesPage() {
                   disabled={submitting}
                   className="px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
                 >
-                  {submitting ? "등록 중..." : "판매 등록"}
+                  {submitting ? "처리 중..." : editingLogId ? "수정 저장" : "판매 등록"}
                 </button>
               </div>
             </form>
