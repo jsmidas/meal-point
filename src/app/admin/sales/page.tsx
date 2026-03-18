@@ -370,8 +370,9 @@ export default function SalesPage() {
                   <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">개당 단가</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium hidden md:table-cell">박스 환산</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">비고</th>
                   <th className="px-4 py-3 text-center text-text-muted font-medium">삭제</th>
                 </tr>
@@ -379,6 +380,7 @@ export default function SalesPage() {
               <tbody>
                 {monthLogs.map((log) => {
                   const amount = (log.unit_price || 0) * log.quantity;
+                  const boxQty = log.products?.box_quantity ?? 1;
                   return (
                     <tr
                       key={log.id}
@@ -401,6 +403,9 @@ export default function SalesPage() {
                       </td>
                       <td className="px-4 py-3 text-right text-text-secondary">
                         {amount > 0 ? `${formatNumber(amount)}원` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-text-muted text-xs hidden md:table-cell">
+                        {boxQty > 1 ? `${(log.quantity / boxQty).toFixed(1)}박스` : "-"}
                       </td>
                       <td className="px-4 py-3 text-text-muted text-xs">{log.reason || "-"}</td>
                       <td className="px-4 py-3 text-center">
@@ -450,7 +455,7 @@ export default function SalesPage() {
                   <option value="">상품 선택</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} ({p.unit})
+                      {p.name} ({p.unit}{(p.box_quantity ?? 1) > 1 ? ` · ${p.box_quantity}개/박스` : ""})
                     </option>
                   ))}
                 </select>
@@ -504,14 +509,41 @@ export default function SalesPage() {
                   />
                 </div>
               </div>
-              {form.quantity > 0 && form.unit_price > 0 && (
-                <div className="px-4 py-3 rounded-xl bg-bg-dark border border-border">
-                  <span className="text-sm text-text-muted">판매 금액: </span>
-                  <span className="text-sm font-bold text-accent">
-                    {formatNumber(form.quantity * form.unit_price)}원
-                  </span>
-                </div>
-              )}
+              {form.quantity > 0 && form.unit_price > 0 && (() => {
+                const selectedProduct = products.find((p) => p.id === form.product_id);
+                const boxQty = selectedProduct?.box_quantity ?? 1;
+                const totalAmount = form.quantity * form.unit_price;
+                return (
+                  <div className="px-4 py-3 rounded-xl bg-bg-dark border border-border space-y-1">
+                    <div>
+                      <span className="text-sm text-text-muted">개당 단가: </span>
+                      <span className="text-sm font-bold text-text-primary">
+                        {formatNumber(form.unit_price)}원
+                      </span>
+                      {boxQty > 1 && (
+                        <>
+                          <span className="text-sm text-text-muted ml-2">/ 박스 단가: </span>
+                          <span className="text-sm font-bold text-primary">
+                            {formatNumber(form.unit_price * boxQty)}원
+                          </span>
+                          <span className="text-xs text-text-muted ml-1">({boxQty}개/박스)</span>
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-sm text-text-muted">판매 금액: </span>
+                      <span className="text-sm font-bold text-accent">
+                        {formatNumber(totalAmount)}원
+                      </span>
+                      {boxQty > 1 && form.quantity >= boxQty && (
+                        <span className="text-xs text-text-muted ml-2">
+                          ({(form.quantity / boxQty).toFixed(1)}박스)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="block text-sm text-text-secondary mb-1">판매일</label>
                 <input

@@ -25,6 +25,7 @@ const emptyForm = {
   name: "",
   category: "inner",
   unit: "EA",
+  box_quantity: 1,
   cost_price: 0,
   selling_price: 0,
   description: "",
@@ -39,6 +40,7 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
           name: product.name,
           category: product.category,
           unit: product.unit,
+          box_quantity: product.box_quantity ?? 1,
           cost_price: product.cost_price,
           selling_price: product.selling_price,
           description: product.description || "",
@@ -156,7 +158,21 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">
-                원가 (원)
+                박스당 수량
+              </label>
+              <input
+                type="number"
+                name="box_quantity"
+                value={form.box_quantity}
+                onChange={handleChange}
+                min={1}
+                placeholder="예: 300"
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">
+                개당 원가 (원)
               </label>
               <input
                 type="number"
@@ -169,7 +185,7 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">
-                판매가 (원)
+                개당 판매가 (원)
               </label>
               <input
                 type="number"
@@ -182,19 +198,37 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          {/* Margin indicator */}
-          <div className="px-4 py-2 rounded-xl bg-bg-dark border border-border text-sm">
-            <span className="text-text-secondary">마진율: </span>
-            <span
-              className={`font-semibold ${
-                Number(margin) > 0 ? "text-emerald-400" : "text-red-400"
-              }`}
-            >
-              {margin}%
-            </span>
-            <span className="text-text-muted ml-2">
-              (이익: {(form.selling_price - form.cost_price).toLocaleString()}원)
-            </span>
+          {/* Box price & Margin indicator */}
+          <div className="px-4 py-3 rounded-xl bg-bg-dark border border-border text-sm space-y-1">
+            {form.box_quantity > 1 && (
+              <div>
+                <span className="text-text-secondary">박스 단가: </span>
+                <span className="text-text-primary font-semibold">
+                  원가 {(form.cost_price * form.box_quantity).toLocaleString()}원
+                </span>
+                <span className="text-text-muted mx-1">/</span>
+                <span className="text-primary font-semibold">
+                  판매가 {(form.selling_price * form.box_quantity).toLocaleString()}원
+                </span>
+                <span className="text-text-muted ml-1">
+                  ({form.box_quantity}개/박스)
+                </span>
+              </div>
+            )}
+            <div>
+              <span className="text-text-secondary">마진율: </span>
+              <span
+                className={`font-semibold ${
+                  Number(margin) > 0 ? "text-emerald-400" : "text-red-400"
+                }`}
+              >
+                {margin}%
+              </span>
+              <span className="text-text-muted ml-2">
+                (개당 이익: {(form.selling_price - form.cost_price).toLocaleString()}원
+                {form.box_quantity > 1 && ` / 박스 이익: ${((form.selling_price - form.cost_price) * form.box_quantity).toLocaleString()}원`})
+              </span>
+            </div>
           </div>
 
           <div>

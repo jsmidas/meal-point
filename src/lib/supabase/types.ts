@@ -113,6 +113,7 @@ export type Database = {
           name: string;
           category: string;
           unit: string;
+          box_quantity: number;
           cost_price: number;
           selling_price: number;
           description: string | null;
@@ -125,6 +126,7 @@ export type Database = {
           name: string;
           category: string;
           unit?: string;
+          box_quantity?: number;
           cost_price?: number;
           selling_price?: number;
           description?: string | null;
@@ -135,6 +137,7 @@ export type Database = {
           name?: string;
           category?: string;
           unit?: string;
+          box_quantity?: number;
           cost_price?: number;
           selling_price?: number;
           description?: string | null;

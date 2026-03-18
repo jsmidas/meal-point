@@ -301,6 +301,7 @@ export default function InventoryPage() {
                         <p className="text-text-primary font-medium">{inv.products.name}</p>
                         <p className="text-xs text-text-muted">
                           {inv.products.category} · {inv.products.unit}
+                          {(inv.products.box_quantity ?? 1) > 1 && ` · ${inv.products.box_quantity}개/박스`}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-right text-text-secondary">
@@ -318,6 +319,11 @@ export default function InventoryPage() {
                         }`}
                       >
                         {formatNumber(inv.endingStock)}
+                        {(inv.products.box_quantity ?? 1) > 1 && inv.endingStock > 0 && (
+                          <span className="text-xs text-text-muted font-normal ml-1">
+                            ({(inv.endingStock / inv.products.box_quantity).toFixed(1)}박스)
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-text-secondary">
                         {formatNumber(inv.safety_stock)}
@@ -405,8 +411,9 @@ export default function InventoryPage() {
                   <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
-                  <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">개당 단가</th>
                   <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium hidden md:table-cell">박스 환산</th>
                   <th className="px-4 py-3 text-left text-text-muted font-medium">비고</th>
                 </tr>
               </thead>
@@ -453,6 +460,13 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-4 py-3 text-right text-text-secondary">
                         {amount > 0 ? formatNumber(amount) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-text-muted text-xs hidden md:table-cell">
+                        {(() => {
+                          const prod = products.find((p) => p.id === log.product_id);
+                          const bq = prod?.box_quantity ?? 1;
+                          return bq > 1 ? `${(log.quantity / bq).toFixed(1)}박스` : "-";
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-text-muted text-xs">{log.reason || "-"}</td>
                     </tr>
