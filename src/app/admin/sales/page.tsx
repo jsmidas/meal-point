@@ -11,13 +11,14 @@ import {
   ArrowUpCircle,
   X,
   Trash2,
-  Building2,
   ShoppingCart,
   Receipt,
   Star,
   PenLine,
   FileText,
   Edit2,
+  CalendarDays,
+  List,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -48,6 +49,9 @@ function newManualItem(): SaleItem {
 export default function SalesPage() {
   const supabase = createClient();
   const router = useRouter();
+
+  const [tab, setTab] = useState<"list" | "calendar">("list");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -384,24 +388,86 @@ export default function SalesPage() {
     fetchData();
   }
 
+  // 달력용: 일자별 판매 집계
+  const dailySummary = useMemo(() => {
+    const map = new Map<string, { count: number; amount: number; logs: SalesLog[] }>();
+    for (const log of monthLogs) {
+      const date = (log.log_date || log.created_at).slice(0, 10);
+      const existing = map.get(date) || { count: 0, amount: 0, logs: [] };
+      existing.count += 1;
+      existing.amount += log.quantity * (log.unit_price || 0);
+      existing.logs.push(log);
+      map.set(date, existing);
+    }
+    return map;
+  }, [monthLogs]);
+
+  // 달력 날짜 배열 생성 (일~토 기준)
+  const calendarDays = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const firstDay = new Date(y, m - 1, 1).getDay(); // 0=일
+    const lastDate = new Date(y, m, 0).getDate();
+    const days: (number | null)[] = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let d = 1; d <= lastDate; d++) days.push(d);
+    // 6주 채우기
+    while (days.length % 7 !== 0) days.push(null);
+    return days;
+  }, [month]);
+
+  // 선택된 날짜의 판매 내역
+  const selectedDayLogs = useMemo(() => {
+    if (!selectedDate) return [];
+    return dailySummary.get(selectedDate)?.logs || [];
+  }, [selectedDate, dailySummary]);
+
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-text-primary">판매 관리</h1>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowModal(true);
-          }}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
-        >
-          <Plus size={18} /> 판매 등록
-        </button>
+        <div className="flex items-center gap-3">
+          {/* 탭 */}
+          <div className="flex rounded-xl border border-border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setTab("list")}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+                tab === "list"
+                  ? "bg-primary text-bg-dark"
+                  : "bg-bg-card text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <List size={15} /> 목록
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("calendar")}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+                tab === "calendar"
+                  ? "bg-primary text-bg-dark"
+                  : "bg-bg-card text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <CalendarDays size={15} /> 달력
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setShowModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+          >
+            <Plus size={18} /> 판매 등록
+          </button>
+        </div>
       </div>
 
       {/* 월 네비게이션 */}
       <div className="flex items-center justify-center gap-4 mb-6">
         <button
+          type="button"
           onClick={() => changeMonth(-1)}
           title="이전 월"
           className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-text-primary transition-colors"
@@ -412,6 +478,7 @@ export default function SalesPage() {
           {monthLabel}
         </span>
         <button
+          type="button"
           onClick={() => changeMonth(1)}
           title="다음 월"
           className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-text-primary transition-colors"
@@ -420,6 +487,7 @@ export default function SalesPage() {
         </button>
       </div>
 
+      {tab === "list" && (<>
       {/* 요약 카드 */}
       <div className="grid sm:grid-cols-3 gap-4 mb-8">
         <div className="rounded-xl border border-border bg-bg-card p-5">
@@ -534,6 +602,7 @@ export default function SalesPage() {
             {monthLabel}에 등록된 판매 내역이 없습니다.
           </p>
           <button
+            type="button"
             onClick={() => {
               resetForm();
               setShowModal(true);
@@ -615,6 +684,7 @@ export default function SalesPage() {
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
+                            type="button"
                             onClick={() => openEditModal(log)}
                             title="수정"
                             className="p-1.5 rounded-lg hover:bg-primary/10 text-text-muted hover:text-primary transition-colors"
@@ -622,6 +692,7 @@ export default function SalesPage() {
                             <Edit2 size={14} />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDelete(log)}
                             title="삭제"
                             className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
@@ -639,6 +710,237 @@ export default function SalesPage() {
         </div>
       )}
 
+      </>)}
+
+      {/* 달력 탭 */}
+      {tab === "calendar" && (
+        <div>
+          {/* 달력 그리드 */}
+          <div className="rounded-2xl border border-border bg-bg-card overflow-hidden mb-6">
+            {/* 요일 헤더 */}
+            <div className="grid grid-cols-7 border-b border-border">
+              {["일","월","화","수","목","금","토"].map((d, i) => (
+                <div
+                  key={d}
+                  className={`py-3 text-center text-xs font-semibold ${
+                    i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-text-muted"
+                  }`}
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* 날짜 셀 */}
+            <div className="grid grid-cols-7">
+              {calendarDays.map((day, idx) => {
+                if (day === null) {
+                  return <div key={`empty-${idx}`} className="border-b border-r border-border min-h-[90px] bg-bg-dark/30" />;
+                }
+                const [y, m] = month.split("-").map(Number);
+                const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                const today = new Date().toISOString().slice(0, 10);
+                const isPast = dateStr < today;
+                const isToday = dateStr === today;
+                const isFuture = dateStr > today;
+                const dayData = dailySummary.get(dateStr);
+                const isSelected = selectedDate === dateStr;
+                const col = idx % 7;
+
+                return (
+                  <button
+                    type="button"
+                    key={dateStr}
+                    title={`${dateStr} 판매 현황`}
+                    onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                    className={`border-b border-r border-border min-h-[90px] p-2 text-left transition-colors relative ${
+                      isSelected
+                        ? "bg-primary/10 border-primary/30"
+                        : isToday
+                        ? "bg-accent/5"
+                        : isFuture
+                        ? "bg-bg-dark/20 hover:bg-bg-dark/40"
+                        : "hover:bg-bg-card-hover"
+                    }`}
+                  >
+                    {/* 날짜 번호 */}
+                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold mb-1 ${
+                      isToday
+                        ? "bg-accent text-white"
+                        : col === 0
+                        ? "text-red-400"
+                        : col === 6
+                        ? "text-blue-400"
+                        : isFuture
+                        ? "text-text-muted"
+                        : "text-text-primary"
+                    }`}>
+                      {day}
+                    </span>
+
+                    {/* 실제 판매 현황 (지난날 + 오늘) */}
+                    {(isPast || isToday) && dayData && (
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-accent leading-tight">
+                          {formatNumber(dayData.amount)}원
+                        </div>
+                        <div className="text-[10px] text-text-muted">
+                          {dayData.count}건
+                        </div>
+                      </div>
+                    )}
+                    {(isPast || isToday) && !dayData && (
+                      <div className="text-[10px] text-text-muted/40 mt-1">-</div>
+                    )}
+
+                    {/* 미래 날짜: 예상 표시 */}
+                    {isFuture && (
+                      <div className="text-[10px] text-text-muted/50 mt-1">예정</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 범례 */}
+          <div className="flex items-center gap-4 text-xs text-text-muted mb-6 px-1">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-accent inline-block" />
+              오늘
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-accent/20 inline-block" />
+              판매 있음
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-bg-dark/40 inline-block" />
+              예정 (미래)
+            </span>
+          </div>
+
+          {/* 선택된 날짜 상세 */}
+          {selectedDate && (
+            <div className="rounded-2xl border border-border bg-bg-card overflow-hidden">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <h2 className="text-base font-semibold text-text-primary">
+                  {selectedDate} 판매 현황
+                  {selectedDate > new Date().toISOString().slice(0, 10) && (
+                    <span className="ml-2 text-xs text-yellow-500 font-normal">예정일</span>
+                  )}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(null)}
+                  className="text-text-muted hover:text-text-primary"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {selectedDayLogs.length === 0 ? (
+                <div className="px-6 py-10 text-center text-text-muted text-sm">
+                  {selectedDate > new Date().toISOString().slice(0, 10)
+                    ? "아직 등록된 판매 예정 내역이 없습니다."
+                    : "이 날 등록된 판매 내역이 없습니다."}
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormDate(selectedDate);
+                        resetForm();
+                        setFormDate(selectedDate);
+                        setShowModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
+                    >
+                      <Plus size={14} /> 이 날 판매 등록
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-bg-dark">
+                        <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
+                        <th className="px-4 py-3 text-left text-text-muted font-medium">거래처</th>
+                        <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
+                        <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
+                        <th className="px-4 py-3 text-right text-text-muted font-medium">금액</th>
+                        <th className="px-4 py-3 text-center text-text-muted font-medium">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDayLogs.map((log) => {
+                        const amount = (log.unit_price || 0) * log.quantity;
+                        const isManual = !log.product_id;
+                        return (
+                          <tr key={log.id} className="border-b border-border hover:bg-bg-card-hover transition-colors">
+                            <td className="px-4 py-3 text-text-primary font-medium">
+                              {isManual ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <PenLine size={12} className="text-yellow-500" />
+                                  {log.reason || "(수작업)"}
+                                </span>
+                              ) : (
+                                log.products?.name || "-"
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-text-secondary">{log.companies?.name || "-"}</td>
+                            <td className="px-4 py-3 text-right text-red-400 font-bold">
+                              {formatNumber(log.quantity)}
+                              <span className="text-text-muted font-normal text-xs ml-1">
+                                {log.products?.unit || (isManual ? "식" : "")}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-text-secondary">
+                              {log.unit_price > 0 ? formatNumber(log.unit_price) : "-"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-accent">
+                              {amount > 0 ? `${formatNumber(amount)}원` : "-"}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(log)}
+                                  title="수정"
+                                  className="p-1.5 rounded-lg hover:bg-primary/10 text-text-muted hover:text-primary transition-colors"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(log)}
+                                  title="삭제"
+                                  className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-bg-dark font-bold">
+                        <td colSpan={4} className="px-4 py-3 text-right text-text-muted text-xs">일계</td>
+                        <td className="px-4 py-3 text-right text-accent">
+                          {formatNumber(selectedDayLogs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0))}원
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 판매 등록 모달 */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -646,6 +948,7 @@ export default function SalesPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-bg-card z-10">
               <h2 className="text-lg font-bold text-primary">{editingLogId ? "판매 수정" : "판매 등록"}</h2>
               <button
+                type="button"
                 onClick={() => setShowModal(false)}
                 title="닫기"
                 className="text-text-muted hover:text-text-primary"
