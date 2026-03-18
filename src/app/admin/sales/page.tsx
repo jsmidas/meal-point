@@ -54,6 +54,7 @@ export default function SalesPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
+  const [orders, setOrders] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +91,7 @@ export default function SalesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    const [logRes, prodRes, compRes] = await Promise.all([
+    const [logRes, prodRes, compRes, orderRes] = await Promise.all([
       db
         .from("inventory_logs")
         .select("*, companies(*), products(*)")
@@ -99,11 +100,13 @@ export default function SalesPage() {
         .limit(500),
       db.from("products").select("*").eq("is_active", true).order("name"),
       db.from("companies").select("*").eq("is_active", true).order("name"),
+      db.from("orders").select("*, companies(name)").order("order_date", { ascending: true }).limit(500),
     ]);
 
     setLogs(logRes.data || []);
     setProducts(prodRes.data || []);
     setCompanies(compRes.data || []);
+    setOrders(orderRes.data || []);
     setLoading(false);
   }
 
@@ -405,6 +408,27 @@ export default function SalesPage() {
     }
     return map;
   }, [monthLogs]);
+
+  // 주문 기반 예정 집계 (미래 날짜용)
+  const orderSummary = useMemo(() => {
+    const map = new Map<string, { count: number; amount: number; companies: string[] }>();
+    const [y, m] = month.split("-").map(Number);
+    const start = new Date(y, m - 1, 1);
+    const end = new Date(y, m, 0, 23, 59, 59);
+    for (const order of orders) {
+      const date = order.order_date?.slice(0, 10);
+      if (!date) continue;
+      const d = new Date(date);
+      if (d < start || d > end) continue;
+      const existing = map.get(date) || { count: 0, amount: 0, companies: [] };
+      existing.count += 1;
+      existing.amount += order.total_amount || 0;
+      const name = order.companies?.name;
+      if (name && !existing.companies.includes(name)) existing.companies.push(name);
+      map.set(date, existing);
+    }
+    return map;
+  }, [orders, month]);
 
   // 달력 날짜 배열 생성 (일~토 기준)
   const calendarDays = useMemo(() => {
@@ -748,22 +772,26 @@ export default function SalesPage() {
                 const isToday = dateStr === today;
                 const isFuture = dateStr > today;
                 const dayData = dailySummary.get(dateStr);
+                const orderData = orderSummary.get(dateStr);
                 const isSelected = selectedDate === dateStr;
                 const col = idx % 7;
+                const hasFutureOrder = isFuture && !!orderData;
 
                 return (
                   <button
                     type="button"
                     key={dateStr}
-                    title={`${dateStr} 판매 현황`}
+                    title={`${dateStr} ${isFuture ? "예정" : "판매"} 현황`}
                     onClick={() => setSelectedDate(isSelected ? null : dateStr)}
                     className={`border-b border-r border-border min-h-[90px] p-2 text-left transition-colors relative ${
                       isSelected
                         ? "bg-primary/10 border-primary/30"
                         : isToday
                         ? "bg-accent/5"
+                        : hasFutureOrder
+                        ? "bg-sky-900/30 hover:bg-sky-900/50"
                         : isFuture
-                        ? "bg-bg-dark/20 hover:bg-bg-dark/40"
+                        ? "bg-slate-700/20 hover:bg-slate-700/30"
                         : "hover:bg-bg-card-hover"
                     }`}
                   >
@@ -776,7 +804,7 @@ export default function SalesPage() {
                         : col === 6
                         ? "text-blue-400"
                         : isFuture
-                        ? "text-text-muted"
+                        ? "text-slate-400"
                         : "text-text-primary"
                     }`}>
                       {day}
@@ -802,9 +830,24 @@ export default function SalesPage() {
                       <div className="text-[10px] text-text-muted/40 mt-1">-</div>
                     )}
 
-                    {/* 미래 날짜: 예상 표시 */}
-                    {isFuture && (
-                      <div className="text-[10px] text-text-muted/50 mt-1">예정</div>
+                    {/* 미래 날짜: 주문 예정 내역 */}
+                    {isFuture && orderData && (
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-sky-400 leading-tight">
+                          {formatNumber(orderData.amount)}원
+                        </div>
+                        <div className="text-[10px] text-sky-400/70">
+                          주문 {orderData.count}건
+                        </div>
+                        {orderData.companies.map((name) => (
+                          <div key={name} className="text-[10px] text-sky-300/70 truncate leading-tight">
+                            {name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {isFuture && !orderData && (
+                      <div className="text-[10px] text-slate-500/60 mt-1">예정</div>
                     )}
                   </button>
                 );
