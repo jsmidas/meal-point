@@ -396,20 +396,24 @@ export default function SalesPage() {
 
   // 달력용: 일자별 판매 집계
   const dailySummary = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number; logs: SalesLog[]; companies: string[]; companyIds: string[] }>();
+    const map = new Map<string, { count: number; amount: number; logs: SalesLog[]; companies: string[]; companyIds: string[]; companyAmounts: Map<string, number> }>();
     for (const log of monthLogs) {
       const date = (log.log_date || log.created_at).slice(0, 10);
-      const existing = map.get(date) || { count: 0, amount: 0, logs: [], companies: [], companyIds: [] };
+      const existing = map.get(date) || { count: 0, amount: 0, logs: [] as SalesLog[], companies: [] as string[], companyIds: [] as string[], companyAmounts: new Map<string, number>() };
+      const logAmount = log.quantity * (log.unit_price || 0);
       existing.count += 1;
-      existing.amount += log.quantity * (log.unit_price || 0);
+      existing.amount += logAmount;
       existing.logs.push(log);
       const companyName = log.companies?.name;
+      const companyId = log.company_id;
       if (companyName && !existing.companies.includes(companyName)) {
         existing.companies.push(companyName);
       }
-      const companyId = log.company_id;
       if (companyId && !existing.companyIds.includes(companyId)) {
         existing.companyIds.push(companyId);
+      }
+      if (companyId) {
+        existing.companyAmounts.set(companyId, (existing.companyAmounts.get(companyId) || 0) + logAmount);
       }
       map.set(date, existing);
     }
@@ -903,19 +907,17 @@ export default function SalesPage() {
                     {/* 실제 판매 현황 (모든 날짜 - 과거/오늘/미래 모두) */}
                     {dayData && (
                       <div className="space-y-0.5">
-                        <div className="text-xs font-bold text-accent leading-tight">
-                          {formatNumber(dayData.amount)}원
-                        </div>
-                        <div className="text-[10px] text-text-muted">
-                          {dayData.count}건
-                        </div>
                         {dayData.companies.map((name, ci) => {
                           const cid = dayData.companyIds[ci];
                           const hasStmt = cid ? monthStatementCompanyIds.has(cid) : false;
+                          const companyAmt = cid ? dayData.companyAmounts.get(cid) || 0 : 0;
                           return (
-                            <div key={name} className="text-[10px] text-primary/80 truncate leading-tight flex items-center gap-0.5">
-                              {hasStmt && <span className="text-emerald-400 font-bold">✓</span>}
-                              {name}
+                            <div key={name} className="flex items-center gap-1 text-[10px] leading-tight truncate">
+                              <span className={`flex-shrink-0 w-3 h-3 rounded-sm border ${hasStmt ? "bg-emerald-500 border-emerald-500 text-white" : "border-text-muted/40"} flex items-center justify-center text-[8px]`}>
+                                {hasStmt && "✓"}
+                              </span>
+                              <span className="text-primary/80 truncate">{name}</span>
+                              <span className="text-accent font-bold ml-auto flex-shrink-0">{formatNumber(companyAmt)}</span>
                             </div>
                           );
                         })}
