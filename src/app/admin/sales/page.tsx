@@ -61,6 +61,19 @@ export default function SalesPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
   const [checkedSales, setCheckedSales] = useState<Set<string>>(new Set());
 
+  async function toggleSaleCheck(dateStr: string, companyId: string) {
+    const key = `${dateStr}_${companyId}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    if (checkedSales.has(key)) {
+      await db.from("sale_checks").delete().eq("sale_date", dateStr).eq("company_id", companyId);
+      setCheckedSales((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    } else {
+      await db.from("sale_checks").upsert({ sale_date: dateStr, company_id: companyId, checked: true }, { onConflict: "sale_date,company_id" });
+      setCheckedSales((prev) => { const next = new Set(prev); next.add(key); return next; });
+    }
+  }
+
   // 월 네비게이션
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -93,7 +106,7 @@ export default function SalesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    const [logRes, prodRes, compRes, orderRes, stmtRes] = await Promise.all([
+    const [logRes, prodRes, compRes, orderRes, stmtRes, checkRes] = await Promise.all([
       db
         .from("inventory_logs")
         .select("*, companies(*), products(*)")
@@ -104,6 +117,7 @@ export default function SalesPage() {
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("orders").select("*, companies(name)").order("order_date", { ascending: true }).limit(500),
       db.from("statements").select("id, company_id, statement_date, companies(name)").order("statement_date", { ascending: false }).limit(300),
+      db.from("sale_checks").select("sale_date, company_id"),
     ]);
 
     setLogs(logRes.data || []);
@@ -111,6 +125,12 @@ export default function SalesPage() {
     setCompanies(compRes.data || []);
     setOrders(orderRes.data || []);
     setStatements(stmtRes.data || []);
+    // 체크 상태 복원
+    const checks = new Set<string>();
+    for (const c of (checkRes.data || [])) {
+      checks.add(`${c.sale_date}_${c.company_id}`);
+    }
+    setCheckedSales(checks);
     setLoading(false);
   }
 
@@ -920,12 +940,7 @@ export default function SalesPage() {
                                 aria-checked={isChecked ? "true" : "false"}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCheckedSales((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(checkKey)) next.delete(checkKey);
-                                    else next.add(checkKey);
-                                    return next;
-                                  });
+                                  if (cid) toggleSaleCheck(dateStr, cid);
                                 }}
                                 className={`flex-shrink-0 w-3 h-3 rounded-sm border cursor-pointer flex items-center justify-center text-[8px] ${
                                   isChecked
