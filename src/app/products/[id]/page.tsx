@@ -179,6 +179,31 @@ export default function ProductDetailPage() {
         )}
       </section>
 
+      {/* === Price Section === */}
+      {product.selling_price > 0 && (
+        <section className="py-10 px-6 border-t border-border">
+          <div className="max-w-6xl mx-auto">
+            <div className="inline-flex flex-wrap items-end gap-6 px-8 py-6 rounded-2xl border border-border bg-bg-card">
+              <div>
+                <p className="text-xs text-text-muted mb-1">EA 단가 <span className="text-amber-400">(부가세 별도)</span></p>
+                <p className="text-3xl font-black text-text-primary">
+                  {product.selling_price.toLocaleString()}<span className="text-lg font-medium text-text-secondary ml-1">원</span>
+                </p>
+              </div>
+              {(product.box_quantity ?? 1) > 1 && (
+                <div className="border-l border-border pl-6">
+                  <p className="text-xs text-text-muted mb-1">박스 단가 <span className="text-text-muted">({product.box_quantity}EA/박스)</span></p>
+                  <p className="text-2xl font-bold text-primary">
+                    {(product.selling_price * product.box_quantity).toLocaleString()}<span className="text-sm font-medium text-text-secondary ml-1">원</span>
+                  </p>
+                </div>
+              )}
+              <p className="text-[11px] text-text-muted">※ 거래처별 단가는 별도 협의</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* === Feature Section === */}
       {(page.feature_title || page.feature_description) && (
         <section className="py-20 px-6">
