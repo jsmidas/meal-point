@@ -465,7 +465,7 @@ export default function NewQuotePage() {
             <p className="text-center py-8 text-text-muted">항목을 추가해주세요.</p>
           ) : (
             <div className="space-y-3">
-              <div className="hidden lg:grid gap-3 text-xs text-text-muted px-1" style={{ gridTemplateColumns: "3fr 2fr 1.2fr 1fr 1.5fr 1.5fr 2fr 0.5fr" }}>
+              <div className="hidden lg:grid gap-3 text-xs text-text-muted px-1" style={{ gridTemplateColumns: "2.5fr 2fr 1.2fr 1.3fr 1.5fr 1.5fr 2fr 0.5fr" }}>
                 <div>품목</div>
                 <div>규격</div>
                 <div>단위</div>
@@ -476,7 +476,7 @@ export default function NewQuotePage() {
                 <div />
               </div>
               {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-1 lg:gap-3 items-center rounded-xl border border-border p-3" style={{ gridTemplateColumns: "3fr 2fr 1.2fr 1fr 1.5fr 1.5fr 2fr 0.5fr" }}>
+                <div key={i} className="grid grid-cols-1 lg:gap-3 items-center rounded-xl border border-border p-3" style={{ gridTemplateColumns: "2.5fr 2fr 1.2fr 1.3fr 1.5fr 1.5fr 2fr 0.5fr" }}>
                   <div>
                     <select value={item.product_id || ""} onChange={(e) => updateItem(i, "product_id", e.target.value || null)} title="품목 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
                       <option value="">직접 입력</option>
