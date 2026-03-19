@@ -584,6 +584,22 @@ export default function SalesPage() {
         </button>
       </div>
 
+      {/* 업체별 당월 누계 통계 */}
+      {!loading && customerSummary.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <div className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 min-w-[100px]">
+            <div className="text-[11px] text-primary font-medium truncate">전체 합계</div>
+            <div className="text-sm font-bold text-primary">{formatNumber(monthTotal.totalAmount)}원</div>
+          </div>
+          {customerSummary.map((c) => (
+            <div key={c.id} className="px-3 py-2 rounded-lg bg-bg-card border border-border min-w-[100px]">
+              <div className="text-[11px] text-text-muted font-medium truncate">{c.name}</div>
+              <div className="text-sm font-bold text-text-primary">{formatNumber(c.amount)}원</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {tab === "list" && (<>
       {/* 요약 카드 */}
       <div className="grid sm:grid-cols-3 gap-4 mb-8">
