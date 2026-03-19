@@ -144,8 +144,16 @@ export default function NewQuotePage() {
         const p = products.find((pr) => pr.id === value);
         if (p) {
           item.product_name = p.name;
-          item.unit = p.unit;
-          item.unit_price = getProductPrice(p);
+          const eaPrice = getProductPrice(p);
+          const boxQty = p.box_quantity || 1;
+          if (boxQty > 1) {
+            item.unit = "박스";
+            item.unit_price = eaPrice * boxQty;
+            item.specification = `${boxQty}EA/박스, @${formatNumber(eaPrice)}원`;
+          } else {
+            item.unit = p.unit || "EA";
+            item.unit_price = eaPrice;
+          }
         }
       }
       item.amount = item.quantity * item.unit_price;
