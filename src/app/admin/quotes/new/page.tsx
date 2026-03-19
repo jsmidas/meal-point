@@ -16,6 +16,8 @@ interface QuoteItemDraft {
   quantity: number;
   unit_price: number;
   amount: number;
+  ea_price: number;
+  box_qty: number;
 }
 
 export default function NewQuotePage() {
@@ -115,14 +117,17 @@ export default function NewQuotePage() {
           const eaPrice = getProductPrice(p);
           const boxQty = p.box_quantity || 1;
           if (boxQty > 1) {
+            const boxPrice = eaPrice * boxQty;
             return {
               product_id: item.product_id || null,
               product_name: item.product_name,
-              specification: `${boxQty}EA/박스, @${formatNumber(eaPrice)}원`,
+              specification: `${boxQty}EA/박스`,
               unit: "박스",
               quantity: item.quantity,
-              unit_price: eaPrice * boxQty,
-              amount: item.quantity * eaPrice * boxQty,
+              unit_price: boxPrice,
+              amount: item.quantity * boxPrice,
+              ea_price: eaPrice,
+              box_qty: boxQty,
             };
           }
           return {
@@ -133,6 +138,8 @@ export default function NewQuotePage() {
             quantity: item.quantity,
             unit_price: eaPrice,
             amount: item.quantity * eaPrice,
+            ea_price: eaPrice,
+            box_qty: 1,
           };
         }
         return {
@@ -143,6 +150,8 @@ export default function NewQuotePage() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           amount: item.amount,
+          ea_price: item.unit_price,
+          box_qty: 1,
         };
       }),
     );
@@ -160,6 +169,8 @@ export default function NewQuotePage() {
       quantity: 1,
       unit_price: 0,
       amount: 0,
+      ea_price: 0,
+      box_qty: 1,
     }]);
   }
 
@@ -173,14 +184,33 @@ export default function NewQuotePage() {
           item.product_name = p.name;
           const eaPrice = getProductPrice(p);
           const boxQty = p.box_quantity || 1;
+          item.ea_price = eaPrice;
+          item.box_qty = boxQty;
           if (boxQty > 1) {
             item.unit = "박스";
             item.unit_price = eaPrice * boxQty;
-            item.specification = `${boxQty}EA/박스, @${formatNumber(eaPrice)}원`;
+            item.specification = `${boxQty}EA/박스`;
           } else {
             item.unit = p.unit || "EA";
             item.unit_price = eaPrice;
           }
+        }
+      }
+      // EA단가 변경 시 박스 단위면 unit_price 자동 계산
+      if (field === "ea_price") {
+        item.ea_price = value as number;
+        if (item.unit === "박스" && item.box_qty > 1) {
+          item.unit_price = (value as number) * item.box_qty;
+        } else {
+          item.unit_price = value as number;
+        }
+      }
+      // 단위 변경 시 박스↔EA 전환
+      if (field === "unit") {
+        if (value === "박스" && item.box_qty > 1) {
+          item.unit_price = item.ea_price * item.box_qty;
+        } else {
+          item.unit_price = item.ea_price;
         }
       }
       item.amount = item.quantity * item.unit_price;
@@ -435,17 +465,18 @@ export default function NewQuotePage() {
             <p className="text-center py-8 text-text-muted">항목을 추가해주세요.</p>
           ) : (
             <div className="space-y-3">
-              <div className="hidden lg:grid gap-3 text-xs text-text-muted px-1" style={{ gridTemplateColumns: "3fr 2.5fr 1.2fr 1.2fr 2fr 2fr 0.5fr" }}>
+              <div className="hidden lg:grid gap-3 text-xs text-text-muted px-1" style={{ gridTemplateColumns: "3fr 2fr 1.2fr 1fr 1.5fr 1.5fr 2fr 0.5fr" }}>
                 <div>품목</div>
                 <div>규격</div>
                 <div>단위</div>
                 <div>수량</div>
-                <div>단가</div>
+                <div>단가(EA)</div>
+                <div className="text-right">박스단가</div>
                 <div className="text-right">금액</div>
                 <div />
               </div>
               {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-1 lg:gap-3 items-center rounded-xl border border-border p-3" style={{ gridTemplateColumns: "3fr 2.5fr 1.2fr 1.2fr 2fr 2fr 0.5fr" }}>
+                <div key={i} className="grid grid-cols-1 lg:gap-3 items-center rounded-xl border border-border p-3" style={{ gridTemplateColumns: "3fr 2fr 1.2fr 1fr 1.5fr 1.5fr 2fr 0.5fr" }}>
                   <div>
                     <select value={item.product_id || ""} onChange={(e) => updateItem(i, "product_id", e.target.value || null)} title="품목 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
                       <option value="">직접 입력</option>
@@ -481,7 +512,14 @@ export default function NewQuotePage() {
                     <input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(i, "quantity", Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
                   <div>
-                    <input type="text" inputMode="numeric" value={item.unit_price ? formatNumber(item.unit_price) : ""} onChange={(e) => { const num = Number(e.target.value.replace(/,/g, "")); if (!isNaN(num)) updateItem(i, "unit_price", num); }} placeholder="0" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary" />
+                    <input type="text" inputMode="numeric" value={item.ea_price ? formatNumber(item.ea_price) : ""} onChange={(e) => { const num = Number(e.target.value.replace(/,/g, "")); if (!isNaN(num)) updateItem(i, "ea_price", num); }} placeholder="0" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary" />
+                  </div>
+                  <div className="text-right text-sm">
+                    {item.unit === "박스" && item.box_qty > 1 ? (
+                      <span className="text-amber-400 font-medium">{formatNumber(item.unit_price)}원</span>
+                    ) : (
+                      <span className="text-text-muted">-</span>
+                    )}
                   </div>
                   <div className="text-right text-text-primary font-medium">{formatNumber(item.amount)}원</div>
                   <div className="text-right">
