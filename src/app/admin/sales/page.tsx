@@ -59,6 +59,7 @@ export default function SalesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
+  const [checkedSales, setCheckedSales] = useState<Set<string>>(new Set());
 
   // 월 네비게이션
   const [month, setMonth] = useState(() => {
@@ -910,9 +911,30 @@ export default function SalesPage() {
                         {dayData.companies.map((name, ci) => {
                           const cid = dayData.companyIds[ci];
                           const companyAmt = cid ? dayData.companyAmounts.get(cid) || 0 : 0;
+                          const checkKey = `${dateStr}_${cid}`;
+                          const isChecked = checkedSales.has(checkKey);
                           return (
                             <div key={name} className="flex items-center gap-0.5 text-[10px] leading-tight">
-                              <span className="flex-shrink-0 w-3 h-3 rounded-sm border border-text-muted/40 flex items-center justify-center text-[8px]" />
+                              <span
+                                role="checkbox"
+                                aria-checked={isChecked ? "true" : "false"}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCheckedSales((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(checkKey)) next.delete(checkKey);
+                                    else next.add(checkKey);
+                                    return next;
+                                  });
+                                }}
+                                className={`flex-shrink-0 w-3 h-3 rounded-sm border cursor-pointer flex items-center justify-center text-[8px] ${
+                                  isChecked
+                                    ? "bg-emerald-500 border-emerald-500 text-white"
+                                    : "border-text-muted/40 hover:border-text-muted"
+                                }`}
+                              >
+                                {isChecked && "✓"}
+                              </span>
                               <span className="text-primary/80 truncate">{name}</span>
                               <span className="text-accent font-bold ml-auto flex-shrink-0">{formatNumber(companyAmt)}</span>
                             </div>
