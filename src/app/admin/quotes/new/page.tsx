@@ -106,18 +106,45 @@ export default function NewQuotePage() {
     setLoadingPast(false);
   }
 
-  // 이전 견적서에서 항목 복사
+  // 이전 견적서에서 항목 복사 (box_quantity 반영)
   function importFromQuote(q: QuoteWithItems) {
     setItems(
-      q.quote_items.map((item) => ({
-        product_id: item.product_id || null,
-        product_name: item.product_name,
-        specification: item.specification || "",
-        unit: item.unit,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        amount: item.amount,
-      })),
+      q.quote_items.map((item) => {
+        const p = item.product_id ? products.find((pr) => pr.id === item.product_id) : null;
+        if (p) {
+          const eaPrice = getProductPrice(p);
+          const boxQty = p.box_quantity || 1;
+          if (boxQty > 1) {
+            return {
+              product_id: item.product_id || null,
+              product_name: item.product_name,
+              specification: `${boxQty}EA/박스, @${formatNumber(eaPrice)}원`,
+              unit: "박스",
+              quantity: item.quantity,
+              unit_price: eaPrice * boxQty,
+              amount: item.quantity * eaPrice * boxQty,
+            };
+          }
+          return {
+            product_id: item.product_id || null,
+            product_name: item.product_name,
+            specification: item.specification || "",
+            unit: p.unit || "EA",
+            quantity: item.quantity,
+            unit_price: eaPrice,
+            amount: item.quantity * eaPrice,
+          };
+        }
+        return {
+          product_id: item.product_id || null,
+          product_name: item.product_name,
+          specification: item.specification || "",
+          unit: item.unit,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          amount: item.amount,
+        };
+      }),
     );
     setShippingFee(q.shipping_fee || 0);
     if (q.notes) setNotes(q.notes);
