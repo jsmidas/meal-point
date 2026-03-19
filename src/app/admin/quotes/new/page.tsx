@@ -467,13 +467,21 @@ export default function NewQuotePage() {
                     <input type="text" placeholder="규격" value={item.specification} onChange={(e) => updateItem(i, "specification", e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
                   <div className="lg:col-span-1">
-                    <input type="text" value={item.unit} onChange={(e) => updateItem(i, "unit", e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+                    <select value={item.unit} onChange={(e) => updateItem(i, "unit", e.target.value)} title="단위 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
+                      <option value="EA">EA</option>
+                      <option value="박스">박스</option>
+                      <option value="세트">세트</option>
+                      <option value="팩">팩</option>
+                      <option value="롤">롤</option>
+                      <option value="장">장</option>
+                      <option value="개">개</option>
+                    </select>
                   </div>
                   <div className="lg:col-span-1">
                     <input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(i, "quantity", Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
                   <div className="lg:col-span-2">
-                    <input type="number" min={0} value={item.unit_price} onChange={(e) => updateItem(i, "unit_price", Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+                    <input type="number" min={0} value={item.unit_price || ""} onChange={(e) => updateItem(i, "unit_price", Number(e.target.value))} placeholder="0" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
                   <div className="lg:col-span-2 text-right text-text-primary font-medium">{formatNumber(item.amount)}원</div>
                   <div className="lg:col-span-1 text-right">
