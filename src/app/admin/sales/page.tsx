@@ -877,7 +877,7 @@ export default function SalesPage() {
                       setFormDate(dateStr);
                       setShowModal(true);
                     }}
-                    className={`border-b border-r border-border min-h-[90px] px-1.5 pt-0.5 pb-1 text-left transition-colors relative ${
+                    className={`border-b border-r border-border min-h-[90px] px-1 pt-0 pb-0.5 text-left transition-colors relative align-top ${
                       isSelected
                         ? "bg-primary/10 border-primary/30"
                         : isToday
@@ -890,7 +890,7 @@ export default function SalesPage() {
                     }`}
                   >
                     {/* 날짜 번호 */}
-                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold ${
+                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold leading-none ${
                       isToday
                         ? "bg-accent text-white"
                         : col === 0
