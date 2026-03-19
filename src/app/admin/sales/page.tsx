@@ -877,7 +877,7 @@ export default function SalesPage() {
                       setFormDate(dateStr);
                       setShowModal(true);
                     }}
-                    className={`border-b border-r border-border min-h-[90px] p-2 text-left transition-colors relative ${
+                    className={`border-b border-r border-border min-h-[90px] px-1.5 pt-0.5 pb-1 text-left transition-colors relative ${
                       isSelected
                         ? "bg-primary/10 border-primary/30"
                         : isToday
@@ -890,7 +890,7 @@ export default function SalesPage() {
                     }`}
                   >
                     {/* 날짜 번호 */}
-                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold mb-1 ${
+                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold ${
                       isToday
                         ? "bg-accent text-white"
                         : col === 0
@@ -906,16 +906,13 @@ export default function SalesPage() {
 
                     {/* 실제 판매 현황 (모든 날짜 - 과거/오늘/미래 모두) */}
                     {dayData && (
-                      <div className="space-y-0.5">
+                      <div className="space-y-px">
                         {dayData.companies.map((name, ci) => {
                           const cid = dayData.companyIds[ci];
-                          const hasStmt = cid ? monthStatementCompanyIds.has(cid) : false;
                           const companyAmt = cid ? dayData.companyAmounts.get(cid) || 0 : 0;
                           return (
-                            <div key={name} className="flex items-center gap-1 text-[10px] leading-tight truncate">
-                              <span className={`flex-shrink-0 w-3 h-3 rounded-sm border ${hasStmt ? "bg-emerald-500 border-emerald-500 text-white" : "border-text-muted/40"} flex items-center justify-center text-[8px]`}>
-                                {hasStmt && "✓"}
-                              </span>
+                            <div key={name} className="flex items-center gap-0.5 text-[10px] leading-tight">
+                              <span className="flex-shrink-0 w-3 h-3 rounded-sm border border-text-muted/40 flex items-center justify-center text-[8px]" />
                               <span className="text-primary/80 truncate">{name}</span>
                               <span className="text-accent font-bold ml-auto flex-shrink-0">{formatNumber(companyAmt)}</span>
                             </div>
