@@ -435,18 +435,18 @@ export default function NewQuotePage() {
             <p className="text-center py-8 text-text-muted">항목을 추가해주세요.</p>
           ) : (
             <div className="space-y-3">
-              <div className="hidden lg:grid grid-cols-12 gap-3 text-xs text-text-muted px-1">
-                <div className="col-span-3">품목</div>
-                <div className="col-span-2">규격</div>
-                <div className="col-span-1">단위</div>
-                <div className="col-span-1">수량</div>
-                <div className="col-span-2">단가</div>
-                <div className="col-span-2 text-right">금액</div>
-                <div className="col-span-1" />
+              <div className="hidden lg:grid gap-3 text-xs text-text-muted px-1" style={{ gridTemplateColumns: "3fr 2.5fr 1.2fr 1.2fr 2fr 2fr 0.5fr" }}>
+                <div>품목</div>
+                <div>규격</div>
+                <div>단위</div>
+                <div>수량</div>
+                <div>단가</div>
+                <div className="text-right">금액</div>
+                <div />
               </div>
               {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center rounded-xl border border-border p-3">
-                  <div className="lg:col-span-3">
+                <div key={i} className="grid grid-cols-1 lg:gap-3 items-center rounded-xl border border-border p-3" style={{ gridTemplateColumns: "3fr 2.5fr 1.2fr 1.2fr 2fr 2fr 0.5fr" }}>
+                  <div>
                     <select value={item.product_id || ""} onChange={(e) => updateItem(i, "product_id", e.target.value || null)} title="품목 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
                       <option value="">직접 입력</option>
                       {products.map((p) => {
@@ -463,10 +463,10 @@ export default function NewQuotePage() {
                       <input type="text" placeholder="품목명 직접 입력" value={item.product_name} onChange={(e) => updateItem(i, "product_name", e.target.value)} className="w-full mt-2 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" required />
                     )}
                   </div>
-                  <div className="lg:col-span-2">
+                  <div>
                     <input type="text" placeholder="규격" value={item.specification} onChange={(e) => updateItem(i, "specification", e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
-                  <div className="lg:col-span-1">
+                  <div>
                     <select value={item.unit} onChange={(e) => updateItem(i, "unit", e.target.value)} title="단위 선택" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary">
                       <option value="EA">EA</option>
                       <option value="박스">박스</option>
@@ -477,14 +477,14 @@ export default function NewQuotePage() {
                       <option value="개">개</option>
                     </select>
                   </div>
-                  <div className="lg:col-span-1">
+                  <div>
                     <input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(i, "quantity", Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                   </div>
-                  <div className="lg:col-span-2">
-                    <input type="number" min={0} value={item.unit_price || ""} onChange={(e) => updateItem(i, "unit_price", Number(e.target.value))} placeholder="0" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+                  <div>
+                    <input type="text" inputMode="numeric" value={item.unit_price ? formatNumber(item.unit_price) : ""} onChange={(e) => { const num = Number(e.target.value.replace(/,/g, "")); if (!isNaN(num)) updateItem(i, "unit_price", num); }} placeholder="0" className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary" />
                   </div>
-                  <div className="lg:col-span-2 text-right text-text-primary font-medium">{formatNumber(item.amount)}원</div>
-                  <div className="lg:col-span-1 text-right">
+                  <div className="text-right text-text-primary font-medium">{formatNumber(item.amount)}원</div>
+                  <div className="text-right">
                     <button type="button" onClick={() => removeItem(i)} className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors">
                       <Trash2 size={16} />
                     </button>
