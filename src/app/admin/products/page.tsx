@@ -143,7 +143,10 @@ export default function ProductsPage() {
                   박스당 수량
                 </th>
                 <th className="text-right px-4 py-3 text-text-secondary font-medium hidden md:table-cell">
-                  개당 원가
+                  EA 원가
+                </th>
+                <th className="text-right px-4 py-3 text-text-secondary font-medium">
+                  EA 판매가
                 </th>
                 <th className="text-right px-4 py-3 text-text-secondary font-medium">
                   박스 단가
@@ -180,13 +183,16 @@ export default function ProductsPage() {
                   <td className="px-4 py-3 text-text-secondary text-right hidden md:table-cell">
                     {(product.box_quantity ?? 1) > 1 ? `${product.box_quantity}개` : '-'}
                   </td>
-                  <td className="px-4 py-3 text-text-secondary text-right hidden md:table-cell">
+                  <td className="px-4 py-3 text-text-muted text-right hidden md:table-cell">
                     {product.cost_price.toLocaleString()}원
                   </td>
                   <td className="px-4 py-3 text-text-primary text-right font-medium">
+                    {product.selling_price.toLocaleString()}원
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium">
                     {(product.box_quantity ?? 1) > 1
-                      ? `${(product.selling_price * product.box_quantity).toLocaleString()}원`
-                      : `${product.selling_price.toLocaleString()}원`}
+                      ? <span className="text-amber-400">{(product.selling_price * product.box_quantity).toLocaleString()}원</span>
+                      : <span className="text-text-muted">-</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span
