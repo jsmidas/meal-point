@@ -149,7 +149,7 @@ export default function ProductsPage() {
                   EA 판매가
                 </th>
                 <th className="text-right px-4 py-3 text-text-secondary font-medium">
-                  박스 단가
+                  박스 판매가
                 </th>
                 <th className="text-left px-4 py-3 text-text-secondary font-medium">
                   상태
