@@ -271,13 +271,20 @@ function NewStatementForm() {
       const copy = [...prev];
       const item = { ...copy[index], [field]: value };
 
-      // 상품 선택 시 자동 채움
+      // 상품 선택 시 자동 채움 (box_quantity 반영)
       if (field === "product_id" && value) {
         const p = products.find((pr) => pr.id === value);
         if (p) {
           item.product_name = p.name;
-          item.unit = p.unit;
-          item.unit_price = getProductPrice(p);
+          const eaPrice = getProductPrice(p);
+          const boxQty = p.box_quantity || 1;
+          if (boxQty > 1) {
+            item.unit = "박스";
+            item.unit_price = eaPrice * boxQty;
+          } else {
+            item.unit = p.unit || "EA";
+            item.unit_price = eaPrice;
+          }
         }
       }
 
