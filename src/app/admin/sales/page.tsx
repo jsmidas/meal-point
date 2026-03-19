@@ -878,7 +878,7 @@ export default function SalesPage() {
                       setFormDate(dateStr);
                       setShowModal(true);
                     }}
-                    className={`border-b border-r border-border min-h-[90px] px-1 pt-0 pb-0.5 text-left transition-colors relative align-top ${
+                    className={`flex flex-col items-start justify-start border-b border-r border-border min-h-[90px] px-1 pt-0.5 pb-0.5 text-left transition-colors relative ${
                       isSelected
                         ? "bg-primary/10 border-primary/30"
                         : isToday
