@@ -29,6 +29,17 @@ body {
   background-clip: text;
 }
 
+/* 숫자 input 스피너 숨김 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* 인쇄 스타일 */
 @media print {
   @page {
