@@ -119,7 +119,7 @@ function NewStatementForm() {
               productMap.set(key, {
                 product_id: log.product_id || null,
                 product_name: log.products?.name || log.reason || "기타",
-                specification: "",
+                specification: log.products?.box_quantity > 1 ? `1박스/${log.products.box_quantity}${log.products.unit || "EA"}` : "",
                 unit: log.products?.unit || "식",
                 quantity: log.quantity,
                 unit_price: log.unit_price || 0,
@@ -168,7 +168,7 @@ function NewStatementForm() {
               productMap.set(key, {
                 product_id: log.product_id || null,
                 product_name: log.products?.name || log.reason || "기타",
-                specification: "",
+                specification: log.products?.box_quantity > 1 ? `1박스/${log.products.box_quantity}${log.products.unit || "EA"}` : "",
                 unit: log.products?.unit || "식",
                 quantity: log.quantity,
                 unit_price: log.unit_price || 0,
@@ -281,9 +281,11 @@ function NewStatementForm() {
           if (boxQty > 1) {
             item.unit = "박스";
             item.unit_price = eaPrice * boxQty;
+            item.specification = `1박스/${boxQty}${p.unit || "EA"}`;
           } else {
             item.unit = p.unit || "EA";
             item.unit_price = eaPrice;
+            item.specification = "";
           }
         }
       }
