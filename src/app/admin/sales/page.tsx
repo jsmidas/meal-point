@@ -1063,6 +1063,7 @@ export default function SalesPage() {
                   </div>
                 </div>
               ) : (
+                <>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1139,6 +1140,33 @@ export default function SalesPage() {
                     </tfoot>
                   </table>
                 </div>
+
+                {/* 업체별 거래명세서 발행 버튼 */}
+                {(() => {
+                  const companyGroups = new Map<string, { name: string; logIds: string[] }>();
+                  for (const log of selectedDayLogs) {
+                    if (!log.company_id) continue;
+                    const g = companyGroups.get(log.company_id) || { name: log.companies?.name || "-", logIds: [] };
+                    g.logIds.push(log.id);
+                    companyGroups.set(log.company_id, g);
+                  }
+                  if (companyGroups.size === 0) return null;
+                  return (
+                    <div className="px-6 py-3 border-t border-border flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-text-muted mr-1">거래명세서 발행:</span>
+                      {Array.from(companyGroups.entries()).map(([cid, g]) => (
+                        <Link
+                          key={cid}
+                          href={`/admin/statements/new?logIds=${g.logIds.join(",")}&companyId=${cid}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                        >
+                          <FileText size={12} /> {g.name}
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })()}
+                </>
               )}
             </div>
           )}
