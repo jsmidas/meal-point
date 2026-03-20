@@ -81,8 +81,7 @@ const s = StyleSheet.create({
   // 합계 금액 박스
   totalBox: {
     border: `1.5px solid ${GREEN_BORDER}`,
-    borderRadius: 6,
-    padding: "14 20",
+        padding: "14 20",
     marginBottom: 16,
     alignItems: "center",
     backgroundColor: GREEN_BG,
@@ -116,8 +115,7 @@ const s = StyleSheet.create({
   infoBox: {
     flex: 1,
     border: `1px solid ${GRAY_BORDER}`,
-    borderRadius: 4,
-    overflow: "hidden",
+        overflow: "hidden",
   },
   infoTitleSupplier: {
     fontWeight: 700,
@@ -158,8 +156,7 @@ const s = StyleSheet.create({
   tableHeader: {
     flexDirection: "row",
     backgroundColor: GREEN,
-    borderRadius: 0,
-  },
+      },
   tableHeaderCell: {
     color: "white",
     fontWeight: 700,
@@ -224,8 +221,7 @@ const s = StyleSheet.create({
   // 비고
   notes: {
     border: `1px solid ${GRAY_BORDER}`,
-    borderRadius: 4,
-    padding: "6 8",
+        padding: "6 8",
     fontSize: 8,
     marginTop: 12,
     color: MUTED,
@@ -242,8 +238,7 @@ const s = StyleSheet.create({
   bankInfo: {
     marginTop: 12,
     border: `1px solid ${GREEN_BORDER}`,
-    borderRadius: 4,
-    padding: "6 10",
+        padding: "6 10",
     backgroundColor: GREEN_BG,
     fontSize: 8,
     color: DARK,
