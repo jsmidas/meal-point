@@ -111,19 +111,23 @@ function NewStatementForm() {
           const productMap = new Map<string, StatementItemDraft>();
           for (const log of logs) {
             const key = log.product_id || `manual_${log.reason || "기타"}`;
+            const boxQty = log.products?.box_quantity || 1;
+            const isBox = boxQty > 1;
+            const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
+            const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
             const existing = productMap.get(key);
             if (existing) {
-              existing.quantity += log.quantity;
+              existing.quantity += displayQty;
               existing.amount = existing.quantity * existing.unit_price;
             } else {
               productMap.set(key, {
                 product_id: log.product_id || null,
                 product_name: log.products?.name || log.reason || "기타",
-                specification: log.products?.box_quantity > 1 ? `1박스/${log.products.box_quantity}${log.products.unit || "EA"}` : "",
-                unit: log.products?.unit || "식",
-                quantity: log.quantity,
-                unit_price: log.unit_price || 0,
-                amount: log.quantity * (log.unit_price || 0),
+                specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
+                unit: isBox ? "박스" : (log.products?.unit || "식"),
+                quantity: displayQty,
+                unit_price: displayPrice,
+                amount: displayQty * displayPrice,
               });
             }
           }
@@ -160,19 +164,23 @@ function NewStatementForm() {
           const productMap = new Map<string, StatementItemDraft>();
           for (const log of logs) {
             const key = log.product_id || `manual_${log.reason || "기타"}`;
+            const boxQty = log.products?.box_quantity || 1;
+            const isBox = boxQty > 1;
+            const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
+            const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
             const existing = productMap.get(key);
             if (existing) {
-              existing.quantity += log.quantity;
+              existing.quantity += displayQty;
               existing.amount = existing.quantity * existing.unit_price;
             } else {
               productMap.set(key, {
                 product_id: log.product_id || null,
                 product_name: log.products?.name || log.reason || "기타",
-                specification: log.products?.box_quantity > 1 ? `1박스/${log.products.box_quantity}${log.products.unit || "EA"}` : "",
-                unit: log.products?.unit || "식",
-                quantity: log.quantity,
-                unit_price: log.unit_price || 0,
-                amount: log.quantity * (log.unit_price || 0),
+                specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
+                unit: isBox ? "박스" : (log.products?.unit || "식"),
+                quantity: displayQty,
+                unit_price: displayPrice,
+                amount: displayQty * displayPrice,
               });
             }
           }
@@ -225,25 +233,29 @@ function NewStatementForm() {
     setSalesLogs(data || []);
   }
 
-  // 판매 데이터 → 명세서 항목으로 변환 (상품별 집계)
+  // 판매 데이터 → 명세서 항목으로 변환 (상품별 집계, 박스 단위 변환)
   function importSalesData() {
     if (salesLogs.length === 0) return;
     const productMap = new Map<string, StatementItemDraft>();
     for (const log of salesLogs) {
       const key = log.product_id || `manual_${log.reason || "기타"}`;
+      const boxQty = log.products?.box_quantity || 1;
+      const isBox = boxQty > 1;
+      const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
+      const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
       const existing = productMap.get(key);
       if (existing) {
-        existing.quantity += log.quantity;
+        existing.quantity += displayQty;
         existing.amount = existing.quantity * existing.unit_price;
       } else {
         productMap.set(key, {
           product_id: log.product_id || null,
           product_name: log.products?.name || log.reason || "기타",
-          specification: "",
-          unit: log.products?.unit || "식",
-          quantity: log.quantity,
-          unit_price: log.unit_price || 0,
-          amount: log.quantity * (log.unit_price || 0),
+          specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
+          unit: isBox ? "박스" : (log.products?.unit || "식"),
+          quantity: displayQty,
+          unit_price: displayPrice,
+          amount: displayQty * displayPrice,
         });
       }
     }
