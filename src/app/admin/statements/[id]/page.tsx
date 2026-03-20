@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { StatementWithItems, CompanyInfo, StatementSendLog } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
-import { ArrowLeft, Trash2, Printer, Send, Clock, Plus } from "lucide-react";
+import { ArrowLeft, Trash2, Printer, Send, Clock, Plus, Edit2, Save, X } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
@@ -22,6 +22,16 @@ const SEND_METHODS: Record<string, string> = {
   fax: "팩스",
 };
 
+interface EditItem {
+  id: string;
+  product_name: string;
+  specification: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+}
+
 export default function StatementDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -36,30 +46,127 @@ export default function StatementDetailPage() {
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendNotes, setSendNotes] = useState("");
 
+  // 수정 모드
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<EditItem[]>([]);
+  const [editShippingFee, setEditShippingFee] = useState(0);
+  const [editNotes, setEditNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+
+    const [stRes, ciRes, logRes] = await Promise.all([
+      db
+        .from("statements")
+        .select("*, companies(*), statement_items(*)")
+        .eq("id", id)
+        .single(),
+      db.from("company_info").select("*").limit(1).maybeSingle(),
+      db.from("statement_send_logs").select("*").eq("statement_id", id).order("sent_at", { ascending: false }),
+    ]);
+
+    setStatement(stRes.data as StatementWithItems | null);
+    setCompanyInfo(ciRes.data as CompanyInfo | null);
+    setSendLogs((logRes.data as StatementSendLog[]) || []);
+    setLoading(false);
+  }
+
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any;
-
-      const [stRes, ciRes, logRes] = await Promise.all([
-        db
-          .from("statements")
-          .select("*, companies(*), statement_items(*)")
-          .eq("id", id)
-          .single(),
-        db.from("company_info").select("*").limit(1).maybeSingle(),
-        db.from("statement_send_logs").select("*").eq("statement_id", id).order("sent_at", { ascending: false }),
-      ]);
-
-      setStatement(stRes.data as StatementWithItems | null);
-      setCompanyInfo(ciRes.data as CompanyInfo | null);
-      setSendLogs((logRes.data as StatementSendLog[]) || []);
-      setLoading(false);
-    }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  function startEditing() {
+    if (!statement) return;
+    setEditItems(statement.statement_items.map((item) => ({
+      id: item.id,
+      product_name: item.product_name,
+      specification: item.specification || "",
+      unit: item.unit,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      amount: item.amount,
+    })));
+    setEditShippingFee(statement.shipping_fee || 0);
+    setEditNotes(statement.notes || "");
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setEditItems([]);
+  }
+
+  function updateEditItem(index: number, field: string, value: string | number) {
+    setEditItems((prev) => {
+      const copy = [...prev];
+      const item = { ...copy[index], [field]: value };
+      if (field === "quantity" || field === "unit_price") {
+        item.amount = Number(item.quantity) * Number(item.unit_price);
+      }
+      copy[index] = item;
+      return copy;
+    });
+  }
+
+  function addEditItem() {
+    setEditItems((prev) => [...prev, {
+      id: `new_${Date.now()}`,
+      product_name: "",
+      specification: "",
+      unit: "EA",
+      quantity: 1,
+      unit_price: 0,
+      amount: 0,
+    }]);
+  }
+
+  function removeEditItem(index: number) {
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function saveEdits() {
+    if (!statement || editItems.length === 0) return;
+    setSaving(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+
+    const supplyAmount = editItems.reduce((sum, item) => sum + item.amount, 0);
+    const taxAmount = Math.round(supplyAmount * 0.1);
+    const totalAmount = supplyAmount + taxAmount + editShippingFee;
+
+    // 1. statement 업데이트
+    await db.from("statements").update({
+      supply_amount: supplyAmount,
+      tax_amount: taxAmount,
+      total_amount: totalAmount,
+      shipping_fee: editShippingFee,
+      notes: editNotes || null,
+    }).eq("id", id);
+
+    // 2. 기존 항목 삭제
+    await db.from("statement_items").delete().eq("statement_id", id);
+
+    // 3. 새 항목 삽입
+    const insertItems = editItems.map((item, i) => ({
+      statement_id: id,
+      product_name: item.product_name,
+      specification: item.specification || null,
+      unit: item.unit,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      amount: item.amount,
+      sort_order: i,
+    }));
+    await db.from("statement_items").insert(insertItems);
+
+    setEditing(false);
+    setSaving(false);
+    await load();
+  }
 
   async function handleDelete() {
     if (!confirm("이 거래명세서를 삭제하시겠습니까?")) return;
@@ -86,6 +193,11 @@ export default function StatementDetailPage() {
       setSendNotes("");
     }
   }
+
+  // 수정 모드 합계
+  const editSupply = editItems.reduce((sum, item) => sum + item.amount, 0);
+  const editTax = Math.round(editSupply * 0.1);
+  const editTotal = editSupply + editTax + editShippingFee;
 
   if (loading) {
     return <div className="text-center py-20 text-text-muted">로딩 중...</div>;
@@ -116,26 +228,42 @@ export default function StatementDetailPage() {
             {statement.statement_number}
           </h1>
         </div>
-        <button onClick={() => setShowSendForm(!showSendForm)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-400/30 text-sm font-semibold hover:bg-emerald-500/20 transition-colors">
-          <Send size={16} /> 발송 기록
-        </button>
-        <PdfDownloadButton statement={statement} companyInfo={companyInfo} />
-        <button
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-bg-card border border-border text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <Printer size={16} /> 인쇄
-        </button>
-        <button
-          onClick={handleDelete}
-          className="p-2 rounded-xl border border-red-400/30 text-red-400 hover:bg-red-400/10 transition-colors"
-        >
-          <Trash2 size={16} />
-        </button>
+        {!editing ? (
+          <>
+            <button onClick={startEditing} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary border border-primary/30 text-sm font-semibold hover:bg-primary/20 transition-colors">
+              <Edit2 size={16} /> 수정
+            </button>
+            <button onClick={() => setShowSendForm(!showSendForm)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-400/30 text-sm font-semibold hover:bg-emerald-500/20 transition-colors">
+              <Send size={16} /> 발송 기록
+            </button>
+            <PdfDownloadButton statement={statement} companyInfo={companyInfo} />
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-bg-card border border-border text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <Printer size={16} /> 인쇄
+            </button>
+            <button
+              onClick={handleDelete}
+              className="p-2 rounded-xl border border-red-400/30 text-red-400 hover:bg-red-400/10 transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={saveEdits} disabled={saving} className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50">
+              <Save size={16} /> {saving ? "저장 중..." : "저장"}
+            </button>
+            <button onClick={cancelEditing} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-text-secondary text-sm hover:bg-bg-card-hover transition-colors">
+              <X size={16} /> 취소
+            </button>
+          </>
+        )}
       </div>
 
       {/* 발송 기록 폼 & 이력 */}
-      {showSendForm && (
+      {showSendForm && !editing && (
         <div className="mb-6 rounded-2xl border border-border bg-bg-card p-6 print:hidden">
           <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
             <Clock size={18} /> 발송 이력
@@ -193,6 +321,108 @@ export default function StatementDetailPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 수정 모드: 편집 패널 */}
+      {editing && (
+        <div className="mb-6 rounded-2xl border border-primary/30 bg-bg-card p-6 print:hidden">
+          <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+            <Edit2 size={18} /> 명세서 수정
+          </h3>
+
+          {/* 품목 편집 */}
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-2 py-2 text-left text-text-muted text-xs w-8">No</th>
+                  <th className="px-2 py-2 text-left text-text-muted text-xs">품목</th>
+                  <th className="px-2 py-2 text-left text-text-muted text-xs w-32">규격</th>
+                  <th className="px-2 py-2 text-center text-text-muted text-xs w-20">단위</th>
+                  <th className="px-2 py-2 text-right text-text-muted text-xs w-20">수량</th>
+                  <th className="px-2 py-2 text-right text-text-muted text-xs w-28">단가</th>
+                  <th className="px-2 py-2 text-right text-text-muted text-xs w-28">금액</th>
+                  <th className="px-2 py-2 w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {editItems.map((item, i) => (
+                  <tr key={item.id} className="border-b border-border">
+                    <td className="px-2 py-1.5 text-text-muted text-xs">{i + 1}</td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" value={item.product_name}
+                        onChange={(e) => updateEditItem(i, "product_name", e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" value={item.specification}
+                        onChange={(e) => updateEditItem(i, "specification", e.target.value)}
+                        placeholder="1박스/300EA"
+                        className="w-full px-2 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" value={item.unit}
+                        onChange={(e) => updateEditItem(i, "unit", e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-center focus:outline-none focus:border-primary" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min={0} value={item.quantity}
+                        onChange={(e) => updateEditItem(i, "quantity", Number(e.target.value))}
+                        className="w-full px-2 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min={0} value={item.unit_price}
+                        onChange={(e) => updateEditItem(i, "unit_price", Number(e.target.value))}
+                        className="w-full px-2 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm text-right focus:outline-none focus:border-primary" />
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-bold text-accent text-sm">
+                      {formatNumber(item.amount)}원
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <button type="button" onClick={() => removeEditItem(i)}
+                        disabled={editItems.length <= 1}
+                        className="p-1 rounded text-text-muted hover:text-red-400 transition-colors disabled:opacity-30">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <button type="button" onClick={addEditItem}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors mb-4">
+            <Plus size={12} /> 항목 추가
+          </button>
+
+          {/* 배송비 & 비고 */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">배송비 (비과세)</label>
+              <input type="number" min={0} value={editShippingFee}
+                onChange={(e) => setEditShippingFee(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">비고</label>
+              <input type="text" value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="비고"
+                className="w-full px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
+            </div>
+          </div>
+
+          {/* 수정 합계 */}
+          <div className="rounded-xl bg-bg-dark border border-border p-4 flex items-center justify-between">
+            <div className="text-sm text-text-muted space-x-4">
+              <span>공급가: <span className="text-text-primary font-bold">{formatNumber(editSupply)}원</span></span>
+              <span>세액: <span className="text-text-primary font-bold">{formatNumber(editTax)}원</span></span>
+              {editShippingFee > 0 && <span>배송비: <span className="text-text-primary font-bold">{formatNumber(editShippingFee)}원</span></span>}
+            </div>
+            <span className="text-xl font-black text-accent">{formatNumber(editTotal)}원</span>
+          </div>
         </div>
       )}
 
