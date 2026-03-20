@@ -118,24 +118,44 @@ export default function PricesPage() {
     const toUpsert = keys
       .filter((k) => dirty[k] > 0)
       .map((k) => {
-        const [companyId, productId] = k.split("_");
+        // UUID는 하이픈(-) 포함, 구분자는 언더스코어(_)
+        const sepIdx = k.indexOf("_");
+        const companyId = k.substring(0, sepIdx);
+        const productId = k.substring(sepIdx + 1);
         return { company_id: companyId, product_id: productId, custom_price: dirty[k] };
       });
 
-    if (toUpsert.length > 0) {
-      await db.from("company_prices").upsert(toUpsert, { onConflict: "company_id,product_id" });
+    let hasError = false;
+
+    // 기존 레코드를 먼저 삭제 후 insert (upsert 대신)
+    for (const item of toUpsert) {
+      await db.from("company_prices").delete()
+        .eq("company_id", item.company_id)
+        .eq("product_id", item.product_id);
+      const { error } = await db.from("company_prices").insert(item);
+      if (error) {
+        console.error("단가 저장 실패:", error, item);
+        hasError = true;
+      }
     }
 
     for (const k of toDelete) {
-      const [companyId, productId] = k.split("_");
+      const sepIdx = k.indexOf("_");
+      const companyId = k.substring(0, sepIdx);
+      const productId = k.substring(sepIdx + 1);
       await db.from("company_prices").delete().eq("company_id", companyId).eq("product_id", productId);
     }
 
+    if (hasError) {
+      alert("일부 단가 저장에 실패했습니다. 콘솔을 확인해주세요.");
+    }
+
+    // 데이터 다시 로드 후 dirty 초기화
+    await load();
     setDirty({});
     setSaved(true);
     setSaving(false);
     setTimeout(() => setSaved(false), 2000);
-    load();
   }
 
   const dirtyCount = Object.keys(dirty).length;
