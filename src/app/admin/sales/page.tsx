@@ -21,6 +21,7 @@ import {
   List,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
@@ -48,9 +49,14 @@ function newManualItem(): SaleItem {
 
 export default function SalesPage() {
   const supabase = createClient();
+  const router = useRouter();
 
   const [tab, setTab] = useState<"list" | "calendar">("calendar");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [lastSavedCompanyId, setLastSavedCompanyId] = useState("");
+  const [lastSavedDate, setLastSavedDate] = useState("");
+  const [lastSavedLogIds, setLastSavedLogIds] = useState<string[]>([]);
 
   const [logs, setLogs] = useState<SalesLog[]>([]);
   const [orders, setOrders] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -317,6 +323,7 @@ export default function SalesPage() {
     setSubmitting(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
+    const isEditing = !!editingLogId;
 
     // 수정 모드: 기존 기록 삭제 후 재등록
     if (editingLogId) {
@@ -337,12 +344,14 @@ export default function SalesPage() {
       await db.from("inventory_logs").delete().eq("id", editingLogId);
     }
 
+    const newLogIds: string[] = [];
+
     for (const item of validItems) {
       // 실제 개수: 박스 판매면 박스 수 × 박스당 수량
       const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
 
       // 판매(출고) 로그
-      await db.from("inventory_logs").insert({
+      const { data: insertedLog } = await db.from("inventory_logs").insert({
         product_id: item.type === "product" ? item.product_id : null,
         type: "out",
         quantity: actualQty,
@@ -352,7 +361,9 @@ export default function SalesPage() {
         company_id: formCompanyId || null,
         unit_price: item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0),
         log_date: formDate,
-      });
+      }).select("id").single();
+
+      if (insertedLog) newLogIds.push(insertedLog.id);
 
       // 재고 차감 (상품 품목만 - 실제 개수 기준)
       if (item.type === "product" && item.product_id) {
@@ -380,8 +391,17 @@ export default function SalesPage() {
     }
 
     setShowModal(false);
-    resetForm();
     setSubmitting(false);
+
+    // 신규 등록 시 거래명세서 발행 안내
+    if (!isEditing && newLogIds.length > 0) {
+      setLastSavedCompanyId(formCompanyId);
+      setLastSavedDate(formDate);
+      setLastSavedLogIds(newLogIds);
+      setShowSuccessModal(true);
+    }
+
+    resetForm();
     fetchData();
   }
 
@@ -1362,6 +1382,44 @@ export default function SalesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 판매 등록 완료 → 거래명세서 발행 안내 모달 */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-md p-6 text-center space-y-5">
+            <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto">
+              <Receipt size={28} className="text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-text-primary mb-1">판매 등록 완료</h3>
+              <p className="text-sm text-text-muted">
+                {companies.find(c => c.id === lastSavedCompanyId)?.name || ""} · {lastSavedDate}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  router.push(
+                    `/admin/statements/new?logIds=${lastSavedLogIds.join(",")}&companyId=${lastSavedCompanyId}`
+                  );
+                }}
+                className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors"
+              >
+                <FileText size={18} /> 거래명세서 바로 발행
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full px-5 py-2.5 rounded-xl border border-border text-text-secondary text-sm hover:bg-bg-card-hover transition-colors"
+              >
+                나중에 발행
+              </button>
+            </div>
           </div>
         </div>
       )}
