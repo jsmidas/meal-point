@@ -626,6 +626,7 @@ export type Database = {
           process_steps: ProcessStep[];
           gallery_images: string[];
           figma_urls: FigmaEmbed[];
+          section_order: string[];
           is_published: boolean;
           created_at: string;
           updated_at: string;
@@ -647,6 +648,7 @@ export type Database = {
           process_steps?: ProcessStep[];
           gallery_images?: string[];
           figma_urls?: FigmaEmbed[];
+          section_order?: string[];
           is_published?: boolean;
         };
         Update: {
@@ -666,6 +668,7 @@ export type Database = {
           process_steps?: ProcessStep[];
           gallery_images?: string[];
           figma_urls?: FigmaEmbed[];
+          section_order?: string[];
           is_published?: boolean;
         };
       };

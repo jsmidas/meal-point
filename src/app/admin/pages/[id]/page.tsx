@@ -207,6 +207,10 @@ export default function ProductDetailEditorPage() {
         figma_urls: page.figma_urls || [],
         is_published: page.is_published || false,
       });
+      // 섹션 순서 복원
+      if (page.section_order?.length > 0) {
+        setSectionOrder(page.section_order);
+      }
     }
 
     setLoading(false);
@@ -240,6 +244,7 @@ export default function ProductDetailEditorPage() {
       process_steps: form.process_steps.filter((ps) => ps.title),
       gallery_images: form.gallery_images.filter(Boolean),
       figma_urls: form.figma_urls.filter((f) => f.url),
+      section_order: sectionOrder,
       is_published: form.is_published,
     };
 
@@ -1291,6 +1296,12 @@ export default function ProductDetailEditorPage() {
                         figma_urls: fullPage.figma_urls || [],
                         is_published: false, // 불러온 건 비공개로 시작
                       });
+                      // 섹션 순서도 복원
+                      if (fullPage.section_order?.length > 0) {
+                        setSectionOrder(fullPage.section_order);
+                      } else {
+                        setSectionOrder(DEFAULT_SECTION_ORDER);
+                      }
                     }
                     setShowImportModal(false);
                   }}
