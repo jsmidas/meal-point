@@ -17,6 +17,7 @@ import {
   X,
   LogOut,
   Bell,
+  FileEdit,
   ArrowDownCircle,
   ArrowUpCircle,
   BadgeDollarSign,
@@ -39,6 +40,7 @@ const navItems = [
   { href: "/admin/billing", label: "정산 관리", icon: Receipt },
   { href: "/admin/pnl", label: "손익 현황", icon: TrendingUp },
   { href: "/admin/popups", label: "팝업 관리", icon: Bell },
+  { href: "/admin/pages", label: "상세페이지", icon: FileEdit },
   { href: "/admin/settings", label: "회사 설정", icon: Settings },
 ];
 
