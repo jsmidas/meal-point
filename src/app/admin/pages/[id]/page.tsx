@@ -27,6 +27,23 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const RichTextEditor = dynamic(() => import("@/components/admin/RichTextEditor"), { ssr: false });
 
@@ -78,6 +95,36 @@ export default function ProductDetailEditorPage() {
   });
   const [showImportModal, setShowImportModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+
+  const DEFAULT_SECTION_ORDER = ["hero", "feature", "keypoints", "specs", "detail", "process", "gallery", "figma"];
+  const [sectionOrder, setSectionOrder] = useState(DEFAULT_SECTION_ORDER);
+
+  const SECTION_LABELS: Record<string, string> = {
+    hero: "히어로 섹션",
+    feature: "특장점 섹션",
+    keypoints: "키포인트",
+    specs: "제품 스펙",
+    detail: "상세 설명",
+    process: "공정/선택 안내",
+    gallery: "갤러리",
+    figma: "Figma 디자인",
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setSectionOrder((items) => {
+        const oldIdx = items.indexOf(active.id as string);
+        const newIdx = items.indexOf(over.id as string);
+        return arrayMove(items, oldIdx, newIdx);
+      });
+    }
+  }
   const [otherPages, setOtherPages] = useState<{ id: string; product_id: string; product_name: string; hero_images: string[]; subtitle: string | null; updated_at: string }[]>([]);
   const [pageId, setPageId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
@@ -347,6 +394,32 @@ export default function ProductDetailEditorPage() {
     );
   }
 
+  // 드래그 가능한 섹션 래퍼
+  function SortableSection({ id: sectionId, children }: { id: string; children: React.ReactNode }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: sectionId });
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+    return (
+      <div ref={setNodeRef} style={style} className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+        <div className="flex">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="px-2 pt-4 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary transition-colors self-start"
+            aria-label="드래그하여 순서 변경"
+          >
+            <GripVertical size={16} />
+          </button>
+          <div className="flex-1 min-w-0 overflow-hidden">{children}</div>
+        </div>
+      </div>
+    );
+  }
+
   const SectionHeader = ({
     id: sectionId,
     title,
@@ -475,9 +548,14 @@ export default function ProductDetailEditorPage() {
         </span>
       </div>
 
-      {/* === Section 1: Hero === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
-        <SectionHeader id="hero" title="1. 히어로 섹션" badge={`${form.hero_images.length}장`} />
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={sectionOrder} strategy={verticalListSortingStrategy}>
+
+      {sectionOrder.map((sectionId, sectionIdx) => {
+        const num = sectionIdx + 1;
+        if (sectionId === "hero") return (
+      <SortableSection key="hero" id="hero">
+        <SectionHeader id="hero" title={`${num}. 히어로 섹션`} badge={`${form.hero_images.length}장`} />
         {activeSection === "hero" && (
           <div className="px-6 pb-6 space-y-4">
             <label className="block text-sm text-text-secondary mb-1">히어로 이미지</label>
@@ -551,11 +629,11 @@ export default function ProductDetailEditorPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* === Section 2: Features === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
-        <SectionHeader id="feature" title="2. 특장점 섹션" badge="소개" />
+      </SortableSection>
+        );
+        if (sectionId === "feature") return (
+      <SortableSection key="feature" id="feature">
+        <SectionHeader id="feature" title={`${num}. 특장점 섹션`} badge="소개" />
         {activeSection === "feature" && (
           <div className="px-6 pb-6 space-y-4">
             <div>
@@ -625,13 +703,13 @@ export default function ProductDetailEditorPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* === Section 3: Key Points === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+      </SortableSection>
+        );
+        if (sectionId === "keypoints") return (
+      <SortableSection key="keypoints" id="keypoints">
         <SectionHeader
           id="keypoints"
-          title="3. 키포인트"
+          title={`${num}. 키포인트`}
           badge={`${form.key_points.length}개`}
         />
         {activeSection === "keypoints" && (
@@ -717,13 +795,13 @@ export default function ProductDetailEditorPage() {
             )}
           </div>
         )}
-      </div>
-
-      {/* === Section 4: Specs === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+      </SortableSection>
+        );
+        if (sectionId === "specs") return (
+      <SortableSection key="specs" id="specs">
         <SectionHeader
           id="specs"
-          title="4. 제품 스펙"
+          title={`${num}. 제품 스펙`}
           badge={`${form.specs.length}개`}
         />
         {activeSection === "specs" && (
@@ -764,11 +842,11 @@ export default function ProductDetailEditorPage() {
             </button>
           </div>
         )}
-      </div>
-
-      {/* === Section 5: Detail Description === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
-        <SectionHeader id="detail" title="5. 상세 설명" badge="본문" />
+      </SortableSection>
+        );
+        if (sectionId === "detail") return (
+      <SortableSection key="detail" id="detail">
+        <SectionHeader id="detail" title={`${num}. 상세 설명`} badge="본문" />
         {activeSection === "detail" && (
           <div className="px-6 pb-6 space-y-4">
             <div>
@@ -866,13 +944,13 @@ export default function ProductDetailEditorPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* === Section 6: Process Steps === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+      </SortableSection>
+        );
+        if (sectionId === "process") return (
+      <SortableSection key="process" id="process">
         <SectionHeader
           id="process"
-          title="6. 공정/선택 안내"
+          title={`${num}. 공정/선택 안내`}
           badge={`${form.process_steps.length}단계`}
         />
         {activeSection === "process" && (
@@ -949,13 +1027,13 @@ export default function ProductDetailEditorPage() {
             )}
           </div>
         )}
-      </div>
-
-      {/* === Section 7: Gallery === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+      </SortableSection>
+        );
+        if (sectionId === "gallery") return (
+      <SortableSection key="gallery" id="gallery">
         <SectionHeader
           id="gallery"
-          title="7. 갤러리"
+          title={`${num}. 갤러리`}
           badge={`${form.gallery_images.length}장`}
         />
         {activeSection === "gallery" && (
@@ -1056,13 +1134,14 @@ export default function ProductDetailEditorPage() {
             )}
           </div>
         )}
-      </div>
+      </SortableSection>
 
-      {/* === Section 8: Figma Designs === */}
-      <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
+        );
+        if (sectionId === "figma") return (
+      <SortableSection key="figma" id="figma">
         <SectionHeader
           id="figma"
-          title="8. Figma 디자인"
+          title={`${num}. Figma 디자인`}
           badge={`${form.figma_urls.length}개`}
         />
         {activeSection === "figma" && (
@@ -1140,7 +1219,13 @@ export default function ProductDetailEditorPage() {
             </button>
           </div>
         )}
-      </div>
+      </SortableSection>
+        );
+        return null;
+      })}
+
+      </SortableContext>
+      </DndContext>
 
       {/* Bottom save */}
       <div className="flex justify-end gap-3 mt-8 mb-12">
