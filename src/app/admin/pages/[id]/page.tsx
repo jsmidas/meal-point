@@ -26,6 +26,9 @@ import {
   Loader2,
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+
+const RichTextEditor = dynamic(() => import("@/components/admin/RichTextEditor"), { ssr: false });
 
 const ICON_OPTIONS = [
   "shield",
@@ -74,6 +77,7 @@ export default function ProductDetailEditorPage() {
     is_published: false,
   });
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [otherPages, setOtherPages] = useState<{ id: string; product_id: string; product_name: string; hero_images: string[]; subtitle: string | null; updated_at: string }[]>([]);
   const [pageId, setPageId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
@@ -374,7 +378,8 @@ export default function ProductDetailEditorPage() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className={`flex gap-6 ${showPreview ? "max-w-full" : "max-w-4xl mx-auto"}`}>
+    <div className={`${showPreview ? "w-1/2 min-w-0" : "w-full"}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
@@ -423,13 +428,17 @@ export default function ProductDetailEditorPage() {
           >
             <ArrowLeft size={16} /> 다른 페이지 불러오기
           </button>
-          <Link
-            href={`/products/${id}`}
-            target="_blank"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-text-secondary text-sm hover:bg-bg-card-hover transition-colors"
+          <button
+            type="button"
+            onClick={() => setShowPreview(!showPreview)}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm transition-colors ${
+              showPreview
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-text-secondary hover:bg-bg-card-hover"
+            }`}
           >
-            <Eye size={16} /> 미리보기
-          </Link>
+            <Eye size={16} /> {showPreview ? "미리보기 닫기" : "미리보기"}
+          </button>
           <button
             type="button"
             onClick={handleSave}
@@ -570,17 +579,15 @@ export default function ProductDetailEditorPage() {
               <label className="block text-sm text-text-secondary mb-1">
                 특장점 설명
               </label>
-              <textarea
-                value={form.feature_description}
-                onChange={(e) =>
+              <RichTextEditor
+                content={form.feature_description}
+                onChange={(html) =>
                   setForm((prev) => ({
                     ...prev,
-                    feature_description: e.target.value,
+                    feature_description: html,
                   }))
                 }
-                rows={4}
                 placeholder="제품의 핵심 특장점을 설명해주세요"
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
               />
             </div>
             <label className="block text-sm text-text-secondary mb-1">특장점 이미지</label>
@@ -768,17 +775,15 @@ export default function ProductDetailEditorPage() {
               <label className="block text-sm text-text-secondary mb-1">
                 상세 설명
               </label>
-              <textarea
-                value={form.detail_description}
-                onChange={(e) =>
+              <RichTextEditor
+                content={form.detail_description}
+                onChange={(html) =>
                   setForm((prev) => ({
                     ...prev,
-                    detail_description: e.target.value,
+                    detail_description: html,
                   }))
                 }
-                rows={8}
                 placeholder="제품에 대한 상세 설명을 작성해주세요"
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
               />
             </div>
             <div>
@@ -1227,6 +1232,156 @@ export default function ProductDetailEditorPage() {
           </div>
         </div>
       )}
+    </div>
+
+    {/* 실시간 미리보기 패널 */}
+    {showPreview && (
+      <div className="w-1/2 min-w-0 sticky top-0 h-screen overflow-y-auto">
+        <div className="bg-white text-black rounded-2xl border border-border overflow-hidden">
+          {/* 히어로 */}
+          {form.hero_images.filter(Boolean).length > 0 && (
+            <div className="relative">
+              <img
+                src={form.hero_images.filter(Boolean)[0]}
+                alt="Hero"
+                className="w-full h-64 object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+              <div className="absolute bottom-6 left-6 right-6">
+                <h1 className="text-2xl font-bold text-white">{product?.name}</h1>
+                {form.subtitle && (
+                  <p className="text-sm text-white/80 mt-1">{form.subtitle}</p>
+                )}
+              </div>
+              {form.hero_images.filter(Boolean).length > 1 && (
+                <div className="absolute bottom-2 right-2 flex gap-1">
+                  {form.hero_images.filter(Boolean).map((_, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full ${i === 0 ? "bg-white" : "bg-white/40"}`} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {form.hero_images.filter(Boolean).length === 0 && (
+            <div className="h-48 bg-gray-100 flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <ImageIcon size={32} className="mx-auto mb-2" />
+                <p className="text-sm">히어로 이미지 미등록</p>
+              </div>
+            </div>
+          )}
+
+          <div className="p-6 space-y-8">
+            {/* 특장점 */}
+            {(form.feature_title || form.feature_description) && (
+              <section>
+                {form.feature_title && (
+                  <h2 className="text-lg font-bold text-gray-900 mb-3">{form.feature_title}</h2>
+                )}
+                {form.feature_description && (
+                  <div
+                    className="prose prose-sm max-w-none text-gray-700"
+                    dangerouslySetInnerHTML={{ __html: form.feature_description }}
+                  />
+                )}
+                {form.feature_images.filter(Boolean).length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    {form.feature_images.filter(Boolean).map((url, i) => (
+                      <img key={i} src={url} alt="" className="w-full rounded-lg object-cover aspect-video" />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* 키포인트 */}
+            {form.key_points.filter(kp => kp.title).length > 0 && (
+              <section>
+                <div className="grid grid-cols-2 gap-3">
+                  {form.key_points.filter(kp => kp.title).map((kp, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                      <p className="font-semibold text-sm text-gray-900">{kp.title}</p>
+                      {kp.description && (
+                        <p className="text-xs text-gray-500 mt-1">{kp.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 스펙 */}
+            {form.specs.filter(s => s.label).length > 0 && (
+              <section>
+                <h3 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wider">제품 스펙</h3>
+                <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
+                  {form.specs.filter(s => s.label).map((s, i) => (
+                    <div key={i} className="flex text-sm">
+                      <span className="w-1/3 bg-gray-50 px-3 py-2 font-medium text-gray-700">{s.label}</span>
+                      <span className="flex-1 px-3 py-2 text-gray-600">{s.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 상세 설명 */}
+            {form.detail_description && (
+              <section>
+                <h3 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wider">상세 설명</h3>
+                <div
+                  className="prose prose-sm max-w-none text-gray-700"
+                  dangerouslySetInnerHTML={{ __html: form.detail_description }}
+                />
+              </section>
+            )}
+
+            {/* 상세 이미지 */}
+            {form.detail_images.filter(Boolean).length > 0 && (
+              <section className="space-y-2">
+                {form.detail_images.filter(Boolean).map((url, i) => (
+                  <img key={i} src={url} alt="" className="w-full rounded-lg" />
+                ))}
+              </section>
+            )}
+
+            {/* 공정/선택 안내 */}
+            {form.process_steps.filter(ps => ps.title).length > 0 && (
+              <section>
+                {form.process_title && (
+                  <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">{form.process_title}</h3>
+                )}
+                <div className="space-y-3">
+                  {form.process_steps.filter(ps => ps.title).map((ps, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold shrink-0">
+                        {ps.step}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm text-gray-900">{ps.title}</p>
+                        {ps.description && <p className="text-xs text-gray-500 mt-0.5">{ps.description}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 갤러리 */}
+            {form.gallery_images.filter(Boolean).length > 0 && (
+              <section>
+                <h3 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wider">갤러리</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {form.gallery_images.filter(Boolean).map((url, i) => (
+                    <img key={i} src={url} alt="" className="w-full rounded-lg object-cover aspect-square" />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
