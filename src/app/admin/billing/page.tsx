@@ -85,13 +85,13 @@ export default function BillingPage() {
       db.from("statements").select("*").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
-      db.from("sale_confirmations").select("company_id, date").gte("date", from).lte("date", to),
+      db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
     ]);
 
     const companies: Company[] = compRes.data || [];
     setAllCompanies(companies);
 
-    // 판매관리에서 체크된 거래처+날짜 Set
+    // 판매관리에서 체크된 거래처 Set
     const confirmedCompanyIds = new Set<string>();
     for (const c of confirmRes.data || []) {
       if (c.company_id) confirmedCompanyIds.add(c.company_id);
