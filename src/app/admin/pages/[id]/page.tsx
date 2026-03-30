@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type {
@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronUp,
   Figma,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -72,6 +74,31 @@ export default function ProductDetailEditorPage() {
     is_published: false,
   });
   const [pageId, setPageId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
+
+  async function uploadImage(
+    file: File,
+    fieldKey: string
+  ): Promise<string | null> {
+    setUploading(fieldKey);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `pages/${id}/${fieldKey}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from("logos")
+        .upload(fileName, file, { upsert: true });
+      if (error) {
+        alert(`업로드 실패: ${error.message}`);
+        return null;
+      }
+      const { data: urlData } = supabase.storage
+        .from("logos")
+        .getPublicUrl(fileName);
+      return urlData.publicUrl;
+    } finally {
+      setUploading(null);
+    }
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -303,6 +330,64 @@ export default function ProductDetailEditorPage() {
     );
   }
 
+  // 이미지 업로드 + URL 입력 통합 컴포넌트
+  const ImageUploadField = ({
+    label,
+    value,
+    fieldKey,
+    onChange,
+  }: {
+    label: string;
+    value: string;
+    fieldKey: string;
+    onChange: (url: string) => void;
+  }) => (
+    <div>
+      <label className="block text-sm text-text-secondary mb-1">{label}</label>
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="URL을 입력하거나 이미지를 업로드하세요"
+          className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+        />
+        <label className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-accent/10 text-accent text-sm font-medium cursor-pointer hover:bg-accent/20 transition-colors">
+          {uploading === fieldKey ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Upload size={16} />
+          )}
+          업로드
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const url = await uploadImage(file, fieldKey);
+              if (url) onChange(url);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      {value && (
+        <div className="mt-2 rounded-xl overflow-hidden border border-border">
+          <img
+            src={value}
+            alt={label}
+            className="w-full h-48 object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   const SectionHeader = ({
     id: sectionId,
     title,
@@ -401,20 +486,14 @@ export default function ProductDetailEditorPage() {
         <SectionHeader id="hero" title="1. 히어로 섹션" badge="메인 이미지" />
         {activeSection === "hero" && (
           <div className="px-6 pb-6 space-y-4">
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">
-                히어로 이미지 URL
-              </label>
-              <input
-                type="url"
-                value={form.hero_image}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, hero_image: e.target.value }))
-                }
-                placeholder="https://example.com/hero.jpg"
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
-              />
-            </div>
+            <ImageUploadField
+              label="히어로 이미지"
+              value={form.hero_image}
+              fieldKey="hero"
+              onChange={(url) =>
+                setForm((prev) => ({ ...prev, hero_image: url }))
+              }
+            />
             <div>
               <label className="block text-sm text-text-secondary mb-1">
                 서브타이틀
@@ -429,18 +508,6 @@ export default function ProductDetailEditorPage() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
               />
             </div>
-            {form.hero_image && (
-              <div className="rounded-xl overflow-hidden border border-border">
-                <img
-                  src={form.hero_image}
-                  alt="Hero preview"
-                  className="w-full h-48 object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -484,23 +551,14 @@ export default function ProductDetailEditorPage() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
               />
             </div>
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">
-                특장점 이미지 URL
-              </label>
-              <input
-                type="url"
-                value={form.feature_image}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    feature_image: e.target.value,
-                  }))
-                }
-                placeholder="https://example.com/feature.jpg"
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
-              />
-            </div>
+            <ImageUploadField
+              label="특장점 이미지"
+              value={form.feature_image}
+              fieldKey="feature"
+              onChange={(url) =>
+                setForm((prev) => ({ ...prev, feature_image: url }))
+              }
+            />
           </div>
         )}
       </div>
@@ -682,6 +740,25 @@ export default function ProductDetailEditorPage() {
                     placeholder="이미지 URL"
                     className="flex-1 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-primary"
                   />
+                  <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-accent/10 text-accent text-xs cursor-pointer hover:bg-accent/20 transition-colors">
+                    {uploading === `detail-${idx}` ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Upload size={12} />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const u = await uploadImage(file, `detail-${idx}`);
+                        if (u) updateImageUrl("detail_images", idx, u);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={() => removeImageUrl("detail_images", idx)}
@@ -691,13 +768,39 @@ export default function ProductDetailEditorPage() {
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => addImageUrl("detail_images")}
-                className="w-full py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus size={16} /> 이미지 추가
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => addImageUrl("detail_images")}
+                  className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} /> URL 추가
+                </button>
+                <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                  {uploading === "detail-new" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Upload size={16} />
+                  )}
+                  파일 업로드
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const u = await uploadImage(file, "detail-new");
+                      if (u)
+                        setForm((prev) => ({
+                          ...prev,
+                          detail_images: [...prev.detail_images, u],
+                        }));
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         )}
@@ -807,6 +910,25 @@ export default function ProductDetailEditorPage() {
                   placeholder="갤러리 이미지 URL"
                   className="flex-1 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-primary"
                 />
+                <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-accent/10 text-accent text-xs cursor-pointer hover:bg-accent/20 transition-colors">
+                  {uploading === `gallery-${idx}` ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Upload size={12} />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const u = await uploadImage(file, `gallery-${idx}`);
+                      if (u) updateImageUrl("gallery_images", idx, u);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => removeImageUrl("gallery_images", idx)}
@@ -816,13 +938,39 @@ export default function ProductDetailEditorPage() {
                 </button>
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => addImageUrl("gallery_images")}
-              className="w-full py-2.5 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
-            >
-              <Plus size={16} /> 갤러리 이미지 추가
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => addImageUrl("gallery_images")}
+                className="flex-1 py-2.5 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus size={16} /> URL 추가
+              </button>
+              <label className="flex-1 py-2.5 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                {uploading === "gallery-new" ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Upload size={16} />
+                )}
+                파일 업로드
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const u = await uploadImage(file, "gallery-new");
+                    if (u)
+                      setForm((prev) => ({
+                        ...prev,
+                        gallery_images: [...prev.gallery_images, u],
+                      }));
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
             {form.gallery_images.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {form.gallery_images
@@ -941,6 +1089,7 @@ export default function ProductDetailEditorPage() {
           취소
         </Link>
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
           className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
