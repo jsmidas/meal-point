@@ -692,14 +692,31 @@ export default function SalesPage() {
               {companyIds.length > 1 && (
                 <span className="text-xs text-red-400">※ 동일 거래처만 선택 가능</span>
               )}
-              {companyIds.length === 1 && companyIds[0] !== "__none__" && (
-                <Link
-                  href={`/admin/statements/new?logIds=${selectedRows.flatMap(r => r.logs.map(l => l.id)).join(",")}&companyId=${companyIds[0]}`}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors"
-                >
-                  <FileText size={14} /> 명세서 발행
-                </Link>
-              )}
+              {companyIds.length === 1 && companyIds[0] !== "__none__" && (() => {
+                // 선택된 행들의 날짜 기반으로 기존 명세서 확인
+                const dates = [...new Set(selectedRows.map(r => r.date))];
+                const existingStmt = statements.find(
+                  (s) => s.company_id === companyIds[0] && dates.includes(s.statement_date)
+                );
+                if (existingStmt) {
+                  return (
+                    <Link
+                      href={`/admin/statements/${existingStmt.id}`}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 transition-colors"
+                    >
+                      <FileText size={14} /> 명세서 확인/수정
+                    </Link>
+                  );
+                }
+                return (
+                  <Link
+                    href={`/admin/statements/new?logIds=${selectedRows.flatMap(r => r.logs.map(l => l.id)).join(",")}&companyId=${companyIds[0]}`}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors"
+                  >
+                    <FileText size={14} /> 명세서 신규 발행
+                  </Link>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => setSelectedRowKeys(new Set())}
@@ -1141,7 +1158,7 @@ export default function SalesPage() {
                   </table>
                 </div>
 
-                {/* 업체별 거래명세서 발행 버튼 */}
+                {/* 업체별 거래명세서 발행/확인 버튼 */}
                 {(() => {
                   const companyGroups = new Map<string, { name: string; logIds: string[] }>();
                   for (const log of selectedDayLogs) {
@@ -1153,16 +1170,33 @@ export default function SalesPage() {
                   if (companyGroups.size === 0) return null;
                   return (
                     <div className="px-6 py-3 border-t border-border flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-text-muted mr-1">거래명세서 발행:</span>
-                      {Array.from(companyGroups.entries()).map(([cid, g]) => (
-                        <Link
-                          key={cid}
-                          href={`/admin/statements/new?logIds=${g.logIds.join(",")}&companyId=${cid}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
-                        >
-                          <FileText size={12} /> {g.name}
-                        </Link>
-                      ))}
+                      <span className="text-xs text-text-muted mr-1">거래명세서:</span>
+                      {Array.from(companyGroups.entries()).map(([cid, g]) => {
+                        // 해당 날짜+업체의 기존 명세서 찾기
+                        const existingStmt = statements.find(
+                          (s) => s.company_id === cid && s.statement_date === selectedDate
+                        );
+                        if (existingStmt) {
+                          return (
+                            <Link
+                              key={cid}
+                              href={`/admin/statements/${existingStmt.id}`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors"
+                            >
+                              <FileText size={12} /> {g.name} (발행완료 · 확인/수정)
+                            </Link>
+                          );
+                        }
+                        return (
+                          <Link
+                            key={cid}
+                            href={`/admin/statements/new?logIds=${g.logIds.join(",")}&companyId=${cid}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                          >
+                            <FileText size={12} /> {g.name} (신규 발행)
+                          </Link>
+                        );
+                      })}
                     </div>
                   );
                 })()}
