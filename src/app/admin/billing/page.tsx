@@ -80,20 +80,28 @@ export default function BillingPage() {
     const from = `${month}-01`;
     const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
 
-    const [salesRes, stmtRes, billRes, compRes] = await Promise.all([
+    const [salesRes, stmtRes, billRes, compRes, confirmRes] = await Promise.all([
       db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date"),
       db.from("statements").select("*").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
+      db.from("sale_confirmations").select("company_id, date").gte("date", from).lte("date", to),
     ]);
 
     const companies: Company[] = compRes.data || [];
     setAllCompanies(companies);
 
-    // 판매 집계
+    // 판매관리에서 체크된 거래처+날짜 Set
+    const confirmedCompanyIds = new Set<string>();
+    for (const c of confirmRes.data || []) {
+      if (c.company_id) confirmedCompanyIds.add(c.company_id);
+    }
+
+    // 판매 집계 (체크된 거래처만)
     const salesMap = new Map<string, SalesData>();
     for (const log of salesRes.data || []) {
       if (!log.company_id) continue;
+      if (!confirmedCompanyIds.has(log.company_id)) continue;
       const ex = salesMap.get(log.company_id) || { amount: 0, count: 0, logs: [] as SalesLog[] };
       ex.amount += log.quantity * (log.unit_price || 0);
       ex.count += 1;
@@ -101,9 +109,10 @@ export default function BillingPage() {
       salesMap.set(log.company_id, ex);
     }
 
-    // 명세서 집계
+    // 명세서 집계 (체크된 거래처만)
     const stmtMap = new Map<string, Statement[]>();
     for (const s of stmtRes.data || []) {
+      if (!confirmedCompanyIds.has(s.company_id)) continue;
       const arr = stmtMap.get(s.company_id) || [];
       arr.push(s);
       stmtMap.set(s.company_id, arr);
@@ -115,8 +124,12 @@ export default function BillingPage() {
       billMap.set(b.company_id, b);
     }
 
-    // 이번 달 활동이 있는 거래처만
-    const activeIds = new Set([...salesMap.keys(), ...stmtMap.keys(), ...billMap.keys()]);
+    // 체크된 거래처 중 활동이 있는 거래처만
+    const activeIds = new Set([...salesMap.keys(), ...stmtMap.keys()]);
+    // 청구가 있는 거래처도 포함 (이미 진행 중인 정산)
+    for (const key of billMap.keys()) {
+      if (confirmedCompanyIds.has(key)) activeIds.add(key);
+    }
 
     const rows: CompanyRow[] = companies
       .filter((c) => activeIds.has(c.id))
