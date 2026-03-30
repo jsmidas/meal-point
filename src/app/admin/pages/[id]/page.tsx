@@ -58,11 +58,11 @@ export default function ProductDetailEditorPage() {
 
   // Form state
   const [form, setForm] = useState({
-    hero_image: "",
+    hero_images: [] as string[],
     subtitle: "",
     feature_title: "",
     feature_description: "",
-    feature_image: "",
+    feature_images: [] as string[],
     key_points: [{ ...emptyKeyPoint }] as KeyPoint[],
     specs: [{ ...emptySpec }] as SpecItem[],
     detail_description: "",
@@ -73,6 +73,8 @@ export default function ProductDetailEditorPage() {
     figma_urls: [] as FigmaEmbed[],
     is_published: false,
   });
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [otherPages, setOtherPages] = useState<{ id: string; product_id: string; product_name: string; hero_images: string[]; subtitle: string | null; updated_at: string }[]>([]);
   const [pageId, setPageId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
 
@@ -125,12 +127,19 @@ export default function ProductDetailEditorPage() {
 
     if (page) {
       setPageId(page.id);
+      // hero_images: 새 배열 필드 우선, 없으면 기존 단일 필드에서 변환
+      const heroImgs = page.hero_images?.length > 0
+        ? page.hero_images
+        : page.hero_image ? [page.hero_image] : [];
+      const featureImgs = page.feature_images?.length > 0
+        ? page.feature_images
+        : page.feature_image ? [page.feature_image] : [];
       setForm({
-        hero_image: page.hero_image || "",
+        hero_images: heroImgs,
         subtitle: page.subtitle || "",
         feature_title: page.feature_title || "",
         feature_description: page.feature_description || "",
-        feature_image: page.feature_image || "",
+        feature_images: featureImgs,
         key_points:
           page.key_points?.length > 0
             ? page.key_points
@@ -161,13 +170,17 @@ export default function ProductDetailEditorPage() {
     setSaving(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
+    const filteredHeroImages = form.hero_images.filter(Boolean);
+    const filteredFeatureImages = form.feature_images.filter(Boolean);
     const payload = {
       product_id: id,
-      hero_image: form.hero_image || null,
+      hero_image: filteredHeroImages[0] || null,
+      hero_images: filteredHeroImages,
       subtitle: form.subtitle || null,
       feature_title: form.feature_title || null,
       feature_description: form.feature_description || null,
-      feature_image: form.feature_image || null,
+      feature_image: filteredFeatureImages[0] || null,
+      feature_images: filteredFeatureImages,
       key_points: form.key_points.filter((kp) => kp.title),
       specs: form.specs.filter((s) => s.label),
       detail_description: form.detail_description || null,
@@ -330,64 +343,6 @@ export default function ProductDetailEditorPage() {
     );
   }
 
-  // 이미지 업로드 + URL 입력 통합 컴포넌트
-  const ImageUploadField = ({
-    label,
-    value,
-    fieldKey,
-    onChange,
-  }: {
-    label: string;
-    value: string;
-    fieldKey: string;
-    onChange: (url: string) => void;
-  }) => (
-    <div>
-      <label className="block text-sm text-text-secondary mb-1">{label}</label>
-      <div className="flex gap-2">
-        <input
-          type="url"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="URL을 입력하거나 이미지를 업로드하세요"
-          className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
-        />
-        <label className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-accent/10 text-accent text-sm font-medium cursor-pointer hover:bg-accent/20 transition-colors">
-          {uploading === fieldKey ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Upload size={16} />
-          )}
-          업로드
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const url = await uploadImage(file, fieldKey);
-              if (url) onChange(url);
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </div>
-      {value && (
-        <div className="mt-2 rounded-xl overflow-hidden border border-border">
-          <img
-            src={value}
-            alt={label}
-            className="w-full h-48 object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-
   const SectionHeader = ({
     id: sectionId,
     title,
@@ -439,6 +394,35 @@ export default function ProductDetailEditorPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={async () => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const db = supabase as any;
+              const { data } = await db
+                .from("product_pages")
+                .select("id, product_id, hero_images, hero_image, subtitle, updated_at")
+                .neq("product_id", id)
+                .order("updated_at", { ascending: false });
+              if (!data || data.length === 0) {
+                alert("불러올 수 있는 다른 상세페이지가 없습니다.");
+                return;
+              }
+              // product 이름 가져오기
+              const productIds = data.map((d: { product_id: string }) => d.product_id);
+              const { data: prods } = await db.from("products").select("id, name").in("id", productIds);
+              const nameMap = new Map((prods || []).map((p: { id: string; name: string }) => [p.id, p.name]));
+              setOtherPages(data.map((d: { id: string; product_id: string; hero_images: string[]; hero_image: string | null; subtitle: string | null; updated_at: string }) => ({
+                ...d,
+                hero_images: d.hero_images?.length > 0 ? d.hero_images : d.hero_image ? [d.hero_image] : [],
+                product_name: (nameMap.get(d.product_id) as string) || d.product_id,
+              })));
+              setShowImportModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors"
+          >
+            <ArrowLeft size={16} /> 다른 페이지 불러오기
+          </button>
           <Link
             href={`/products/${id}`}
             target="_blank"
@@ -447,6 +431,7 @@ export default function ProductDetailEditorPage() {
             <Eye size={16} /> 미리보기
           </Link>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
@@ -483,17 +468,64 @@ export default function ProductDetailEditorPage() {
 
       {/* === Section 1: Hero === */}
       <div className="rounded-2xl border border-border bg-bg-card mb-4 overflow-hidden">
-        <SectionHeader id="hero" title="1. 히어로 섹션" badge="메인 이미지" />
+        <SectionHeader id="hero" title="1. 히어로 섹션" badge={`${form.hero_images.length}장`} />
         {activeSection === "hero" && (
           <div className="px-6 pb-6 space-y-4">
-            <ImageUploadField
-              label="히어로 이미지"
-              value={form.hero_image}
-              fieldKey="hero"
-              onChange={(url) =>
-                setForm((prev) => ({ ...prev, hero_image: url }))
-              }
-            />
+            <label className="block text-sm text-text-secondary mb-1">히어로 이미지</label>
+            {form.hero_images.map((url, idx) => (
+              <div key={idx} className="flex items-center gap-3 mb-2">
+                <ImageIcon size={16} className="text-text-muted shrink-0" />
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => {
+                    const arr = [...form.hero_images];
+                    arr[idx] = e.target.value;
+                    setForm((prev) => ({ ...prev, hero_images: arr }));
+                  }}
+                  placeholder="이미지 URL"
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-accent/10 text-accent text-xs cursor-pointer hover:bg-accent/20 transition-colors">
+                  {uploading === `hero-${idx}` ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const u = await uploadImage(file, `hero-${idx}`);
+                    if (u) { const arr = [...form.hero_images]; arr[idx] = u; setForm((prev) => ({ ...prev, hero_images: arr })); }
+                    e.target.value = "";
+                  }} />
+                </label>
+                <button type="button" onClick={() => setForm((prev) => ({ ...prev, hero_images: prev.hero_images.filter((_, i) => i !== idx) }))} className="p-1 text-text-muted hover:text-red-400 transition-colors" aria-label="삭제">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {form.hero_images.filter(Boolean).length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {form.hero_images.filter(Boolean).map((url, idx) => (
+                  <div key={idx} className="rounded-lg overflow-hidden border border-border aspect-video">
+                    <img src={url} alt={`Hero ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, ""] }))} className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+                <Plus size={16} /> URL 추가
+              </button>
+              <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                {uploading === "hero-new" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                파일 업로드
+                <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const u = await uploadImage(file, "hero-new");
+                  if (u) setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, u] }));
+                  e.target.value = "";
+                }} />
+              </label>
+            </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">
                 서브타이틀
@@ -551,14 +583,39 @@ export default function ProductDetailEditorPage() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
               />
             </div>
-            <ImageUploadField
-              label="특장점 이미지"
-              value={form.feature_image}
-              fieldKey="feature"
-              onChange={(url) =>
-                setForm((prev) => ({ ...prev, feature_image: url }))
-              }
-            />
+            <label className="block text-sm text-text-secondary mb-1">특장점 이미지</label>
+            {form.feature_images.map((url, idx) => (
+              <div key={idx} className="flex items-center gap-3 mb-2">
+                <ImageIcon size={16} className="text-text-muted shrink-0" />
+                <input type="url" value={url} onChange={(e) => { const arr = [...form.feature_images]; arr[idx] = e.target.value; setForm((prev) => ({ ...prev, feature_images: arr })); }} placeholder="이미지 URL" className="flex-1 px-3 py-2 rounded-lg border border-border bg-bg-dark text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-primary" />
+                <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-accent/10 text-accent text-xs cursor-pointer hover:bg-accent/20 transition-colors">
+                  {uploading === `feature-${idx}` ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; const u = await uploadImage(file, `feature-${idx}`); if (u) { const arr = [...form.feature_images]; arr[idx] = u; setForm((prev) => ({ ...prev, feature_images: arr })); } e.target.value = ""; }} />
+                </label>
+                <button type="button" onClick={() => setForm((prev) => ({ ...prev, feature_images: prev.feature_images.filter((_, i) => i !== idx) }))} className="p-1 text-text-muted hover:text-red-400 transition-colors" aria-label="삭제">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {form.feature_images.filter(Boolean).length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {form.feature_images.filter(Boolean).map((url, idx) => (
+                  <div key={idx} className="rounded-lg overflow-hidden border border-border aspect-video">
+                    <img src={url} alt={`Feature ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, ""] }))} className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+                <Plus size={16} /> URL 추가
+              </button>
+              <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                {uploading === "feature-new" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                파일 업로드
+                <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; const u = await uploadImage(file, "feature-new"); if (u) setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, u] })); e.target.value = ""; }} />
+              </label>
+            </div>
           </div>
         )}
       </div>
@@ -1083,7 +1140,7 @@ export default function ProductDetailEditorPage() {
       {/* Bottom save */}
       <div className="flex justify-end gap-3 mt-8 mb-12">
         <Link
-          href="/admin/products"
+          href="/admin/pages"
           className="px-6 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors"
         >
           취소
@@ -1097,6 +1154,79 @@ export default function ProductDetailEditorPage() {
           <Save size={16} /> {saving ? "저장 중..." : "저장"}
         </button>
       </div>
+
+      {/* 다른 상세페이지 불러오기 모달 */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-bg-card rounded-2xl border border-border w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="text-lg font-bold text-text-primary">다른 상세페이지 불러오기</h3>
+              <button type="button" onClick={() => setShowImportModal(false)} className="text-text-muted hover:text-text-primary transition-colors" aria-label="닫기">
+                <Trash2 size={18} />
+              </button>
+            </div>
+            <p className="px-6 pt-3 text-xs text-text-muted">
+              선택한 페이지의 모든 내용(이미지, 텍스트, 키포인트 등)을 현재 페이지로 복사합니다.
+            </p>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+              {otherPages.map((op) => (
+                <button
+                  key={op.id}
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm(`"${op.product_name}" 상세페이지 내용을 불러오시겠습니까? 현재 입력 중인 내용이 덮어씌워집니다.`)) return;
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const db = supabase as any;
+                    const { data: fullPage } = await db
+                      .from("product_pages")
+                      .select("*")
+                      .eq("id", op.id)
+                      .single();
+                    if (fullPage) {
+                      const heroImgs = fullPage.hero_images?.length > 0 ? fullPage.hero_images : fullPage.hero_image ? [fullPage.hero_image] : [];
+                      const featureImgs = fullPage.feature_images?.length > 0 ? fullPage.feature_images : fullPage.feature_image ? [fullPage.feature_image] : [];
+                      setForm({
+                        hero_images: heroImgs,
+                        subtitle: fullPage.subtitle || "",
+                        feature_title: fullPage.feature_title || "",
+                        feature_description: fullPage.feature_description || "",
+                        feature_images: featureImgs,
+                        key_points: fullPage.key_points?.length > 0 ? fullPage.key_points : [{ ...emptyKeyPoint }],
+                        specs: fullPage.specs?.length > 0 ? fullPage.specs : [{ ...emptySpec }],
+                        detail_description: fullPage.detail_description || "",
+                        detail_images: fullPage.detail_images || [],
+                        process_title: fullPage.process_title || "",
+                        process_steps: fullPage.process_steps?.length > 0 ? fullPage.process_steps : [{ ...emptyStep }],
+                        gallery_images: fullPage.gallery_images || [],
+                        figma_urls: fullPage.figma_urls || [],
+                        is_published: false, // 불러온 건 비공개로 시작
+                      });
+                    }
+                    setShowImportModal(false);
+                  }}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-border hover:border-primary/50 hover:bg-bg-card-hover transition-colors text-left"
+                >
+                  <div className="w-16 h-16 rounded-lg bg-bg-dark overflow-hidden shrink-0">
+                    {op.hero_images?.[0] ? (
+                      <img src={op.hero_images[0]} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-text-muted"><ImageIcon size={20} /></div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary truncate">{op.product_name}</p>
+                    {op.subtitle && <p className="text-xs text-text-muted truncate">{op.subtitle}</p>}
+                    <p className="text-xs text-text-muted mt-1">수정: {new Date(op.updated_at).toLocaleDateString("ko-KR")}</p>
+                  </div>
+                </button>
+              ))}
+              {otherPages.length === 0 && (
+                <p className="text-center text-text-muted py-8">불러올 수 있는 다른 상세페이지가 없습니다.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

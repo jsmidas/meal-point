@@ -612,10 +612,12 @@ export type Database = {
           id: string;
           product_id: string;
           hero_image: string | null;
+          hero_images: string[];
           subtitle: string | null;
           feature_title: string | null;
           feature_description: string | null;
           feature_image: string | null;
+          feature_images: string[];
           key_points: KeyPoint[];
           specs: SpecItem[];
           detail_description: string | null;
@@ -631,10 +633,12 @@ export type Database = {
         Insert: {
           product_id: string;
           hero_image?: string | null;
+          hero_images?: string[];
           subtitle?: string | null;
           feature_title?: string | null;
           feature_description?: string | null;
           feature_image?: string | null;
+          feature_images?: string[];
           key_points?: KeyPoint[];
           specs?: SpecItem[];
           detail_description?: string | null;
@@ -648,10 +652,12 @@ export type Database = {
         Update: {
           product_id?: string;
           hero_image?: string | null;
+          hero_images?: string[];
           subtitle?: string | null;
           feature_title?: string | null;
           feature_description?: string | null;
           feature_image?: string | null;
+          feature_images?: string[];
           key_points?: KeyPoint[];
           specs?: SpecItem[];
           detail_description?: string | null;
