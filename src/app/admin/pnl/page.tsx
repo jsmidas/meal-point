@@ -43,39 +43,38 @@ export default function PnlPage() {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    // 매출: 주문(delivered) 기준
-    const { data: orders } = await db
-      .from("orders")
-      .select("order_date, total_amount, status")
-      .gte("order_date", startDate)
-      .lte("order_date", endDate);
+    // 매출: 판매관리 승인된(sale_checks) 출고 데이터 기준
+    const [salesRes, checksRes, productsRes, expRes] = await Promise.all([
+      db.from("inventory_logs")
+        .select("log_date, company_id, product_id, quantity, unit_price")
+        .eq("type", "out")
+        .gte("log_date", startDate)
+        .lte("log_date", endDate),
+      db.from("sale_checks")
+        .select("sale_date, company_id")
+        .gte("sale_date", startDate)
+        .lte("sale_date", endDate),
+      db.from("products").select("id, cost_price"),
+      db.from("expenses")
+        .select("*")
+        .gte("expense_date", startDate)
+        .lte("expense_date", endDate)
+        .order("expense_date", { ascending: false }),
+    ]);
 
-    // 매출원가: 주문 항목에서 원가 계산 (order_items + products)
-    const { data: orderItems } = await db
-      .from("order_items")
-      .select("quantity, unit_price, amount, orders!inner(order_date, status), product_id")
-      .gte("orders.order_date", startDate)
-      .lte("orders.order_date", endDate);
+    // 승인된 날짜+업체 Set
+    const confirmedKeys = new Set<string>();
+    for (const c of checksRes.data || []) {
+      confirmedKeys.add(`${c.sale_date}_${c.company_id}`);
+    }
 
     // 상품 원가 조회
-    const { data: products } = await db
-      .from("products")
-      .select("id, cost_price");
-
     const costMap: Record<string, number> = {};
-    (products || []).forEach((p: { id: string; cost_price: number }) => {
+    (productsRes.data || []).forEach((p: { id: string; cost_price: number }) => {
       costMap[p.id] = p.cost_price;
     });
 
-    // 비용
-    const { data: expData } = await db
-      .from("expenses")
-      .select("*")
-      .gte("expense_date", startDate)
-      .lte("expense_date", endDate)
-      .order("expense_date", { ascending: false });
-
-    setExpenses(expData || []);
+    setExpenses(expRes.data || []);
 
     // 월별 집계
     const monthMap: Record<string, { revenue: number; cost: number; expense: number }> = {};
@@ -84,26 +83,21 @@ export default function PnlPage() {
       monthMap[key] = { revenue: 0, cost: 0, expense: 0 };
     }
 
-    // 매출 집계
-    (orders || []).forEach((o: { order_date: string; total_amount: number; status: string }) => {
-      if (o.status === "cancelled") return;
-      const key = o.order_date.slice(0, 7);
-      if (monthMap[key]) monthMap[key].revenue += o.total_amount;
-    });
-
-    // 원가 집계
+    // 매출 + 원가 집계 (승인된 건만)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (orderItems || []).forEach((item: any) => {
-      if (item.orders?.status === "cancelled") return;
-      const key = item.orders?.order_date?.slice(0, 7);
+    (salesRes.data || []).forEach((log: any) => {
+      const checkKey = `${log.log_date}_${log.company_id}`;
+      if (!confirmedKeys.has(checkKey)) return;
+      const key = log.log_date?.slice(0, 7);
       if (key && monthMap[key]) {
-        const unitCost = costMap[item.product_id] || 0;
-        monthMap[key].cost += unitCost * item.quantity;
+        monthMap[key].revenue += (log.quantity || 0) * (log.unit_price || 0);
+        const unitCost = costMap[log.product_id] || 0;
+        monthMap[key].cost += unitCost * (log.quantity || 0);
       }
     });
 
     // 비용 집계
-    (expData || []).forEach((e: Expense) => {
+    (expRes.data || []).forEach((e: Expense) => {
       const key = e.expense_date.slice(0, 7);
       if (monthMap[key]) monthMap[key].expense += e.amount;
     });
