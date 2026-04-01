@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbDelete } from "@/lib/db";
 import type { Product } from "@/lib/supabase/types";
 import { Plus, Search, Edit2, Trash2, Package, FileImage } from "lucide-react";
 import ProductModal from "./ProductModal";
@@ -50,7 +51,7 @@ export default function ProductsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("정말 삭제하시겠습니까?")) return;
-    await supabase.from("products").delete().eq("id", id);
+    await dbDelete("products", { id });
     fetchProducts();
   }
 

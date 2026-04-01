@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbUpdate } from "@/lib/db";
 import type { InventoryWithProduct, InventoryLog, Product } from "@/lib/supabase/types";
 import { formatNumber } from "@/lib/utils";
 import type { Company } from "@/lib/supabase/types";
@@ -154,11 +155,7 @@ export default function InventoryPage() {
   async function handleSafety(e: React.FormEvent) {
     e.preventDefault();
     if (!safetyTarget) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from("inventory")
-      .update({ safety_stock: safetyValue })
-      .eq("id", safetyTarget.id);
+    await dbUpdate("inventory", { safety_stock: safetyValue }, { id: safetyTarget.id });
     setSafetyTarget(null);
     fetchData();
   }

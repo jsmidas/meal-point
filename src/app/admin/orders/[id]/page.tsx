@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { OrderWithItems } from "@/lib/supabase/types";
 import { ORDER_STATUS, formatNumber, formatDate } from "@/lib/utils";
+import { dbUpdate, dbDelete } from "@/lib/db";
 import { ArrowLeft, FileText, Trash2 } from "lucide-react";
 import Link from "next/link";
 
@@ -33,17 +34,13 @@ export default function OrderDetailPage() {
   }, [id]);
 
   async function updateStatus(status: string) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("orders") as any)
-      .update({ status })
-      .eq("id", id);
+    await dbUpdate("orders", { status }, { id });
     fetchOrder();
   }
 
   async function handleDelete() {
     if (!confirm("이 주문을 삭제하시겠습니까?")) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("orders") as any).delete().eq("id", id);
+    await dbDelete("orders", { id });
     router.push("/admin/orders");
   }
 

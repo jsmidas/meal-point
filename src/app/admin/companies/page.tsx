@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbDelete } from "@/lib/db";
 import type { Company } from "@/lib/supabase/types";
 import { Plus, Search, Edit2, Trash2, Building2 } from "lucide-react";
 import CompanyModal from "./CompanyModal";
@@ -33,7 +34,7 @@ export default function CompaniesPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("정말 삭제하시겠습니까?")) return;
-    await supabase.from("companies").delete().eq("id", id);
+    await dbDelete("companies", { id });
     fetchCompanies();
   }
 

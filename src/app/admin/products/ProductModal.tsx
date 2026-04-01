@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import type { Product, Database } from "@/lib/supabase/types";
 import { X } from "lucide-react";
 
@@ -50,8 +50,6 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
   );
   const [saving, setSaving] = useState(false);
 
-  const supabase = createClient();
-
   function handleChange(
     e: React.ChangeEvent<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -73,12 +71,10 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
     e.preventDefault();
     setSaving(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase.from("products") as any;
     if (isEdit) {
-      await db.update(form).eq("id", product!.id);
+      await dbUpdate("products", form, { id: product!.id });
     } else {
-      await db.insert(form);
+      await dbInsert("products", form);
     }
 
     setSaving(false);

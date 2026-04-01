@@ -11,6 +11,7 @@ import type {
   ProcessStep,
   FigmaEmbed,
 } from "@/lib/supabase/types";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import {
   ArrowLeft,
   Save,
@@ -249,14 +250,12 @@ export default function ProductDetailEditorPage() {
     };
 
     if (pageId) {
-      await db.from("product_pages").update(payload).eq("id", pageId);
+      await dbUpdate("product_pages", payload, { id: pageId });
     } else {
-      const { data } = await db
-        .from("product_pages")
-        .insert(payload)
-        .select()
-        .single();
-      if (data) setPageId(data.id);
+      const { data } = await dbInsert("product_pages", payload);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = (Array.isArray(data) ? data[0] : data) as any;
+      if (row) setPageId(row.id);
     }
 
     setSaving(false);

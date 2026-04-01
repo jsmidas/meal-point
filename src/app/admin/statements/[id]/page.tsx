@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { StatementWithItems, CompanyInfo, StatementSendLog } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
+import { dbUpdate, dbDelete, dbInsert } from "@/lib/db";
 import { ArrowLeft, Trash2, Printer, Send, Clock, Plus, Edit2, Save, X } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -131,24 +132,22 @@ export default function StatementDetailPage() {
   async function saveEdits() {
     if (!statement || editItems.length === 0) return;
     setSaving(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
 
     const supplyAmount = editItems.reduce((sum, item) => sum + item.amount, 0);
     const taxAmount = Math.round(supplyAmount * 0.1);
     const totalAmount = supplyAmount + taxAmount + editShippingFee;
 
     // 1. statement 업데이트
-    await db.from("statements").update({
+    await dbUpdate("statements", {
       supply_amount: supplyAmount,
       tax_amount: taxAmount,
       total_amount: totalAmount,
       shipping_fee: editShippingFee,
       notes: editNotes || null,
-    }).eq("id", id);
+    }, { id });
 
     // 2. 기존 항목 삭제
-    await db.from("statement_items").delete().eq("statement_id", id);
+    await dbDelete("statement_items", { statement_id: id });
 
     // 3. 새 항목 삽입
     const insertItems = editItems.map((item, i) => ({
@@ -161,7 +160,7 @@ export default function StatementDetailPage() {
       amount: item.amount,
       sort_order: i,
     }));
-    await db.from("statement_items").insert(insertItems);
+    await dbInsert("statement_items", insertItems);
 
     setEditing(false);
     setSaving(false);
@@ -170,20 +169,18 @@ export default function StatementDetailPage() {
 
   async function handleDelete() {
     if (!confirm("이 거래명세서를 삭제하시겠습니까?")) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("statements") as any).delete().eq("id", id);
+    await dbDelete("statements", { id });
     router.push("/admin/statements");
   }
 
   async function handleAddSendLog() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    const { data, error } = await db.from("statement_send_logs").insert({
+    const { data: logData, error } = await dbInsert("statement_send_logs", {
       statement_id: id,
       sent_method: sendMethod,
       recipient_info: sendRecipient || null,
       notes: sendNotes || null,
-    }).select().single();
+    });
+    const data = Array.isArray(logData) ? logData[0] : logData;
 
     if (!error && data) {
       setSendLogs((prev) => [data as StatementSendLog, ...prev]);

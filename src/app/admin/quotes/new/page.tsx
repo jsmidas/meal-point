@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, QuoteWithItems } from "@/lib/supabase/types";
 import { generateQuoteNumber, formatNumber, formatDate } from "@/lib/utils";
+import { dbInsert } from "@/lib/db";
 import { Plus, Trash2, ArrowLeft, Building2, PenLine, Copy, X } from "lucide-react";
 import Link from "next/link";
 
@@ -234,9 +235,7 @@ export default function NewQuotePage() {
     if (!isRecipientValid || items.length === 0) return;
     setSaving(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    const { data: quote, error } = await db.from("quotes").insert({
+    const { data: quoteData, error } = await dbInsert("quotes", {
       quote_number: generateQuoteNumber(),
       company_id: inputMode === "select" ? companyId : null,
       quote_date: quoteDate,
@@ -253,15 +252,16 @@ export default function NewQuotePage() {
       recipient_biz_category: recipientBizCategory || null,
       recipient_address: recipientAddress || null,
       recipient_phone: recipientPhone || null,
-    }).select().single();
+    });
+    const quote = Array.isArray(quoteData) ? quoteData[0] : quoteData;
 
     if (error || !quote) {
-      alert("생성 실패: " + (error?.message || "알 수 없는 오류"));
+      alert("생성 실패: " + (error || "알 수 없는 오류"));
       setSaving(false);
       return;
     }
 
-    await db.from("quote_items").insert(
+    await dbInsert("quote_items",
       items.map((item) => ({
         quote_id: quote.id,
         product_id: item.product_id || null,

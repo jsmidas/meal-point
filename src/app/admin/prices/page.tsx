@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbDelete } from "@/lib/db";
 import type { Company, Product, CompanyPrice } from "@/lib/supabase/types";
 import { formatNumber } from "@/lib/utils";
 import { Save, Check, Building2, RotateCcw } from "lucide-react";
@@ -109,9 +110,6 @@ export default function PricesPage() {
     if (keys.length === 0) return;
     setSaving(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
     // 삭제 대상 (0원으로 변경된 것 중 기존에 저장된 것)
     const toDelete = keys.filter((k) => dirty[k] === 0 && k in priceMap);
     // upsert 대상 (0보다 큰 것)
@@ -129,10 +127,8 @@ export default function PricesPage() {
 
     // 기존 레코드를 먼저 삭제 후 insert (upsert 대신)
     for (const item of toUpsert) {
-      await db.from("company_prices").delete()
-        .eq("company_id", item.company_id)
-        .eq("product_id", item.product_id);
-      const { error } = await db.from("company_prices").insert(item);
+      await dbDelete("company_prices", { company_id: item.company_id, product_id: item.product_id });
+      const { error } = await dbInsert("company_prices", item);
       if (error) {
         console.error("단가 저장 실패:", error, item);
         hasError = true;
@@ -143,7 +139,7 @@ export default function PricesPage() {
       const sepIdx = k.indexOf("_");
       const companyId = k.substring(0, sepIdx);
       const productId = k.substring(sepIdx + 1);
-      await db.from("company_prices").delete().eq("company_id", companyId).eq("product_id", productId);
+      await dbDelete("company_prices", { company_id: companyId, product_id: productId });
     }
 
     if (hasError) {

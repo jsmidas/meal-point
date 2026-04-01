@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { QuoteWithItems, CompanyInfo, QuoteSendLog } from "@/lib/supabase/types";
 import { QUOTE_STATUS, formatNumber, formatDate, generateOrderNumber } from "@/lib/utils";
+import { dbUpdate, dbDelete, dbInsert } from "@/lib/db";
 import { ArrowLeft, Trash2, Printer, ShoppingCart, Send, Clock, Plus } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -55,15 +56,13 @@ export default function QuoteDetailPage() {
   }, [id]);
 
   async function updateStatus(status: string) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("quotes") as any).update({ status }).eq("id", id);
+    await dbUpdate("quotes", { status }, { id });
     setQuote((prev) => prev ? { ...prev, status } : prev);
   }
 
   async function handleDelete() {
     if (!confirm("이 견적서를 삭제하시겠습니까?")) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("quotes") as any).delete().eq("id", id);
+    await dbDelete("quotes", { id });
     router.push("/admin/quotes");
   }
 
@@ -74,23 +73,22 @@ export default function QuoteDetailPage() {
     }
     if (!confirm("이 견적서를 주문으로 전환하시겠습니까?")) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     const totalAmount = quote.quote_items.reduce((sum, i) => sum + i.amount, 0);
-    const { data: order, error } = await db.from("orders").insert({
+    const { data: orderData, error } = await dbInsert("orders", {
       order_number: generateOrderNumber(),
       company_id: quote.company_id,
       order_date: new Date().toISOString().slice(0, 10),
       total_amount: totalAmount,
       notes: `견적서 ${quote.quote_number}에서 전환`,
-    }).select().single();
+    });
+    const order = Array.isArray(orderData) ? orderData[0] : orderData;
 
     if (error || !order) {
       alert("주문 전환 실패");
       return;
     }
 
-    await db.from("order_items").insert(
+    await dbInsert("order_items",
       quote.quote_items.map((item) => ({
         order_id: order.id,
         product_id: item.product_id || "00000000-0000-0000-0000-000000000000",
@@ -107,14 +105,13 @@ export default function QuoteDetailPage() {
   }
 
   async function handleAddSendLog() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    const { data, error } = await db.from("quote_send_logs").insert({
+    const { data: logData, error } = await dbInsert("quote_send_logs", {
       quote_id: id,
       sent_method: sendMethod,
       recipient_info: sendRecipient || null,
       notes: sendNotes || null,
-    }).select().single();
+    });
+    const data = Array.isArray(logData) ? logData[0] : logData;
 
     if (!error && data) {
       setSendLogs((prev) => [data as QuoteSendLog, ...prev]);

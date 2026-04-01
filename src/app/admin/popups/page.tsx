@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import type { Popup } from "@/lib/supabase/types";
 import { formatDate } from "@/lib/utils";
 import {
@@ -75,8 +76,6 @@ export default function PopupsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     const payload = {
       title: form.title,
       content: form.content || null,
@@ -89,9 +88,9 @@ export default function PopupsPage() {
     };
 
     if (editId) {
-      await db.from("popups").update(payload).eq("id", editId);
+      await dbUpdate("popups", payload, { id: editId });
     } else {
-      await db.from("popups").insert(payload);
+      await dbInsert("popups", payload);
     }
 
     setShowModal(false);
@@ -100,17 +99,12 @@ export default function PopupsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("정말 삭제하시겠습니까?")) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("popups").delete().eq("id", id);
+    await dbDelete("popups", { id });
     fetchData();
   }
 
   async function toggleActive(popup: Popup) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from("popups")
-      .update({ is_active: !popup.is_active })
-      .eq("id", popup.id);
+    await dbUpdate("popups", { is_active: !popup.is_active }, { id: popup.id });
     fetchData();
   }
 
@@ -119,12 +113,10 @@ export default function PopupsPage() {
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= popups.length) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     const other = popups[swapIdx];
     await Promise.all([
-      db.from("popups").update({ sort_order: other.sort_order }).eq("id", popup.id),
-      db.from("popups").update({ sort_order: popup.sort_order }).eq("id", other.id),
+      dbUpdate("popups", { sort_order: other.sort_order }, { id: popup.id }),
+      dbUpdate("popups", { sort_order: popup.sort_order }, { id: other.id }),
     ]);
     fetchData();
   }

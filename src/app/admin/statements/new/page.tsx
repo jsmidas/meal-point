@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
 import { generateStatementNumber, formatNumber, formatDate } from "@/lib/utils";
+import { dbInsert } from "@/lib/db";
 import { Plus, Trash2, ArrowLeft, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 
@@ -326,10 +327,8 @@ function NewStatementForm() {
     setSaving(true);
 
     const statementNumber = generateStatementNumber();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
 
-    const { data: statement, error } = await db.from("statements").insert({
+    const { data: stData, error } = await dbInsert("statements", {
       statement_number: statementNumber,
       order_id: linkedOrderId || null,
       company_id: companyId,
@@ -339,10 +338,11 @@ function NewStatementForm() {
       total_amount: totalAmount,
       shipping_fee: shippingFee,
       notes: notes || null,
-    }).select().single();
+    });
+    const statement = Array.isArray(stData) ? stData[0] : stData;
 
     if (error || !statement) {
-      alert("생성 실패: " + (error?.message || "알 수 없는 오류"));
+      alert("생성 실패: " + (error || "알 수 없는 오류"));
       setSaving(false);
       return;
     }
@@ -357,7 +357,7 @@ function NewStatementForm() {
       amount: item.amount,
     }));
 
-    await db.from("statement_items").insert(stItems);
+    await dbInsert("statement_items", stItems);
 
     router.push(`/admin/statements/${statement.id}`);
   }

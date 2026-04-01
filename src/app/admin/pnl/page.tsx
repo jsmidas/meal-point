@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbDelete } from "@/lib/db";
 import type { Expense } from "@/lib/supabase/types";
 import { EXPENSE_CATEGORIES, formatNumber } from "@/lib/utils";
 import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2 } from "lucide-react";
@@ -134,9 +135,7 @@ export default function PnlPage() {
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
     if (!expDesc || expAmount <= 0) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    await db.from("expenses").insert({
+    await dbInsert("expenses", {
       expense_date: expDate,
       category: expCategory,
       description: expDesc,
@@ -152,8 +151,7 @@ export default function PnlPage() {
 
   async function handleDeleteExpense(id: string) {
     if (!confirm("이 비용을 삭제하시겠습니까?")) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("expenses").delete().eq("id", id);
+    await dbDelete("expenses", { id });
     fetchData();
   }
 

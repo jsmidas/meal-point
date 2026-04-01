@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsert } from "@/lib/db";
 import type { Company, Product } from "@/lib/supabase/types";
 import { generateOrderNumber, formatNumber } from "@/lib/utils";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
@@ -142,19 +143,17 @@ export default function NewOrderPage() {
 
     const orderNumber = generateOrderNumber();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
-    const { data: order, error } = await db.from("orders").insert({
+    const { data: orderData, error } = await dbInsert("orders", {
       order_number: orderNumber,
       company_id: companyId,
       order_date: orderDate,
       total_amount: totalAmount,
       notes: notes || null,
-    }).select().single();
+    });
+    const order = Array.isArray(orderData) ? orderData[0] : orderData;
 
     if (error || !order) {
-      alert("주문 생성 실패: " + (error?.message || "알 수 없는 오류"));
+      alert("주문 생성 실패: " + (error || "알 수 없는 오류"));
       setSaving(false);
       return;
     }
@@ -169,7 +168,7 @@ export default function NewOrderPage() {
       amount: item.amount,
     }));
 
-    await db.from("order_items").insert(orderItems);
+    await dbInsert("order_items", orderItems);
 
     router.push(`/admin/orders/${order.id}`);
   }

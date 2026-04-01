@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Statement, BillingWithPayments, Payment } from "@/lib/supabase/types";
 import { formatNumber, generateBillingNumber } from "@/lib/utils";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import {
   ChevronLeft,
   ChevronRight,
@@ -203,29 +204,31 @@ export default function BillingPage() {
 
     // 청구 없으면 자동 생성
     if (!billingId) {
-      const { data: newBilling } = await db.from("billings").insert({
+      const { data: newBillingData } = await dbInsert("billings", {
         billing_number: generateBillingNumber(month),
         company_id: taxModal.id,
         billing_month: month,
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
         total_amount: taxComputedTotal,
-      }).select().single();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newBilling = (Array.isArray(newBillingData) ? newBillingData[0] : newBillingData) as any;
       billingId = newBilling?.id;
     } else {
       // 기존 청구 금액 업데이트
-      await db.from("billings").update({
+      await dbUpdate("billings", {
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
         total_amount: taxComputedTotal,
-      }).eq("id", billingId);
+      }, { id: billingId });
     }
 
-    await db.from("billings").update({
+    await dbUpdate("billings", {
       tax_invoice_issued: true,
       tax_invoice_date: taxDate,
       tax_invoice_number: taxNumber || null,
-    }).eq("id", billingId);
+    }, { id: billingId! });
 
     setTaxModal(null);
     setTaxNumber("");
@@ -247,19 +250,21 @@ export default function BillingPage() {
     if (!billingId) {
       const supply = payModalRow.sales.amount || payAmount;
       const tax = Math.round(supply * 0.1);
-      const { data: newBilling } = await db.from("billings").insert({
+      const { data: newBillingData } = await dbInsert("billings", {
         billing_number: generateBillingNumber(month),
         company_id: payModalRow.id,
         billing_month: month,
         total_supply: supply,
         total_tax: tax,
         total_amount: supply + tax,
-      }).select().single();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newBilling = (Array.isArray(newBillingData) ? newBillingData[0] : newBillingData) as any;
       billingId = newBilling?.id;
       currentTotal = supply + tax;
     }
 
-    await db.from("payments").insert({
+    await dbInsert("payments", {
       billing_id: billingId,
       amount: payAmount,
       payment_date: payDate,
@@ -269,11 +274,11 @@ export default function BillingPage() {
 
     const newPaid = currentPaid + payAmount;
     const newStatus = newPaid >= currentTotal ? "paid" : "partial";
-    await db.from("billings").update({
+    await dbUpdate("billings", {
       paid_amount: newPaid,
       status: newStatus,
       paid_date: newStatus === "paid" ? payDate : null,
-    }).eq("id", billingId);
+    }, { id: billingId });
 
     setPayModalRow(null);
     setPayAmount(0);
@@ -288,7 +293,7 @@ export default function BillingPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const total = billingSupply + billingTax;
-    await db.from("billings").insert({
+    await dbInsert("billings", {
       billing_number: generateBillingNumber(month),
       company_id: billingModal.companyId,
       billing_month: month,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import type { Company, Database } from "@/lib/supabase/types";
 import { X } from "lucide-react";
 
@@ -50,8 +50,6 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
   );
   const [saving, setSaving] = useState(false);
 
-  const supabase = createClient();
-
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
@@ -67,12 +65,10 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
     e.preventDefault();
     setSaving(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase.from("companies") as any;
     if (isEdit) {
-      await db.update(form).eq("id", company!.id);
+      await dbUpdate("companies", form, { id: company!.id });
     } else {
-      await db.insert(form);
+      await dbInsert("companies", form);
     }
 
     setSaving(false);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import type { CompanyInfo } from "@/lib/supabase/types";
 import { Upload, Trash2, Save, Image as ImageIcon } from "lucide-react";
 
@@ -98,20 +99,17 @@ export default function SettingsPage() {
     setSaving(true);
     setMessage(null);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
     if (companyInfo) {
-      const { error } = await db.from("company_info").update(form).eq("id", companyInfo.id);
+      const { error } = await dbUpdate("company_info", form, { id: companyInfo.id });
       if (error) {
-        setMessage({ type: "error", text: `저장 실패: ${error.message}` });
+        setMessage({ type: "error", text: `저장 실패: ${error}` });
       } else {
         setMessage({ type: "success", text: "회사 정보가 저장되었습니다." });
       }
     } else {
-      const { error } = await db.from("company_info").insert(form);
+      const { error } = await dbInsert("company_info", form);
       if (error) {
-        setMessage({ type: "error", text: `등록 실패: ${error.message}` });
+        setMessage({ type: "error", text: `등록 실패: ${error}` });
       } else {
         setMessage({ type: "success", text: "회사 정보가 등록되었습니다." });
       }

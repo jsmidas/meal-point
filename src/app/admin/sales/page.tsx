@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
+import { dbInsert, dbUpdate, dbDelete, dbUpsert } from "@/lib/db";
 import {
   Plus,
   ChevronLeft,
@@ -72,10 +73,10 @@ export default function SalesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     if (checkedSales.has(key)) {
-      await db.from("sale_checks").delete().eq("sale_date", dateStr).eq("company_id", companyId);
+      await dbDelete("sale_checks", { sale_date: dateStr, company_id: companyId });
       setCheckedSales((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
-      await db.from("sale_checks").upsert({ sale_date: dateStr, company_id: companyId, checked: true }, { onConflict: "sale_date,company_id" });
+      await dbUpsert("sale_checks", { sale_date: dateStr, company_id: companyId, checked: true }, { onConflict: "sale_date,company_id" });
       setCheckedSales((prev) => { const next = new Set(prev); next.add(key); return next; });
     }
   }
@@ -336,12 +337,10 @@ export default function SalesPage() {
           .eq("product_id", oldLog.product_id)
           .maybeSingle();
         if (inv) {
-          await db.from("inventory")
-            .update({ current_stock: inv.current_stock + oldLog.quantity })
-            .eq("product_id", oldLog.product_id);
+          await dbUpdate("inventory", { current_stock: inv.current_stock + oldLog.quantity }, { product_id: oldLog.product_id });
         }
       }
-      await db.from("inventory_logs").delete().eq("id", editingLogId);
+      await dbDelete("inventory_logs", { id: editingLogId });
     }
 
     const newLogIds: string[] = [];
@@ -351,7 +350,7 @@ export default function SalesPage() {
       const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
 
       // 판매(출고) 로그
-      const { data: insertedLog } = await db.from("inventory_logs").insert({
+      const { data: insertedLogData } = await dbInsert("inventory_logs", {
         product_id: item.type === "product" ? item.product_id : null,
         type: "out",
         quantity: actualQty,
@@ -361,7 +360,9 @@ export default function SalesPage() {
         company_id: formCompanyId || null,
         unit_price: item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0),
         log_date: formDate,
-      }).select("id").single();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const insertedLog = (Array.isArray(insertedLogData) ? insertedLogData[0] : insertedLogData) as any;
 
       if (insertedLog) newLogIds.push(insertedLog.id);
 
@@ -376,12 +377,9 @@ export default function SalesPage() {
         const newStock = Math.max(0, (inv?.current_stock || 0) - actualQty);
 
         if (inv) {
-          await db
-            .from("inventory")
-            .update({ current_stock: newStock, last_out_date: formDate })
-            .eq("product_id", item.product_id);
+          await dbUpdate("inventory", { current_stock: newStock, last_out_date: formDate }, { product_id: item.product_id });
         } else {
-          await db.from("inventory").insert({
+          await dbInsert("inventory", {
             product_id: item.product_id,
             current_stock: 0,
             last_out_date: formDate,
@@ -424,14 +422,11 @@ export default function SalesPage() {
         .maybeSingle();
 
       if (inv) {
-        await db
-          .from("inventory")
-          .update({ current_stock: inv.current_stock + log.quantity })
-          .eq("product_id", log.product_id);
+        await dbUpdate("inventory", { current_stock: inv.current_stock + log.quantity }, { product_id: log.product_id });
       }
     }
 
-    await db.from("inventory_logs").delete().eq("id", log.id);
+    await dbDelete("inventory_logs", { id: log.id });
     fetchData();
   }
 

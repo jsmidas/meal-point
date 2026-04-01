@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
+import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import {
   Plus,
   ChevronLeft,
@@ -154,7 +155,7 @@ export default function InboundPage() {
     const db = supabase as any;
 
     // 입고 로그
-    await db.from("inventory_logs").insert({
+    await dbInsert("inventory_logs", {
       product_id: form.product_id,
       type: "in",
       quantity: form.quantity,
@@ -174,12 +175,9 @@ export default function InboundPage() {
     const newStock = (inv?.current_stock || 0) + form.quantity;
 
     if (inv) {
-      await db
-        .from("inventory")
-        .update({ current_stock: newStock, last_in_date: form.log_date })
-        .eq("product_id", form.product_id);
+      await dbUpdate("inventory", { current_stock: newStock, last_in_date: form.log_date }, { product_id: form.product_id });
     } else {
-      await db.from("inventory").insert({
+      await dbInsert("inventory", {
         product_id: form.product_id,
         current_stock: newStock,
         last_in_date: form.log_date,
@@ -206,14 +204,11 @@ export default function InboundPage() {
 
     if (inv) {
       const newStock = Math.max(0, inv.current_stock - log.quantity);
-      await db
-        .from("inventory")
-        .update({ current_stock: newStock })
-        .eq("product_id", log.product_id);
+      await dbUpdate("inventory", { current_stock: newStock }, { product_id: log.product_id });
     }
 
     // 로그 삭제
-    await db.from("inventory_logs").delete().eq("id", log.id);
+    await dbDelete("inventory_logs", { id: log.id });
     fetchData();
   }
 
