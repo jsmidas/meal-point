@@ -120,10 +120,30 @@ export default function BillingPage() {
       stmtMap.set(s.company_id, arr);
     }
 
-    // 청구 집계
+    // 청구 집계 + 명세서 기준 자동 동기화
     const billMap = new Map<string, BillingWithPayments>();
     for (const b of billRes.data || []) {
       billMap.set(b.company_id, b);
+
+      // 명세서가 있으면 명세서 합산으로 청구 금액 자동 보정
+      const stmts = stmtMap.get(b.company_id);
+      if (stmts && stmts.length > 0) {
+        const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
+        const stmtTax = Math.round(stmtSupply * 0.1);
+        const stmtTotal = stmtSupply + stmtTax;
+        if (b.total_amount !== stmtTotal) {
+          // DB 업데이트 (비동기, UI 먼저 반영)
+          dbUpdate("billings", {
+            total_supply: stmtSupply,
+            total_tax: stmtTax,
+            total_amount: stmtTotal,
+          }, { id: b.id });
+          // 로컬 데이터 즉시 반영
+          b.total_supply = stmtSupply;
+          b.total_tax = stmtTax;
+          b.total_amount = stmtTotal;
+        }
+      }
     }
 
     // 체크된 거래처 중 활동이 있는 거래처만
