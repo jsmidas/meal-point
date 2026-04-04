@@ -458,15 +458,18 @@ export default function BillingPage() {
                     {row.statements.length > 0 ? (
                       <div className="space-y-1">
                         {row.statements.map((s) => (
-                          <div key={s.id} className="flex items-center gap-2">
-                            <span className="text-xs text-emerald-400">{s.statement_number}</span>
-                            <button
-                              type="button"
-                              onClick={() => router.push(`/admin/statements/${s.id}`)}
-                              className="inline-flex items-center gap-0.5 text-[11px] text-text-muted hover:text-primary transition-colors"
-                            >
-                              <ExternalLink size={10} /> PDF
-                            </button>
+                          <div key={s.id} className="flex items-center gap-2 justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-emerald-400">{s.statement_number}</span>
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/admin/statements/${s.id}`)}
+                                className="inline-flex items-center gap-0.5 text-[11px] text-text-muted hover:text-primary transition-colors"
+                              >
+                                <ExternalLink size={10} /> PDF
+                              </button>
+                            </div>
+                            <span className="text-[11px] text-text-secondary">{formatNumber(s.total_amount)}원</span>
                           </div>
                         ))}
                         <button
