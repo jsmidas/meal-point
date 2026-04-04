@@ -162,6 +162,40 @@ export default function StatementDetailPage() {
     }));
     await dbInsert("statement_items", insertItems);
 
+    // 4. 관련 청구(billings) 자동 갱신 — 명세서와 동일 월의 청구가 있으면 금액 재계산
+    if (statement.company_id && statement.statement_date) {
+      const billingMonth = statement.statement_date.slice(0, 7);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any;
+      const { data: billing } = await db
+        .from("billings")
+        .select("id")
+        .eq("company_id", statement.company_id)
+        .eq("billing_month", billingMonth)
+        .single();
+
+      if (billing) {
+        // 해당 월의 모든 명세서 합산
+        const [y, m] = billingMonth.split("-").map(Number);
+        const from = `${billingMonth}-01`;
+        const to = `${billingMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+        const { data: stmts } = await db
+          .from("statements")
+          .select("supply_amount")
+          .eq("company_id", statement.company_id)
+          .gte("statement_date", from)
+          .lte("statement_date", to);
+
+        const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
+        const newTax = Math.round(newSupply * 0.1);
+        await dbUpdate("billings", {
+          total_supply: newSupply,
+          total_tax: newTax,
+          total_amount: newSupply + newTax,
+        }, { id: billing.id });
+      }
+    }
+
     setEditing(false);
     setSaving(false);
     await load();

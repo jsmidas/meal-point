@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
 import { generateStatementNumber, formatNumber, formatDate } from "@/lib/utils";
-import { dbInsert } from "@/lib/db";
+import { dbInsert, dbUpdate } from "@/lib/db";
 import { Plus, Trash2, ArrowLeft, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 
@@ -358,6 +358,37 @@ function NewStatementForm() {
     }));
 
     await dbInsert("statement_items", stItems);
+
+    // 관련 청구(billings) 자동 갱신
+    const billingMonth = statementDate.slice(0, 7);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data: billing } = await db
+      .from("billings")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("billing_month", billingMonth)
+      .single();
+
+    if (billing) {
+      const [by, bm] = billingMonth.split("-").map(Number);
+      const bFrom = `${billingMonth}-01`;
+      const bTo = `${billingMonth}-${String(new Date(by, bm, 0).getDate()).padStart(2, "0")}`;
+      const { data: stmts } = await db
+        .from("statements")
+        .select("supply_amount")
+        .eq("company_id", companyId)
+        .gte("statement_date", bFrom)
+        .lte("statement_date", bTo);
+
+      const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
+      const newTax = Math.round(newSupply * 0.1);
+      await dbUpdate("billings", {
+        total_supply: newSupply,
+        total_tax: newTax,
+        total_amount: newSupply + newTax,
+      }, { id: billing.id });
+    }
 
     router.push(`/admin/statements/${statement.id}`);
   }
