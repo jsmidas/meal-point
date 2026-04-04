@@ -16,6 +16,7 @@ import {
   Circle,
   Plus,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -54,7 +55,7 @@ export default function BillingPage() {
   const [payNotes, setPayNotes] = useState("");
 
   // 판매 상세 모달
-  const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[] } | null>(null);
+  const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[]; statements: Statement[]; billing: BillingWithPayments | null } | null>(null);
 
   // 청구 생성 모달
   const [billingModal, setBillingModal] = useState<{ companyId: string; companyName: string; salesAmount: number } | null>(null);
@@ -167,7 +168,7 @@ export default function BillingPage() {
     return { totalSales, stmtIssued, taxUnissued, totalUnpaid };
   }, [companyRows]);
 
-  // 세금계산서 합산금액 계산
+  // 세금계산서 합산금액 계산 (판매액 기준 동기화)
   const taxComputedSupply = useMemo(() => {
     if (!taxModal) return 0;
     if (taxSupplyOverride !== null) return taxSupplyOverride;
@@ -177,8 +178,8 @@ export default function BillingPage() {
         .filter((s) => taxChecked.has(s.id))
         .reduce((sum, s) => sum + s.supply_amount, 0);
     }
-    // 기본: 청구금액 or 판매금액
-    return taxModal.billing?.total_supply ?? taxModal.sales.amount;
+    // 기본: 판매금액 우선 (판매 데이터가 있으면 판매액, 없으면 기존 청구금액)
+    return taxModal.sales.amount || taxModal.billing?.total_supply || 0;
   }, [taxModal, taxChecked, taxSupplyOverride]);
 
   const taxComputedTax = Math.round(taxComputedSupply * 0.1);
@@ -189,8 +190,8 @@ export default function BillingPage() {
     setTaxDate(new Date().toISOString().slice(0, 10));
     setTaxNumber("");
     setTaxSupplyOverride(null);
-    // 명세서가 있으면 전체 선택
-    setTaxChecked(new Set(row.statements.map((s) => s.id)));
+    // 명세서 선택 해제 → 판매액 기준으로 시작 (명세서와 판매액이 다를 수 있으므로)
+    setTaxChecked(new Set());
   }
 
   // 세금계산서 발행 처리
@@ -391,7 +392,14 @@ export default function BillingPage() {
               <div key={row.id} className="rounded-2xl border border-border bg-bg-card overflow-hidden">
                 {/* 카드 헤더 */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-bg-dark/40">
-                  <h3 className="text-base font-bold text-text-primary">{row.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-text-primary">{row.name}</h3>
+                    {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1)) !== billing.total_amount && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-yellow-400 bg-yellow-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
+                        <AlertTriangle size={10} /> 금액 불일치
+                      </span>
+                    )}
+                  </div>
                   <span className="text-sm font-bold text-accent">{formatNumber(row.sales.amount)}원</span>
                 </div>
 
@@ -414,7 +422,7 @@ export default function BillingPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => setSalesDetailModal({ companyName: row.name, logs: row.sales.logs })}
+                      onClick={() => setSalesDetailModal({ companyName: row.name, logs: row.sales.logs, statements: row.statements, billing: row.billing })}
                       className="mt-2 text-[11px] text-primary/70 hover:text-primary underline"
                     >
                       판매 상세 보기
@@ -505,6 +513,17 @@ export default function BillingPage() {
                           <span className="text-text-muted">청구액</span>
                           <span className="text-text-primary">{formatNumber(billing.total_amount)}원</span>
                         </div>
+                        {/* 판매액과 청구액 차이 경고 */}
+                        {(() => {
+                          const expectedBilling = row.sales.amount + Math.round(row.sales.amount * 0.1);
+                          const diff = expectedBilling - billing.total_amount;
+                          return diff !== 0 && row.sales.amount > 0 ? (
+                            <div className="flex justify-between text-[10px] bg-yellow-500/10 rounded px-1.5 py-0.5 -mx-1.5">
+                              <span className="text-yellow-400">판매 기준 {formatNumber(expectedBilling)}원</span>
+                              <span className="text-yellow-400 font-bold">{diff > 0 ? "+" : ""}{formatNumber(diff)}원</span>
+                            </div>
+                          ) : null;
+                        })()}
                         <div className="flex justify-between text-xs">
                           <span className="text-text-muted">입금액</span>
                           <span className="text-emerald-400">{formatNumber(billing.paid_amount)}원</span>
@@ -568,6 +587,22 @@ export default function BillingPage() {
               <button type="button" onClick={() => setTaxModal(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
             </div>
             <form onSubmit={handleTaxInvoice} className="p-6 space-y-5">
+
+              {/* 판매액 기준 안내 */}
+              {(() => {
+                const stmtSupply = taxModal.statements.reduce((s, st) => s + st.supply_amount, 0);
+                const salesAmount = taxModal.sales.amount;
+                const diff = salesAmount - stmtSupply;
+                return taxModal.statements.length > 0 && diff !== 0 ? (
+                  <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 text-xs space-y-1">
+                    <p className="text-yellow-400 font-semibold">판매액과 명세서 금액 불일치</p>
+                    <div className="flex justify-between"><span className="text-text-muted">판매액 (출고 기준)</span><span className="text-text-primary">{formatNumber(salesAmount)}원</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">명세서 공급가 합계</span><span className="text-text-primary">{formatNumber(stmtSupply)}원</span></div>
+                    <div className="flex justify-between font-bold"><span className="text-yellow-400">차이</span><span className="text-yellow-400">{diff > 0 ? "+" : ""}{formatNumber(diff)}원</span></div>
+                    <p className="text-text-muted pt-1">기본값은 판매액 기준입니다. 명세서 기준으로 하려면 아래에서 명세서를 선택하세요.</p>
+                  </div>
+                ) : null;
+              })()}
 
               {/* 명세서 합산 선택 */}
               {taxModal.statements.length > 0 && (
@@ -816,6 +851,49 @@ export default function BillingPage() {
                   <span className="text-text-primary">합계</span>
                   <span className="text-accent">{formatNumber(supply + tax)}원</span>
                 </div>
+
+                {/* 명세서·청구 비교 */}
+                {(() => {
+                  const stmts = salesDetailModal.statements;
+                  const billing = salesDetailModal.billing;
+                  const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
+                  const stmtTotal = stmts.reduce((s, st) => s + st.total_amount, 0);
+                  const supplyDiff = supply - stmtSupply;
+                  const billingTotal = billing?.total_amount ?? 0;
+                  const expectedBilling = supply + tax;
+                  const billingDiff = expectedBilling - billingTotal;
+                  return (
+                    <div className="border-t border-border pt-3 mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">명세서·청구 비교</p>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-text-muted">명세서 공급가 합계 ({stmts.length}건)</span>
+                        <span className={`font-medium ${supplyDiff !== 0 ? "text-yellow-400" : "text-emerald-400"}`}>{formatNumber(stmtSupply)}원</span>
+                      </div>
+                      {supplyDiff !== 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-yellow-400">판매-명세서 차이</span>
+                          <span className="text-yellow-400 font-bold">{supplyDiff > 0 ? "+" : ""}{formatNumber(supplyDiff)}원</span>
+                        </div>
+                      )}
+                      {billing ? (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-text-muted">청구액 (부가세 포함)</span>
+                            <span className={`font-medium ${billingDiff !== 0 ? "text-yellow-400" : "text-emerald-400"}`}>{formatNumber(billingTotal)}원</span>
+                          </div>
+                          {billingDiff !== 0 && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-red-400">판매 합계와 청구액 차이</span>
+                              <span className="text-red-400 font-bold">{billingDiff > 0 ? "+" : ""}{formatNumber(billingDiff)}원</span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-xs text-text-muted">청구 미생성</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
