@@ -457,6 +457,10 @@ export default function BillingPage() {
                     </div>
                     {row.statements.length > 0 ? (
                       <div className="space-y-1">
+                        <div className="flex justify-between items-center mb-1 pb-1 border-b border-border/50">
+                          <span className="text-[11px] text-text-muted">{row.statements.length}건 합계</span>
+                          <span className="text-xs font-bold text-text-primary">{formatNumber(row.statements.reduce((s, st) => s + st.total_amount, 0))}원</span>
+                        </div>
                         {row.statements.map((s) => (
                           <div key={s.id} className="flex items-center gap-2 justify-between">
                             <div className="flex items-center gap-2">
