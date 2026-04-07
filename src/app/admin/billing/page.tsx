@@ -56,6 +56,9 @@ export default function BillingPage() {
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payNotes, setPayNotes] = useState("");
+  const [payDepositor, setPayDepositor] = useState("");
+  const [payBank, setPayBank] = useState("");
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null); // 수정 모드
 
   // 판매 상세 모달
   const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[]; statements: Statement[]; billing: BillingWithPayments | null } | null>(null);
@@ -307,27 +310,55 @@ export default function BillingPage() {
       currentTotal = supply + tax;
     }
 
-    await dbInsert("payments", {
-      billing_id: billingId,
-      amount: payAmount,
-      payment_date: payDate,
-      payment_method: payMethod,
-      notes: payNotes || null,
-    });
+    if (editingPayment) {
+      // 수정 모드: 기존 입금 업데이트
+      await dbUpdate("payments", {
+        amount: payAmount,
+        payment_date: payDate,
+        payment_method: payMethod,
+        notes: payNotes || null,
+        depositor_name: payDepositor || null,
+        bank_name: payBank || null,
+      }, { id: editingPayment.id });
+    } else {
+      // 신규 입금
+      await dbInsert("payments", {
+        billing_id: billingId,
+        amount: payAmount,
+        payment_date: payDate,
+        payment_method: payMethod,
+        notes: payNotes || null,
+        depositor_name: payDepositor || null,
+        bank_name: payBank || null,
+      });
+    }
 
-    const newPaid = currentPaid + payAmount;
-    const newStatus = newPaid >= currentTotal ? "paid" : "partial";
-    await dbUpdate("billings", {
-      paid_amount: newPaid,
-      status: newStatus,
-      paid_date: newStatus === "paid" ? payDate : null,
-    }, { id: billingId });
+    // payments 합산으로 paid_amount 재계산 (동기화 문제 방지)
+    await syncBillingPaid(billingId!, currentTotal);
 
+    closePayModal();
+    fetchData();
+  }
+
+  function closePayModal() {
     setPayModalRow(null);
     setPayAmount(0);
     setPayNotes("");
+    setPayDepositor("");
+    setPayBank("");
+    setEditingPayment(null);
     setPaySubmitting(false);
-    fetchData();
+  }
+
+  function openEditPayment(payment: Payment, row: CompanyRow) {
+    setPayModalRow(row);
+    setEditingPayment(payment);
+    setPayAmount(payment.amount);
+    setPayDate(payment.payment_date);
+    setPayMethod(payment.payment_method || "bank_transfer");
+    setPayNotes(payment.notes || "");
+    setPayDepositor(payment.depositor_name || "");
+    setPayBank(payment.bank_name || "");
   }
 
   // 입금 삭제
@@ -336,19 +367,25 @@ export default function BillingPage() {
 
     await dbDelete("payments", { id: payment.id });
 
-    // billing paid_amount 재계산: 삭제한 금액만큼 차감
+    // payments 합산으로 paid_amount 재계산
     const billing = companyRows.find((r) => r.billing?.id === billingId)?.billing;
-    if (billing) {
-      const newPaid = Math.max(0, billing.paid_amount - payment.amount);
-      const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= billing.total_amount ? "paid" : "partial";
-      await dbUpdate("billings", {
-        paid_amount: newPaid,
-        status: newStatus,
-        paid_date: newStatus === "paid" ? billing.paid_date : null,
-      }, { id: billingId });
-    }
+    await syncBillingPaid(billingId, billing?.total_amount ?? 0);
 
     fetchData();
+  }
+
+  // payments 합산으로 billings.paid_amount를 재계산 (동기화 불일치 방지)
+  async function syncBillingPaid(billingId: string, totalAmount: number) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data: payments } = await db.from("payments").select("amount").eq("billing_id", billingId);
+    const newPaid = (payments || []).reduce((sum: number, p: { amount: number }) => sum + p.amount, 0);
+    const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= totalAmount ? "paid" : "partial";
+    await dbUpdate("billings", {
+      paid_amount: newPaid,
+      status: newStatus,
+      paid_date: newStatus === "paid" ? new Date().toISOString().slice(0, 10) : null,
+    }, { id: billingId });
   }
 
   // 청구 생성
@@ -640,9 +677,13 @@ export default function BillingPage() {
                         type="button"
                         onClick={() => {
                           setPayModalRow(row);
+                          setEditingPayment(null);
                           setPayAmount(0);
                           setPayDate(new Date().toISOString().slice(0, 10));
+                          setPayMethod("bank_transfer");
                           setPayNotes("");
+                          setPayDepositor("");
+                          setPayBank("");
                         }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
                       >
@@ -651,12 +692,31 @@ export default function BillingPage() {
                     )}
                     {/* 입금 이력 */}
                     {billing && billing.payments.length > 0 && (
-                      <div className="mt-2 space-y-0.5">
+                      <div className="mt-2 space-y-1">
                         {billing.payments.map((p: Payment) => (
-                          <div key={p.id} className="group flex items-center justify-between text-[10px] text-text-muted">
-                            <span>{p.payment_date}</span>
-                            <span className="flex items-center gap-1">
-                              <span className="text-emerald-400">+{formatNumber(p.amount)}원</span>
+                          <div key={p.id} className="group flex items-start justify-between text-[10px] text-text-muted gap-2">
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span>{p.payment_date}</span>
+                                <span className="text-emerald-400 font-medium">+{formatNumber(p.amount)}원</span>
+                              </div>
+                              {(p.depositor_name || p.bank_name || p.notes) && (
+                                <div className="text-[9px] text-text-muted/70 truncate">
+                                  {p.depositor_name && <span>{p.depositor_name}</span>}
+                                  {p.bank_name && <span>{p.depositor_name ? ` · ${p.bank_name}` : p.bank_name}</span>}
+                                  {p.notes && <span className="text-text-muted/50">{(p.depositor_name || p.bank_name) ? ` — ${p.notes}` : p.notes}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <span className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openEditPayment(p, row)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-blue-400/10 text-text-muted hover:text-blue-400 transition-all"
+                                title="입금 수정"
+                              >
+                                <FileText size={10} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeletePayment(p, billing.id)}
@@ -789,8 +849,8 @@ export default function BillingPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-base font-bold text-text-primary">입금 처리 — {payModalRow.name}</h2>
-              <button type="button" onClick={() => setPayModalRow(null)} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
+              <h2 className="text-base font-bold text-text-primary">{editingPayment ? "입금 수정" : "입금 처리"} — {payModalRow.name}</h2>
+              <button type="button" onClick={closePayModal} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
             </div>
             <form onSubmit={handlePayment} className="p-6 space-y-4">
               {payModalRow.billing ? (
@@ -802,7 +862,13 @@ export default function BillingPage() {
                   청구 내역이 없습니다. 입금 처리 시 판매 금액 기준으로 청구가 자동 생성됩니다.
                 </p>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              {prevUnpaidMap[payModalRow.id] > 0 && (
+                <p className="text-xs text-orange-400 bg-orange-400/10 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  이전 월 미수금 <span className="font-bold">{formatNumber(prevUnpaidMap[payModalRow.id])}원</span>이 남아있습니다.
+                </p>
+              )}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금액 <span className="text-red-400">*</span></label>
                   <input
@@ -839,6 +905,18 @@ export default function BillingPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm text-text-secondary mb-1">입금자명</label>
+                  <input type="text" value={payDepositor} onChange={(e) => setPayDepositor(e.target.value)}
+                    aria-label="입금자명" placeholder="보낸 사람"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">은행명</label>
+                  <input type="text" value={payBank} onChange={(e) => setPayBank(e.target.value)}
+                    aria-label="은행명" placeholder="국민, 신한 등"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                </div>
+                <div>
                   <label className="block text-sm text-text-secondary mb-1">메모</label>
                   <input type="text" value={payNotes} onChange={(e) => setPayNotes(e.target.value)}
                     aria-label="입금 메모" placeholder="메모"
@@ -846,8 +924,8 @@ export default function BillingPage() {
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setPayModalRow(null)} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
-                <button type="submit" disabled={paySubmitting} className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{paySubmitting ? "처리 중..." : "입금 확인"}</button>
+                <button type="button" onClick={closePayModal} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
+                <button type="submit" disabled={paySubmitting} className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{paySubmitting ? "처리 중..." : editingPayment ? "수정 완료" : "입금 확인"}</button>
               </div>
             </form>
           </div>
@@ -869,17 +947,22 @@ export default function BillingPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">공급가액</label>
-                  <input type="number" min={0} value={billingSupply}
+                  <input type="text" inputMode="numeric"
+                    value={billingSupply ? formatNumber(billingSupply) : ""}
                     aria-label="공급가액"
-                    onChange={(e) => { setBillingSupply(Number(e.target.value)); setBillingTax(Math.round(Number(e.target.value) * 0.1)); }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                    onChange={(e) => { const v = Number(e.target.value.replace(/[^0-9]/g, "") || 0); setBillingSupply(v); setBillingTax(Math.round(v * 0.1)); }}
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary text-right font-mono" />
+                  {billingSupply > 0 && <p className="text-xs text-primary mt-1">{numberToKorean(billingSupply)}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">세액 (10%)</label>
-                  <input type="number" min={0} value={billingTax}
+                  <input type="text" inputMode="numeric"
+                    value={billingTax ? formatNumber(billingTax) : ""}
                     aria-label="세액"
-                    onChange={(e) => setBillingTax(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                    onChange={(e) => setBillingTax(Number(e.target.value.replace(/[^0-9]/g, "") || 0))}
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary text-right font-mono" />
                 </div>
               </div>
               <div className="rounded-xl bg-bg-dark border border-border p-3 flex justify-between items-center">
