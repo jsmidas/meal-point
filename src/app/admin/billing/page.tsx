@@ -277,9 +277,11 @@ export default function BillingPage() {
   }
 
   // 입금 처리 (청구 없어도 자동 생성)
+  const [paySubmitting, setPaySubmitting] = useState(false);
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payModalRow || payAmount <= 0) return;
+    if (!payModalRow || payAmount <= 0 || paySubmitting) return;
+    setPaySubmitting(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
@@ -324,6 +326,7 @@ export default function BillingPage() {
     setPayModalRow(null);
     setPayAmount(0);
     setPayNotes("");
+    setPaySubmitting(false);
     fetchData();
   }
 
@@ -800,7 +803,7 @@ export default function BillingPage() {
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setPayModalRow(null)} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
-                <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors">입금 확인</button>
+                <button type="submit" disabled={paySubmitting} className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{paySubmitting ? "처리 중..." : "입금 확인"}</button>
               </div>
             </form>
           </div>
