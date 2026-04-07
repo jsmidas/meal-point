@@ -40,6 +40,9 @@ export default function BillingPage() {
   const [allCompanies, setAllCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 이전 월 누계 미수금: companyId → 누적 미수금액
+  const [prevUnpaidMap, setPrevUnpaidMap] = useState<Record<string, number>>({});
+
   // 세금계산서 모달 (CompanyRow 기반으로 변경)
   const [taxModal, setTaxModal] = useState<CompanyRow | null>(null);
   const [taxDate, setTaxDate] = useState(new Date().toISOString().slice(0, 10));
@@ -165,6 +168,22 @@ export default function BillingPage() {
       .sort((a, b) => b.sales.amount - a.sales.amount);
 
     setCompanyRows(rows);
+
+    // 이전 월 누계 미수금 조회 (현재 월 이전의 모든 billing)
+    const { data: prevBillings } = await db
+      .from("billings")
+      .select("company_id, total_amount, paid_amount")
+      .lt("billing_month", month);
+
+    const prevMap: Record<string, number> = {};
+    for (const b of prevBillings || []) {
+      const u = Math.max(0, b.total_amount - b.paid_amount);
+      if (u > 0) {
+        prevMap[b.company_id] = (prevMap[b.company_id] || 0) + u;
+      }
+    }
+    setPrevUnpaidMap(prevMap);
+
     setLoading(false);
   }
 
@@ -185,8 +204,9 @@ export default function BillingPage() {
       if (r.billing && !r.billing.tax_invoice_issued) taxUnissued++;
       if (r.billing) totalUnpaid += Math.max(0, r.billing.total_amount - r.billing.paid_amount);
     }
-    return { totalSales, stmtIssued, taxUnissued, totalUnpaid };
-  }, [companyRows]);
+    const totalPrevUnpaid = Object.values(prevUnpaidMap).reduce((s, v) => s + v, 0);
+    return { totalSales, stmtIssued, taxUnissued, totalUnpaid, totalPrevUnpaid };
+  }, [companyRows, prevUnpaidMap]);
 
   // 세금계산서 합산금액 계산 (판매액 기준 동기화)
   const taxComputedSupply = useMemo(() => {
@@ -368,7 +388,7 @@ export default function BillingPage() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
         <div className="rounded-xl border border-border bg-bg-card p-4">
           <p className="text-xs text-text-muted mb-1">총 판매액</p>
           <p className="text-xl font-bold text-text-primary">{formatNumber(summary.totalSales)}원</p>
@@ -384,10 +404,19 @@ export default function BillingPage() {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-bg-card p-4">
-          <p className="text-xs text-text-muted mb-1">미수금</p>
+          <p className="text-xs text-text-muted mb-1">당월 미수금</p>
           <p className={`text-xl font-bold ${summary.totalUnpaid > 0 ? "text-red-400" : "text-text-primary"}`}>
             {formatNumber(summary.totalUnpaid)}원
           </p>
+        </div>
+        <div className="rounded-xl border border-border bg-bg-card p-4">
+          <p className="text-xs text-text-muted mb-1">누계 미수금</p>
+          <p className={`text-xl font-bold ${summary.totalUnpaid + summary.totalPrevUnpaid > 0 ? "text-orange-400" : "text-text-primary"}`}>
+            {formatNumber(summary.totalUnpaid + summary.totalPrevUnpaid)}원
+          </p>
+          {summary.totalPrevUnpaid > 0 && (
+            <p className="text-[10px] text-text-muted mt-0.5">이전 월 {formatNumber(summary.totalPrevUnpaid)}원</p>
+          )}
         </div>
       </div>
 
@@ -561,6 +590,16 @@ export default function BillingPage() {
                             <span className="text-red-400">{formatNumber(unpaid)}원</span>
                           </div>
                         )}
+                        {(() => {
+                          const prevUnpaid = prevUnpaidMap[row.id] || 0;
+                          const totalUnpaid = unpaid + prevUnpaid;
+                          return prevUnpaid > 0 ? (
+                            <div className="flex justify-between text-xs font-bold mt-0.5 pt-0.5 border-t border-border/50">
+                              <span className="text-text-muted">누계 미수금</span>
+                              <span className="text-orange-400">{formatNumber(totalUnpaid)}원</span>
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                     ) : (
                       <p className="text-xs text-text-muted mb-2">입금 내역 없음</p>
@@ -577,7 +616,7 @@ export default function BillingPage() {
                         type="button"
                         onClick={() => {
                           setPayModalRow(row);
-                          setPayAmount(unpaid > 0 ? unpaid : row.sales.amount);
+                          setPayAmount(0);
                           setPayDate(new Date().toISOString().slice(0, 10));
                           setPayNotes("");
                         }}
