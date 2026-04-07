@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Statement, BillingWithPayments, Payment } from "@/lib/supabase/types";
 import { formatNumber, generateBillingNumber, numberToKorean } from "@/lib/utils";
-import { dbInsert, dbUpdate } from "@/lib/db";
+import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import {
   ChevronLeft,
   ChevronRight,
@@ -330,6 +330,27 @@ export default function BillingPage() {
     fetchData();
   }
 
+  // 입금 삭제
+  async function handleDeletePayment(payment: Payment, billingId: string) {
+    if (!confirm(`${payment.payment_date} 입금 ${formatNumber(payment.amount)}원을 삭제하시겠습니까?`)) return;
+
+    await dbDelete("payments", { id: payment.id });
+
+    // billing paid_amount 재계산: 삭제한 금액만큼 차감
+    const billing = companyRows.find((r) => r.billing?.id === billingId)?.billing;
+    if (billing) {
+      const newPaid = Math.max(0, billing.paid_amount - payment.amount);
+      const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= billing.total_amount ? "paid" : "partial";
+      await dbUpdate("billings", {
+        paid_amount: newPaid,
+        status: newStatus,
+        paid_date: newStatus === "paid" ? billing.paid_date : null,
+      }, { id: billingId });
+    }
+
+    fetchData();
+  }
+
   // 청구 생성
   async function handleCreateBilling(e: React.FormEvent) {
     e.preventDefault();
@@ -632,9 +653,19 @@ export default function BillingPage() {
                     {billing && billing.payments.length > 0 && (
                       <div className="mt-2 space-y-0.5">
                         {billing.payments.map((p: Payment) => (
-                          <div key={p.id} className="flex justify-between text-[10px] text-text-muted">
+                          <div key={p.id} className="group flex items-center justify-between text-[10px] text-text-muted">
                             <span>{p.payment_date}</span>
-                            <span className="text-emerald-400">+{formatNumber(p.amount)}원</span>
+                            <span className="flex items-center gap-1">
+                              <span className="text-emerald-400">+{formatNumber(p.amount)}원</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePayment(p, billing.id)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-all"
+                                title="입금 삭제"
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
                           </div>
                         ))}
                       </div>
