@@ -78,6 +78,39 @@ export function formatNumber(n: number) {
   return n.toLocaleString("ko-KR");
 }
 
+/** 숫자를 한글 금액으로 변환 (예: 3000000 → "삼백만원") */
+export function numberToKorean(n: number): string {
+  if (n === 0) return "영원";
+  const units = ["", "만", "억", "조"];
+  const digits = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];
+  const smallUnits = ["", "십", "백", "천"];
+
+  let result = "";
+  let unitIdx = 0;
+  let num = Math.abs(Math.floor(n));
+
+  while (num > 0) {
+    const chunk = num % 10000;
+    if (chunk > 0) {
+      let chunkStr = "";
+      let c = chunk;
+      for (let i = 0; i < 4 && c > 0; i++) {
+        const d = c % 10;
+        if (d > 0) {
+          const digitStr = (d === 1 && i > 0) ? "" : digits[d];
+          chunkStr = digitStr + smallUnits[i] + chunkStr;
+        }
+        c = Math.floor(c / 10);
+      }
+      result = chunkStr + units[unitIdx] + result;
+    }
+    num = Math.floor(num / 10000);
+    unitIdx++;
+  }
+
+  return (n < 0 ? "마이너스 " : "") + result + "원";
+}
+
 /** 날짜 포맷 (YYYY-MM-DD) */
 export function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("ko-KR", {

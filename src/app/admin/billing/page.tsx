@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Statement, BillingWithPayments, Payment } from "@/lib/supabase/types";
-import { formatNumber, generateBillingNumber } from "@/lib/utils";
+import { formatNumber, generateBillingNumber, numberToKorean } from "@/lib/utils";
 import { dbInsert, dbUpdate } from "@/lib/db";
 import {
   ChevronLeft,
@@ -774,9 +774,22 @@ export default function BillingPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금액 <span className="text-red-400">*</span></label>
-                  <input type="number" min={1} value={payAmount} onChange={(e) => setPayAmount(Number(e.target.value))} required
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={payAmount ? formatNumber(payAmount) : ""}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      setPayAmount(raw ? Number(raw) : 0);
+                    }}
+                    required
                     aria-label="입금액"
-                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary text-right font-mono"
+                  />
+                  {payAmount > 0 && (
+                    <p className="text-xs text-primary mt-1">{numberToKorean(payAmount)}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금일</label>
