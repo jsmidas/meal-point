@@ -129,6 +129,7 @@ export default function ProductDetailEditorPage() {
   const [otherPages, setOtherPages] = useState<{ id: string; product_id: string; product_name: string; hero_images: string[]; subtitle: string | null; updated_at: string }[]>([]);
   const [pageId, setPageId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
+  const [dragOver, setDragOver] = useState<string | null>(null); // 드래그 오버 상태
 
   async function uploadImage(
     file: File,
@@ -152,6 +153,54 @@ export default function ProductDetailEditorPage() {
     } finally {
       setUploading(null);
     }
+  }
+
+  // 드래그앤드롭 + 클릭 업로드 드롭존
+  function DropZone({ fieldKey, onUploaded }: { fieldKey: string; onUploaded: (url: string) => void }) {
+    const fileRef = useRef<HTMLInputElement>(null);
+    const isUploading = uploading === fieldKey;
+    const isDragOver = dragOver === fieldKey;
+
+    function handleDragOver(e: React.DragEvent) { e.preventDefault(); setDragOver(fieldKey); }
+    function handleDragLeave() { setDragOver(null); }
+    async function handleDrop(e: React.DragEvent) {
+      e.preventDefault();
+      setDragOver(null);
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+      for (let i = 0; i < files.length; i++) {
+        const u = await uploadImage(files[i], `${fieldKey}-${i}`);
+        if (u) onUploaded(u);
+      }
+    }
+    async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const files = Array.from(e.target.files || []);
+      for (let i = 0; i < files.length; i++) {
+        const u = await uploadImage(files[i], `${fieldKey}-${i}`);
+        if (u) onUploaded(u);
+      }
+      e.target.value = "";
+    }
+
+    return (
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileRef.current?.click()}
+        className={`py-6 rounded-xl border-2 border-dashed text-sm flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
+          isDragOver
+            ? "border-accent bg-accent/10 text-accent"
+            : "border-border text-text-muted hover:border-primary hover:text-primary hover:bg-primary/5"
+        }`}
+      >
+        {isUploading ? (
+          <><Loader2 size={20} className="animate-spin" /> 업로드 중...</>
+        ) : (
+          <><Upload size={20} /> 이미지를 드래그하거나 클릭하여 업로드</>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+      </div>
+    );
   }
 
   const fetchData = useCallback(async () => {
@@ -601,22 +650,10 @@ export default function ProductDetailEditorPage() {
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, ""] }))} className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
-                <Plus size={16} /> URL 추가
-              </button>
-              <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                {uploading === "hero-new" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                파일 업로드
-                <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const u = await uploadImage(file, "hero-new");
-                  if (u) setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, u] }));
-                  e.target.value = "";
-                }} />
-              </label>
-            </div>
+            <DropZone fieldKey="hero-new" onUploaded={(url) => setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, url] }))} />
+            <button type="button" onClick={() => setForm((prev) => ({ ...prev, hero_images: [...prev.hero_images, ""] }))} className="w-full py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+              <Plus size={16} /> URL 직접 입력
+            </button>
             <div>
               <label className="block text-sm text-text-secondary mb-1">
                 서브타이틀
@@ -695,16 +732,10 @@ export default function ProductDetailEditorPage() {
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, ""] }))} className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
-                <Plus size={16} /> URL 추가
-              </button>
-              <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                {uploading === "feature-new" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                파일 업로드
-                <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; const u = await uploadImage(file, "feature-new"); if (u) setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, u] })); e.target.value = ""; }} />
-              </label>
-            </div>
+            <DropZone fieldKey="feature-new" onUploaded={(url) => setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, url] }))} />
+            <button type="button" onClick={() => setForm((prev) => ({ ...prev, feature_images: [...prev.feature_images, ""] }))} className="w-full py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+              <Plus size={16} /> URL 직접 입력
+            </button>
           </div>
         )}
       </SortableSection>
@@ -912,39 +943,10 @@ export default function ProductDetailEditorPage() {
                   </button>
                 </div>
               ))}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => addImageUrl("detail_images")}
-                  className="flex-1 py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
-                >
-                  <Plus size={16} /> URL 추가
-                </button>
-                <label className="flex-1 py-2 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                  {uploading === "detail-new" ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Upload size={16} />
-                  )}
-                  파일 업로드
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const u = await uploadImage(file, "detail-new");
-                      if (u)
-                        setForm((prev) => ({
-                          ...prev,
-                          detail_images: [...prev.detail_images, u],
-                        }));
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              </div>
+              <DropZone fieldKey="detail-new" onUploaded={(url) => setForm((prev) => ({ ...prev, detail_images: [...prev.detail_images, url] }))} />
+              <button type="button" onClick={() => addImageUrl("detail_images")} className="w-full py-2 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+                <Plus size={16} /> URL 직접 입력
+              </button>
             </div>
           </div>
         )}
@@ -1082,39 +1084,10 @@ export default function ProductDetailEditorPage() {
                 </button>
               </div>
             ))}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => addImageUrl("gallery_images")}
-                className="flex-1 py-2.5 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus size={16} /> URL 추가
-              </button>
-              <label className="flex-1 py-2.5 rounded-xl border border-dashed border-accent/30 text-accent text-sm hover:border-accent hover:bg-accent/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                {uploading === "gallery-new" ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Upload size={16} />
-                )}
-                파일 업로드
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const u = await uploadImage(file, "gallery-new");
-                    if (u)
-                      setForm((prev) => ({
-                        ...prev,
-                        gallery_images: [...prev.gallery_images, u],
-                      }));
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
+            <DropZone fieldKey="gallery-new" onUploaded={(url) => setForm((prev) => ({ ...prev, gallery_images: [...prev.gallery_images, url] }))} />
+            <button type="button" onClick={() => addImageUrl("gallery_images")} className="w-full py-2.5 rounded-xl border border-dashed border-border text-text-muted text-sm hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2">
+              <Plus size={16} /> URL 직접 입력
+            </button>
             {form.gallery_images.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {form.gallery_images
