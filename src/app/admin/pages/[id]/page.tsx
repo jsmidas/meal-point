@@ -298,17 +298,24 @@ export default function ProductDetailEditorPage() {
       is_published: form.is_published,
     };
 
+    let saveError: string | null = null;
     if (pageId) {
-      await dbUpdate("product_pages", payload, { id: pageId });
+      const res = await dbUpdate("product_pages", payload, { id: pageId });
+      saveError = res.error;
     } else {
-      const { data } = await dbInsert("product_pages", payload);
+      const res = await dbInsert("product_pages", payload);
+      saveError = res.error;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const row = (Array.isArray(data) ? data[0] : data) as any;
+      const row = (Array.isArray(res.data) ? res.data[0] : res.data) as any;
       if (row) setPageId(row.id);
     }
 
     setSaving(false);
-    alert("저장되었습니다!");
+    if (saveError) {
+      alert(`저장 실패: ${saveError}\n\n(스키마 마이그레이션이 누락되었을 수 있습니다. supabase/schema-v18.sql, v19.sql 적용 여부를 확인하세요.)`);
+    } else {
+      alert("저장되었습니다!");
+    }
   }
 
   function toggleSection(section: string) {

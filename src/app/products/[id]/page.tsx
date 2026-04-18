@@ -115,6 +115,10 @@ export default function ProductDetailPage() {
   const detailImages = (page.detail_images || []) as string[];
   const figmaEmbeds = (page.figma_urls || []) as FigmaEmbed[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const heroImages = ((page as any).hero_images as string[] | undefined)?.filter(Boolean) || (page.hero_image ? [page.hero_image] : []);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const featureImages = ((page as any).feature_images as string[] | undefined)?.filter(Boolean) || (page.feature_image ? [page.feature_image] : []);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sectionOrder: string[] = (page as any).section_order?.length > 0
     ? (page as any).section_order
     : ["hero", "feature", "keypoints", "specs", "detail", "process", "gallery", "figma"];
@@ -123,9 +127,9 @@ export default function ProductDetailPage() {
   const renderSection: Record<string, () => React.ReactNode> = {
     hero: () => (
       <section key="hero" className="relative pt-16">
-        {page.hero_image ? (
+        {heroImages.length > 0 ? (
           <div className="relative h-[60vh] min-h-[400px]">
-            <img src={page.hero_image} alt={product.name} className="w-full h-full object-cover" />
+            <img src={heroImages[0]} alt={product.name} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-bg-dark via-bg-dark/30 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-8 md:p-16">
               <div className="max-w-6xl mx-auto">
@@ -170,25 +174,55 @@ export default function ProductDetailPage() {
         )}
       </section>
     ),
-    feature: () => (page.feature_title || page.feature_description) ? (
-      <section key="feature" className="py-20 px-6">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            {page.feature_title && (
-              <h2 className="text-3xl md:text-4xl font-bold text-text-primary mb-6 leading-tight">{page.feature_title}</h2>
-            )}
-            {page.feature_description && (
-              <div className="prose prose-invert max-w-none text-text-secondary leading-relaxed" dangerouslySetInnerHTML={{ __html: page.feature_description }} />
+    feature: () => {
+      const hasText = page.feature_title || page.feature_description;
+      if (!hasText && featureImages.length === 0) return null;
+      // 텍스트 없이 이미지만 있는 경우: 이미지만 세로로 나열
+      if (!hasText) {
+        return (
+          <section key="feature" className="py-20 px-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+              {featureImages.map((url, i) => (
+                <div key={i} className="rounded-2xl overflow-hidden">
+                  <img src={url} alt={`Feature ${i + 1}`} className="w-full h-auto" />
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      }
+      // 텍스트 + 이미지 조합
+      return (
+        <section key="feature" className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div>
+                {page.feature_title && (
+                  <h2 className="text-3xl md:text-4xl font-bold text-text-primary mb-6 leading-tight">{page.feature_title}</h2>
+                )}
+                {page.feature_description && (
+                  <div className="prose prose-invert max-w-none text-text-secondary leading-relaxed" dangerouslySetInnerHTML={{ __html: page.feature_description }} />
+                )}
+              </div>
+              {featureImages[0] && (
+                <div className="rounded-2xl overflow-hidden">
+                  <img src={featureImages[0]} alt="Feature" className="w-full h-auto" />
+                </div>
+              )}
+            </div>
+            {featureImages.length > 1 && (
+              <div className="space-y-6 mt-10">
+                {featureImages.slice(1).map((url, i) => (
+                  <div key={i} className="rounded-2xl overflow-hidden">
+                    <img src={url} alt={`Feature ${i + 2}`} className="w-full h-auto" />
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          {page.feature_image && (
-            <div className="rounded-2xl overflow-hidden">
-              <img src={page.feature_image} alt="Feature" className="w-full h-auto" />
-            </div>
-          )}
-        </div>
-      </section>
-    ) : null,
+        </section>
+      );
+    },
     keypoints: () => keyPoints.length > 0 ? (
       <section key="keypoints" className="py-20 px-6 border-t border-border">
         <div className="max-w-6xl mx-auto">
