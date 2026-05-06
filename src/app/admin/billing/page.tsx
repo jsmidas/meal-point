@@ -180,8 +180,9 @@ export default function BillingPage() {
 
     const prevMap: Record<string, number> = {};
     for (const b of prevBillings || []) {
-      const u = Math.max(0, b.total_amount - b.paid_amount);
-      if (u > 0) {
+      // 과입금(음수)도 합산 → 이전 월 과입금이 당월 누계에서 차감됨
+      const u = b.total_amount - b.paid_amount;
+      if (u !== 0) {
         prevMap[b.company_id] = (prevMap[b.company_id] || 0) + u;
       }
     }
@@ -205,7 +206,8 @@ export default function BillingPage() {
       totalSales += r.sales.amount;
       if (r.statements.length > 0) stmtIssued++;
       if (r.billing && !r.billing.tax_invoice_issued) taxUnissued++;
-      if (r.billing) totalUnpaid += Math.max(0, r.billing.total_amount - r.billing.paid_amount);
+      // 과입금(음수)도 누계에 반영 → 거래처 환불/이월 추적
+      if (r.billing) totalUnpaid += r.billing.total_amount - r.billing.paid_amount;
     }
     const totalPrevUnpaid = Object.values(prevUnpaidMap).reduce((s, v) => s + v, 0);
     return { totalSales, stmtIssued, taxUnissued, totalUnpaid, totalPrevUnpaid };
@@ -465,19 +467,28 @@ export default function BillingPage() {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-bg-card p-4">
-          <p className="text-xs text-text-muted mb-1">당월 미수금</p>
-          <p className={`text-xl font-bold ${summary.totalUnpaid > 0 ? "text-red-400" : "text-text-primary"}`}>
-            {formatNumber(summary.totalUnpaid)}원
+          <p className="text-xs text-text-muted mb-1">{summary.totalUnpaid < 0 ? "당월 과입금" : "당월 미수금"}</p>
+          <p className={`text-xl font-bold ${summary.totalUnpaid > 0 ? "text-red-400" : summary.totalUnpaid < 0 ? "text-blue-400" : "text-text-primary"}`}>
+            {summary.totalUnpaid > 0 ? "+" : ""}{formatNumber(summary.totalUnpaid)}원
           </p>
         </div>
         <div className="rounded-xl border border-border bg-bg-card p-4">
-          <p className="text-xs text-text-muted mb-1">누계 미수금</p>
-          <p className={`text-xl font-bold ${summary.totalUnpaid + summary.totalPrevUnpaid > 0 ? "text-orange-400" : "text-text-primary"}`}>
-            {formatNumber(summary.totalUnpaid + summary.totalPrevUnpaid)}원
-          </p>
-          {summary.totalPrevUnpaid > 0 && (
-            <p className="text-[10px] text-text-muted mt-0.5">이전 월 {formatNumber(summary.totalPrevUnpaid)}원</p>
-          )}
+          {(() => {
+            const total = summary.totalUnpaid + summary.totalPrevUnpaid;
+            return (
+              <>
+                <p className="text-xs text-text-muted mb-1">{total < 0 ? "누계 과입금" : "누계 미수금"}</p>
+                <p className={`text-xl font-bold ${total > 0 ? "text-orange-400" : total < 0 ? "text-blue-400" : "text-text-primary"}`}>
+                  {total > 0 ? "+" : ""}{formatNumber(total)}원
+                </p>
+                {summary.totalPrevUnpaid !== 0 && (
+                  <p className="text-[10px] text-text-muted mt-0.5">
+                    이전 월 {summary.totalPrevUnpaid > 0 ? "+" : ""}{formatNumber(summary.totalPrevUnpaid)}원
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -493,9 +504,10 @@ export default function BillingPage() {
         <div className="space-y-4">
           {companyRows.map((row) => {
             const billing = row.billing;
-            const unpaid = billing ? Math.max(0, billing.total_amount - billing.paid_amount) : 0;
+            // unpaid 음수 = 과입금
+            const unpaid = billing ? billing.total_amount - billing.paid_amount : 0;
             const paidPct = billing && billing.total_amount > 0
-              ? Math.round((billing.paid_amount / billing.total_amount) * 100)
+              ? Math.min(100, Math.round((billing.paid_amount / billing.total_amount) * 100))
               : 0;
 
             return (
@@ -645,19 +657,23 @@ export default function BillingPage() {
                           <span className="text-text-muted">입금액</span>
                           <span className="text-emerald-400">{formatNumber(billing.paid_amount)}원</span>
                         </div>
-                        {unpaid > 0 && (
+                        {unpaid !== 0 && (
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-text-muted">미수금</span>
-                            <span className="text-red-400">{formatNumber(unpaid)}원</span>
+                            <span className="text-text-muted">{unpaid < 0 ? "과입금" : "미수금"}</span>
+                            <span className={unpaid < 0 ? "text-blue-400" : "text-red-400"}>
+                              {unpaid > 0 ? "+" : ""}{formatNumber(unpaid)}원
+                            </span>
                           </div>
                         )}
                         {(() => {
                           const prevUnpaid = prevUnpaidMap[row.id] || 0;
                           const totalUnpaid = unpaid + prevUnpaid;
-                          return prevUnpaid > 0 ? (
+                          return prevUnpaid !== 0 ? (
                             <div className="flex justify-between text-xs font-bold mt-0.5 pt-0.5 border-t border-border/50">
-                              <span className="text-text-muted">누계 미수금</span>
-                              <span className="text-orange-400">{formatNumber(totalUnpaid)}원</span>
+                              <span className="text-text-muted">{totalUnpaid < 0 ? "누계 과입금" : "누계 미수금"}</span>
+                              <span className={totalUnpaid < 0 ? "text-blue-400" : "text-orange-400"}>
+                                {totalUnpaid > 0 ? "+" : ""}{formatNumber(totalUnpaid)}원
+                              </span>
                             </div>
                           ) : null;
                         })()}
@@ -853,21 +869,32 @@ export default function BillingPage() {
               <button type="button" onClick={closePayModal} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
             </div>
             <form onSubmit={handlePayment} className="p-6 space-y-4">
-              {payModalRow.billing ? (
-                <p className="text-sm text-text-secondary">
-                  미수금 <span className="text-red-400 font-bold">{formatNumber(payModalRow.billing.total_amount - payModalRow.billing.paid_amount)}원</span>
-                </p>
-              ) : (
+              {payModalRow.billing ? (() => {
+                const u = payModalRow.billing.total_amount - payModalRow.billing.paid_amount;
+                return (
+                  <p className="text-sm text-text-secondary">
+                    {u < 0 ? "과입금" : "미수금"}{" "}
+                    <span className={`font-bold ${u < 0 ? "text-blue-400" : "text-red-400"}`}>
+                      {u > 0 ? "+" : ""}{formatNumber(u)}원
+                    </span>
+                  </p>
+                );
+              })() : (
                 <p className="text-xs text-yellow-500 bg-yellow-500/10 rounded-lg px-3 py-2">
                   청구 내역이 없습니다. 입금 처리 시 판매 금액 기준으로 청구가 자동 생성됩니다.
                 </p>
               )}
-              {prevUnpaidMap[payModalRow.id] > 0 && (
-                <p className="text-xs text-orange-400 bg-orange-400/10 rounded-lg px-3 py-2 flex items-center gap-1.5">
-                  <AlertTriangle size={14} className="shrink-0" />
-                  이전 월 미수금 <span className="font-bold">{formatNumber(prevUnpaidMap[payModalRow.id])}원</span>이 남아있습니다.
-                </p>
-              )}
+              {(prevUnpaidMap[payModalRow.id] || 0) !== 0 && (() => {
+                const prev = prevUnpaidMap[payModalRow.id];
+                return (
+                  <p className={`text-xs rounded-lg px-3 py-2 flex items-center gap-1.5 ${prev < 0 ? "text-blue-400 bg-blue-400/10" : "text-orange-400 bg-orange-400/10"}`}>
+                    <AlertTriangle size={14} className="shrink-0" />
+                    이전 월 {prev < 0 ? "과입금" : "미수금"}{" "}
+                    <span className="font-bold">{prev > 0 ? "+" : ""}{formatNumber(prev)}원</span>
+                    이 남아있습니다.
+                  </p>
+                );
+              })()}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금액 <span className="text-red-400">*</span></label>

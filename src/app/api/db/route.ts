@@ -10,6 +10,7 @@ const ALLOWED_TABLES = new Set([
   "companies",
   "products",
   "company_prices",
+  "company_price_history",
   "orders",
   "order_items",
   "statements",

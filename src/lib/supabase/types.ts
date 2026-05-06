@@ -716,6 +716,34 @@ export type Database = {
           is_active?: boolean;
         };
       };
+      company_price_history: {
+        Row: {
+          id: string;
+          company_id: string | null;
+          product_id: string;
+          price_type: "sell" | "cost";
+          price: number;
+          effective_from: string;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          company_id?: string | null;
+          product_id: string;
+          price_type: "sell" | "cost";
+          price: number;
+          effective_from: string;
+          notes?: string | null;
+        };
+        Update: {
+          company_id?: string | null;
+          product_id?: string;
+          price_type?: "sell" | "cost";
+          price?: number;
+          effective_from?: string;
+          notes?: string | null;
+        };
+      };
       popups: {
         Row: {
           id: string;
@@ -791,3 +819,4 @@ export type ProductPage = Database["public"]["Tables"]["product_pages"]["Row"];
 export type ProductPageWithProduct = ProductPage & { products: Product };
 export type Popup = Database["public"]["Tables"]["popups"]["Row"];
 export type Member = Database["public"]["Tables"]["members"]["Row"];
+export type CompanyPriceHistory = Database["public"]["Tables"]["company_price_history"]["Row"];
