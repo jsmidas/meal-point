@@ -1,24 +1,38 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-primary: #E8A04A;
+  --color-primary: #F0AC55;
   --color-primary-dark: #D4922F;
-  --color-accent: #7C6AEF;
+  --color-accent: #9586F5;
   --color-accent-dark: #6B59DE;
   --color-bg-dark: #0B1121;
   --color-bg-card: #111827;
-  --color-bg-card-hover: #1F2937;
-  --color-text-primary: #F9FAFB;
-  --color-text-secondary: #9CA3AF;
-  --color-text-muted: #6B7280;
-  --color-border: #1F2937;
-  --color-border-light: #374151;
+  --color-bg-card-hover: #273345;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #F0F3F8;
+  --color-text-muted: #CCD3DD;
+  --color-border: #3C4860;
+  --color-border-light: #5C6982;
 
   --font-sans: "Noto Sans KR", sans-serif;
 }
 
 body {
   font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: 0;
+}
+
+/* 한글 가독성 — 작은 글자는 더 굵게 */
+.text-xs,
+.text-sm,
+.text-\[10px\],
+.text-\[11px\] {
+  font-weight: 500;
 }
 
 /* Gradient text utility */

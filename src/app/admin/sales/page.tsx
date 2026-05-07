@@ -891,8 +891,8 @@ export default function SalesPage() {
               {["일","월","화","수","목","금","토"].map((d, i) => (
                 <div
                   key={d}
-                  className={`py-3 text-center text-xs font-semibold ${
-                    i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-text-muted"
+                  className={`py-4 text-center text-3xl font-bold ${
+                    i === 0 ? "text-red-300" : i === 6 ? "text-blue-300" : "text-text-primary"
                   }`}
                 >
                   {d}
@@ -943,15 +943,15 @@ export default function SalesPage() {
                     }`}
                   >
                     {/* 날짜 번호 */}
-                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold leading-none ${
+                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold leading-none ${
                       isToday
                         ? "bg-accent text-white"
                         : col === 0
-                        ? "text-red-400"
+                        ? "text-red-300"
                         : col === 6
-                        ? "text-blue-400"
+                        ? "text-blue-300"
                         : isFuture
-                        ? "text-slate-400"
+                        ? "text-slate-200"
                         : "text-text-primary"
                     }`}>
                       {day}
@@ -959,14 +959,14 @@ export default function SalesPage() {
 
                     {/* 실제 판매 현황 (모든 날짜 - 과거/오늘/미래 모두) */}
                     {dayData && (
-                      <div className="space-y-px">
+                      <div className="space-y-0.5 w-full">
                         {dayData.companies.map((name, ci) => {
                           const cid = dayData.companyIds[ci];
                           const companyAmt = cid ? dayData.companyAmounts.get(cid) || 0 : 0;
                           const checkKey = `${dateStr}_${cid}`;
                           const isChecked = checkedSales.has(checkKey);
                           return (
-                            <div key={name} className="flex items-center gap-0.5 text-[10px] leading-tight">
+                            <div key={name} className="flex items-center gap-1 text-xs leading-tight">
                               <span
                                 role="checkbox"
                                 aria-checked={isChecked ? "true" : "false"}
@@ -974,15 +974,15 @@ export default function SalesPage() {
                                   e.stopPropagation();
                                   if (cid) toggleSaleCheck(dateStr, cid);
                                 }}
-                                className={`flex-shrink-0 w-3 h-3 rounded-sm border cursor-pointer flex items-center justify-center text-[8px] ${
+                                className={`flex-shrink-0 w-3.5 h-3.5 rounded-sm border cursor-pointer flex items-center justify-center text-[9px] ${
                                   isChecked
                                     ? "bg-emerald-500 border-emerald-500 text-white"
-                                    : "border-text-muted/40 hover:border-text-muted"
+                                    : "border-text-muted/60 hover:border-text-muted"
                                 }`}
                               >
                                 {isChecked && "✓"}
                               </span>
-                              <span className="text-primary/80 truncate">{name}</span>
+                              <span className="text-primary truncate font-medium">{name}</span>
                               <span className="text-accent font-bold ml-auto flex-shrink-0">{formatNumber(companyAmt)}</span>
                             </div>
                           );
@@ -990,27 +990,27 @@ export default function SalesPage() {
                       </div>
                     )}
                     {!dayData && (isPast || isToday) && (
-                      <div className="text-[10px] text-text-muted/40 mt-1">-</div>
+                      <div className="text-xs text-text-muted/70 mt-1">-</div>
                     )}
 
                     {/* 미래 날짜: 실제 판매 없을 때만 주문 예정 내역 표시 */}
                     {isFuture && !dayData && orderData && (
                       <div className="space-y-0.5">
-                        <div className="text-xs font-bold text-sky-400 leading-tight">
+                        <div className="text-sm font-bold text-sky-300 leading-tight">
                           {formatNumber(orderData.amount)}원
                         </div>
-                        <div className="text-[10px] text-sky-400/70">
+                        <div className="text-xs text-sky-300">
                           주문 {orderData.count}건
                         </div>
                         {orderData.companies.map((name) => (
-                          <div key={name} className="text-[10px] text-sky-300/70 truncate leading-tight">
+                          <div key={name} className="text-xs text-sky-200 truncate leading-tight">
                             {name}
                           </div>
                         ))}
                       </div>
                     )}
                     {isFuture && !dayData && !orderData && (
-                      <div className="text-[10px] text-slate-500/60 mt-1">예정</div>
+                      <div className="text-xs text-slate-300 mt-1">예정</div>
                     )}
                   </button>
                 );
