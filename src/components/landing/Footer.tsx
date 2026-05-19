@@ -5,7 +5,7 @@ export default function Footer() {
         <div className="grid md:grid-cols-3 gap-8 mb-8">
           <div>
             <span className="text-lg font-bold text-text-primary">밀포인트</span>
-            <p className="text-sm text-text-secondary mt-1">발열용기 식단프로그램 식권발행기 등 solution 전문기업</p>
+            <p className="text-sm text-text-secondary mt-1">급식포털 — 발열도시락·급식용기 도소매, 식단관리, 식권발행 토탈 솔루션</p>
           </div>
           <div className="text-sm text-text-secondary space-y-1">
             <p>사업자등록번호: 803-53-00711</p>

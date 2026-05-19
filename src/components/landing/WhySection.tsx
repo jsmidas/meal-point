@@ -1,10 +1,15 @@
-import { Ticket, Truck, MessageCircle } from "lucide-react";
+import { PiggyBank, Layers, Truck, MessageCircle } from "lucide-react";
 
 const reasons = [
   {
-    icon: Ticket,
-    title: "전국 최저가",
-    desc: "도매 직거래로 중간 마진 없이\n전국 최저가를 보장합니다.",
+    icon: PiggyBank,
+    title: "원가절감",
+    desc: "도매 직거래와 통합 운영으로\n급식 현장의 원가를 낮춥니다.",
+  },
+  {
+    icon: Layers,
+    title: "통합 운영",
+    desc: "용기·식단관리·식권발행을\n한 곳에서 연결해 관리합니다.",
   },
   {
     icon: Truck,
@@ -14,7 +19,7 @@ const reasons = [
   {
     icon: MessageCircle,
     title: "직접 상담",
-    desc: "카카오톡, 전화, 문자로 직접\n상담하여 맞춤 견적을 제공합니다.",
+    desc: "카카오톡·전화·문자로 직접\n상담하여 맞춤 솔루션을 제안합니다.",
   },
 ];
 
@@ -27,15 +32,14 @@ export default function WhySection() {
             WHY MEALPOINT
           </p>
           <h2 className="text-3xl md:text-4xl font-bold text-text-primary mb-4">
-            <span className="text-gradient">전국 최저가</span>로 급식 용기를
-            공급합니다
+            왜 <span className="text-gradient">밀포인트</span> 급식포털인가
           </h2>
           <p className="text-text-secondary max-w-lg mx-auto">
-            같은 제품, 어디보다 합리적인 가격 — 직접 비교해보세요.
+            급식 현장의 운영과 비용, 한 번에 가볍게 만들어 드립니다.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {reasons.map((r) => (
             <div
               key={r.title}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu, X, LogOut } from "lucide-react";
 
 const navLinks = [
+  { href: "#services", label: "서비스" },
   { href: "#why", label: "왜 밀포인트" },
   { href: "#products", label: "제품" },
   { href: "#process", label: "주문방법" },
