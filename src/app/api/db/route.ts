@@ -27,6 +27,7 @@ const ALLOWED_TABLES = new Set([
   "statement_send_logs",
   "sale_checks",
   "popups",
+  "payment_requests",
 ]);
 
 type Action = "insert" | "update" | "delete" | "upsert";

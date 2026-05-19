@@ -21,6 +21,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   BadgeDollarSign,
+  CreditCard,
   Settings,
 } from "lucide-react";
 import { useState } from "react";
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/admin/quotes", label: "견적서", icon: ClipboardList },
   { href: "/admin/statements", label: "거래명세서", icon: FileText },
   { href: "/admin/billing", label: "정산 관리", icon: Receipt },
+  { href: "/admin/payments", label: "개인결제", icon: CreditCard },
   { href: "/admin/pnl", label: "손익 현황", icon: TrendingUp },
   { href: "/admin/popups", label: "팝업 관리", icon: Bell },
   { href: "/admin/pages", label: "상세페이지", icon: FileEdit },
