@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Company, Statement, BillingWithPayments, Payment } from "@/lib/supabase/types";
+import type { Company, Statement, StatementItem, BillingWithPayments, Payment } from "@/lib/supabase/types";
 import { formatNumber, generateBillingNumber, numberToKorean } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
+import { matchSalesToStatements, summarizeMismatch, type SalesLineForMatch } from "@/lib/billing-match";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,14 +23,28 @@ import { useRouter } from "next/navigation";
 
 type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
 type SalesData = { amount: number; count: number; logs: SalesLog[] };
+type StatementWithItems = Statement & { statement_items: StatementItem[] };
 
 type CompanyRow = {
   id: string;
   name: string;
   sales: SalesData;
-  statements: Statement[];
+  statements: StatementWithItems[];
   billing: BillingWithPayments | null;
 };
+
+// 출고 로그 → 매칭용 라인 변환
+function logToSalesLine(log: SalesLog): SalesLineForMatch {
+  return {
+    id: log.id,
+    product_name: log.products?.name || log.reason || "기타",
+    quantity: log.quantity,
+    unit_price: log.unit_price || 0,
+    amount: log.quantity * (log.unit_price || 0),
+    log_date: log.log_date,
+    unit: log.products?.unit || undefined,
+  };
+}
 
 export default function BillingPage() {
   const supabase = createClient();
@@ -61,7 +76,7 @@ export default function BillingPage() {
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null); // 수정 모드
 
   // 판매 상세 모달
-  const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[]; statements: Statement[]; billing: BillingWithPayments | null } | null>(null);
+  const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[]; statements: StatementWithItems[]; billing: BillingWithPayments | null } | null>(null);
 
   // 청구 생성 모달
   const [billingModal, setBillingModal] = useState<{ companyId: string; companyName: string; salesAmount: number } | null>(null);
@@ -90,7 +105,7 @@ export default function BillingPage() {
 
     const [salesRes, stmtRes, billRes, compRes, confirmRes] = await Promise.all([
       db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date"),
-      db.from("statements").select("*").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
+      db.from("statements").select("*, statement_items(*)").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
@@ -118,7 +133,7 @@ export default function BillingPage() {
     }
 
     // 명세서 집계 (체크된 거래처만)
-    const stmtMap = new Map<string, Statement[]>();
+    const stmtMap = new Map<string, StatementWithItems[]>();
     for (const s of stmtRes.data || []) {
       if (!confirmedCompanyIds.has(s.company_id)) continue;
       const arr = stmtMap.get(s.company_id) || [];
@@ -510,19 +525,42 @@ export default function BillingPage() {
               ? Math.min(100, Math.round((billing.paid_amount / billing.total_amount) * 100))
               : 0;
 
+            // 판매(출고) ↔ 명세서 크로스체크
+            const matchResult = matchSalesToStatements(
+              row.sales.logs.map(logToSalesLine),
+              row.statements.flatMap((s) => s.statement_items || []),
+            );
+            const mismatchSummary = row.statements.length > 0 && row.sales.amount > 0
+              ? summarizeMismatch(matchResult)
+              : null;
+
             return (
               <div key={row.id} className="rounded-2xl border border-border bg-bg-card overflow-hidden">
                 {/* 카드 헤더 */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-bg-dark/40">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-text-primary">{row.name}</h3>
-                    {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1)) !== billing.total_amount && (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-yellow-400 bg-yellow-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
-                        <AlertTriangle size={10} /> 금액 불일치
-                      </span>
-                    )}
+                <div className={`px-6 py-4 border-b ${matchResult.missingLines.length > 0 ? "border-red-500/40 bg-red-500/5" : "border-border bg-bg-dark/40"}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-bold text-text-primary">{row.name}</h3>
+                      {mismatchSummary && (
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-1 font-semibold border ${
+                            matchResult.missingLines.length > 0
+                              ? "text-red-400 bg-red-500/20 border-red-500/50"
+                              : "text-yellow-400 bg-yellow-500/15 border-yellow-500/40"
+                          }`}
+                          title="판매(출고) 합계와 명세서 항목 합계가 일치하지 않습니다"
+                        >
+                          <AlertTriangle size={12} /> {mismatchSummary}
+                        </span>
+                      )}
+                      {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1)) !== billing.total_amount && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 bg-orange-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
+                          <AlertTriangle size={10} /> 청구액 불일치
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm font-bold text-accent shrink-0">{formatNumber(row.sales.amount)}원</span>
                   </div>
-                  <span className="text-sm font-bold text-accent">{formatNumber(row.sales.amount)}원</span>
                 </div>
 
                 {/* 4단계 흐름 */}
@@ -578,13 +616,43 @@ export default function BillingPage() {
                             <span className="text-[11px] text-text-secondary">{formatNumber(s.total_amount)}원</span>
                           </div>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
-                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary"
-                        >
-                          <Plus size={10} /> 추가 발행
-                        </button>
+                        {/* 청구에서 빠진 출고 강조 박스 */}
+                        {matchResult.missingLines.length > 0 ? (
+                          <div className="mt-2 rounded-lg bg-red-500/15 border-2 border-red-500/50 p-2.5">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-red-400 mb-1">
+                              <AlertTriangle size={13} />
+                              청구 누락 {matchResult.missingLines.length}건 · {formatNumber(matchResult.missingLines.reduce((s, l) => s + l.amount, 0))}원
+                            </div>
+                            <ul className="space-y-0.5 mb-2">
+                              {matchResult.missingLines.slice(0, 3).map((l, i) => (
+                                <li key={i} className="flex justify-between text-[10px]">
+                                  <span className="text-text-secondary truncate">
+                                    <span className="text-text-muted">{(l.log_date ?? "").slice(5)}</span> · {l.product_name}
+                                  </span>
+                                  <span className="text-red-400 font-medium shrink-0 ml-1">{formatNumber(l.amount)}원</span>
+                                </li>
+                              ))}
+                              {matchResult.missingLines.length > 3 && (
+                                <li className="text-[10px] text-text-muted">… 외 {matchResult.missingLines.length - 3}건</li>
+                              )}
+                            </ul>
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
+                              className="w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-red-500/25 border border-red-500/50 text-red-300 text-[11px] font-bold hover:bg-red-500/35 transition-colors"
+                            >
+                              <Plus size={11} /> 누락분 명세서 발행
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
+                            className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary"
+                          >
+                            <Plus size={10} /> 추가 발행
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <>
@@ -764,20 +832,81 @@ export default function BillingPage() {
             </div>
             <form onSubmit={handleTaxInvoice} className="p-6 space-y-5">
 
-              {/* 판매액 기준 안내 */}
+              {/* 발행 전 크로스체크 패널 */}
               {(() => {
+                const taxMatch = matchSalesToStatements(
+                  taxModal.sales.logs.map(logToSalesLine),
+                  taxModal.statements.flatMap((s) => s.statement_items || []),
+                );
                 const stmtSupply = taxModal.statements.reduce((s, st) => s + st.supply_amount, 0);
                 const salesAmount = taxModal.sales.amount;
                 const diff = salesAmount - stmtSupply;
-                return taxModal.statements.length > 0 && diff !== 0 ? (
-                  <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 text-xs space-y-1">
-                    <p className="text-yellow-400 font-semibold">판매액과 명세서 금액 불일치</p>
-                    <div className="flex justify-between"><span className="text-text-muted">판매액 (출고 기준)</span><span className="text-text-primary">{formatNumber(salesAmount)}원</span></div>
-                    <div className="flex justify-between"><span className="text-text-muted">명세서 공급가 합계</span><span className="text-text-primary">{formatNumber(stmtSupply)}원</span></div>
-                    <div className="flex justify-between font-bold"><span className="text-yellow-400">차이</span><span className="text-yellow-400">{diff > 0 ? "+" : ""}{formatNumber(diff)}원</span></div>
-                    <p className="text-text-muted pt-1">기본값은 판매액 기준입니다. 명세서 기준으로 하려면 아래에서 명세서를 선택하세요.</p>
+
+                if (taxModal.statements.length === 0 || diff === 0) {
+                  return diff === 0 && taxModal.statements.length > 0 ? (
+                    <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-xs flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-400" />
+                      <span className="text-emerald-400 font-semibold">판매·명세서 일치 — 발행 준비 완료</span>
+                    </div>
+                  ) : null;
+                }
+
+                return (
+                  <div className="rounded-xl bg-red-500/15 border-2 border-red-500/50 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={18} className="text-red-400" />
+                      <span className="text-sm font-bold text-red-400">발행 전 점검 — 판매액과 명세서 합계 불일치</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-lg bg-bg-dark/60 px-3 py-2">
+                        <p className="text-text-muted mb-0.5">판매액 (출고)</p>
+                        <p className="text-text-primary font-bold">{formatNumber(salesAmount)}원</p>
+                      </div>
+                      <div className="rounded-lg bg-bg-dark/60 px-3 py-2">
+                        <p className="text-text-muted mb-0.5">명세서 합계</p>
+                        <p className="text-text-primary font-bold">{formatNumber(stmtSupply)}원</p>
+                      </div>
+                      <div className="rounded-lg bg-red-500/20 px-3 py-2 border border-red-500/40">
+                        <p className="text-red-400 mb-0.5">차이</p>
+                        <p className="text-red-400 font-bold">{diff > 0 ? "+" : ""}{formatNumber(diff)}원</p>
+                      </div>
+                    </div>
+
+                    {/* 누락 출고 상세 */}
+                    {taxMatch.missingLines.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-text-secondary mb-1.5">미반영 출고 {taxMatch.missingLines.length}건</p>
+                        <ul className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                          {taxMatch.missingLines.map((l, i) => (
+                            <li key={i} className="flex justify-between text-xs bg-red-500/10 rounded px-2 py-1.5">
+                              <span>
+                                <span className="text-text-muted">{l.log_date}</span>
+                                <span className="mx-1.5">·</span>
+                                <span className="text-text-primary font-medium">{l.product_name}</span>
+                                <span className="text-text-muted ml-1">× {formatNumber(l.quantity)}{l.unit || ""}</span>
+                              </span>
+                              <span className="text-red-400 font-bold">{formatNumber(l.amount)}원</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTaxModal(null);
+                          router.push(`/admin/statements/new?salesCompanyId=${taxModal.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/25 border border-red-500/50 text-red-300 text-xs font-bold hover:bg-red-500/35 transition-colors"
+                      >
+                        <Plus size={12} /> 누락분 명세서 먼저 발행
+                      </button>
+                      <span className="text-[11px] text-text-muted">또는 ↓ 아래에서 발행 진행</span>
+                    </div>
                   </div>
-                ) : null;
+                );
               })()}
 
               {/* 명세서 합산 선택 */}
@@ -1016,6 +1145,10 @@ export default function BillingPage() {
         const logs = salesDetailModal.logs;
         const supply = logs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0);
         const tax = Math.round(supply * 0.1);
+        const salesLines = logs.map(logToSalesLine);
+        const stmtItemsForMatch = salesDetailModal.statements.flatMap((s) => s.statement_items || []);
+        const match = matchSalesToStatements(salesLines, stmtItemsForMatch);
+        const hasStatements = salesDetailModal.statements.length > 0;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className="bg-bg-card border border-border rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
@@ -1036,14 +1169,24 @@ export default function BillingPage() {
                       <th className="px-4 py-3 text-right text-text-muted font-medium">단가</th>
                       <th className="px-4 py-3 text-right text-text-muted font-medium">공급가</th>
                       <th className="px-4 py-3 text-right text-text-muted font-medium">부가세</th>
+                      {hasStatements && (
+                        <th className="px-4 py-3 text-center text-text-muted font-medium">명세서</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {logs.map((log) => {
                       const lineSupply = log.quantity * (log.unit_price || 0);
                       const lineTax = Math.round(lineSupply * 0.1);
+                      const status = match.matchedRows.get(log.id);
+                      const rowBg =
+                        status === "missing_estimated"
+                          ? "bg-red-500/15 hover:bg-red-500/20 border-l-4 border-l-red-500"
+                          : status === "amount_mismatch"
+                            ? "bg-yellow-500/10 hover:bg-yellow-500/15 border-l-4 border-l-yellow-500"
+                            : "border-l-4 border-l-transparent hover:bg-bg-card-hover";
                       return (
-                        <tr key={log.id} className="border-b border-border/50 hover:bg-bg-card-hover transition-colors">
+                        <tr key={log.id} className={`border-b border-border/50 transition-colors ${rowBg}`}>
                           <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">{log.log_date}</td>
                           <td className="px-4 py-3 text-text-primary">
                             {log.products?.name || log.reason || "(기타)"}
@@ -1055,13 +1198,73 @@ export default function BillingPage() {
                           <td className="px-4 py-3 text-right text-text-secondary text-xs">{formatNumber(log.unit_price || 0)}</td>
                           <td className="px-4 py-3 text-right font-medium text-accent">{formatNumber(lineSupply)}원</td>
                           <td className="px-4 py-3 text-right text-text-muted text-xs">{formatNumber(lineTax)}원</td>
+                          {hasStatements && (
+                            <td className="px-4 py-3 text-center text-xs whitespace-nowrap">
+                              {status === "included" && (
+                                <span className="inline-flex items-center gap-0.5 text-emerald-400" title="명세서에 포함됨">
+                                  <CheckCircle2 size={12} />
+                                </span>
+                              )}
+                              {status === "missing_estimated" && (
+                                <span className="inline-flex items-center gap-0.5 text-red-400 font-medium" title="이 출고가 명세서에서 누락된 것으로 추정됩니다">
+                                  <AlertTriangle size={12} /> 누락
+                                </span>
+                              )}
+                              {status === "amount_mismatch" && (
+                                <span className="inline-flex items-center gap-0.5 text-yellow-400" title="같은 품목 합계가 명세서와 다릅니다 (1:1 매칭 불가)">
+                                  <AlertTriangle size={12} /> 차이
+                                </span>
+                              )}
+                              {!status && (
+                                <span className="text-text-muted/40">—</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-              <div className="border-t border-border px-6 py-4 shrink-0 bg-bg-dark/60 space-y-1">
+              <div className="border-t border-border px-6 py-4 shrink-0 bg-bg-dark/60 space-y-1 overflow-y-auto max-h-[40vh]">
+                {/* 청구 누락 강조 박스 (가장 눈에 띄게) */}
+                {match.totalDiff > 0 && match.missingLines.length > 0 && (
+                  <div className="rounded-xl bg-red-500/15 border-2 border-red-500/50 p-4 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle size={18} className="text-red-400" />
+                      <span className="text-sm font-bold text-red-400">
+                        청구 누락 추정 — {match.missingLines.length}건, {formatNumber(match.missingLines.reduce((s, l) => s + l.amount, 0))}원
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-secondary mb-2">아래 출고가 어느 명세서에도 포함되지 않아 청구에서 빠졌을 가능성이 큽니다.</p>
+                    <ul className="space-y-1">
+                      {match.missingLines.map((l, i) => (
+                        <li key={i} className="flex justify-between text-xs bg-red-500/10 rounded px-2 py-1.5">
+                          <span className="text-text-primary">
+                            <span className="text-text-muted">{l.log_date}</span>
+                            <span className="mx-1.5">·</span>
+                            <span className="font-medium">{l.product_name}</span>
+                            <span className="text-text-muted ml-1">× {formatNumber(l.quantity)}{l.unit || ""}</span>
+                          </span>
+                          <span className="text-red-400 font-bold">{formatNumber(l.amount)}원</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* 합계 불일치 강조 (1:1 매칭 안되는 케이스) */}
+                {match.totalDiff !== 0 && match.missingLines.length === 0 && hasStatements && (
+                  <div className="rounded-xl bg-yellow-500/15 border-2 border-yellow-500/50 p-4 mb-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle size={18} className="text-yellow-400" />
+                      <span className="text-sm font-bold text-yellow-400">
+                        판매-명세서 합계 차이 {match.totalDiff > 0 ? "+" : ""}{formatNumber(match.totalDiff)}원
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-secondary">개별 행 매칭이 어렵습니다. 아래 품목별 비교 표를 확인하세요.</p>
+                  </div>
+                )}
+
                 <div className="flex justify-between text-sm">
                   <span className="text-text-muted">공급가 합계</span>
                   <span className="font-bold text-text-primary">{formatNumber(supply)}원</span>
@@ -1080,7 +1283,6 @@ export default function BillingPage() {
                   const stmts = salesDetailModal.statements;
                   const billing = salesDetailModal.billing;
                   const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
-                  const stmtTotal = stmts.reduce((s, st) => s + st.total_amount, 0);
                   const supplyDiff = supply - stmtSupply;
                   const billingTotal = billing?.total_amount ?? 0;
                   const expectedBilling = supply + tax;
@@ -1117,6 +1319,35 @@ export default function BillingPage() {
                     </div>
                   );
                 })()}
+
+                {/* 품목별 판매-명세서 비교 표 */}
+                {hasStatements && match.itemDiffs.length > 0 && (
+                  <div className="border-t border-border pt-3 mt-3">
+                    <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">품목별 판매·명세서 비교</p>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="px-2 py-1.5 text-left text-text-muted font-medium">품목</th>
+                          <th className="px-2 py-1.5 text-right text-text-muted font-medium">판매</th>
+                          <th className="px-2 py-1.5 text-right text-text-muted font-medium">명세서</th>
+                          <th className="px-2 py-1.5 text-right text-text-muted font-medium">차이</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {match.itemDiffs.map((d) => (
+                          <tr key={d.product_name} className={d.diff !== 0 ? "bg-red-500/10 border-l-4 border-l-red-500" : "border-l-4 border-l-transparent"}>
+                            <td className={`px-2 py-1.5 ${d.diff !== 0 ? "text-red-400 font-semibold" : "text-text-secondary"}`}>{d.product_name}</td>
+                            <td className="px-2 py-1.5 text-right text-text-secondary">{formatNumber(d.salesAmount)}원</td>
+                            <td className="px-2 py-1.5 text-right text-text-secondary">{formatNumber(d.statementAmount)}원</td>
+                            <td className={`px-2 py-1.5 text-right font-bold ${d.diff > 0 ? "text-red-400" : d.diff < 0 ? "text-yellow-400" : "text-emerald-400"}`}>
+                              {d.diff === 0 ? "✓" : `${d.diff > 0 ? "+" : ""}${formatNumber(d.diff)}원`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -6,8 +6,19 @@ import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
 import { generateStatementNumber, formatNumber, formatDate } from "@/lib/utils";
 import { dbInsert, dbUpdate } from "@/lib/db";
-import { Plus, Trash2, ArrowLeft, ShoppingCart } from "lucide-react";
+import { matchSalesToStatements, type SalesLineForMatch } from "@/lib/billing-match";
+import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+
+type RawSalesLog = {
+  id: string;
+  product_id: string | null;
+  quantity: number;
+  unit_price: number;
+  log_date: string;
+  reason: string | null;
+  products: { name: string; unit: string; box_quantity: number } | null;
+};
 
 interface StatementItemDraft {
   product_id: string | null;
@@ -47,6 +58,11 @@ function NewStatementForm() {
   const [salesDateTo, setSalesDateTo] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [salesLogs, setSalesLogs] = useState<any[]>([]);
+
+  // 미반영 출고 (어느 명세서에도 안 들어간 출고)
+  const [unbilledLines, setUnbilledLines] = useState<SalesLineForMatch[]>([]);
+  const [unbilledRawLogs, setUnbilledRawLogs] = useState<RawSalesLog[]>([]);
+  const [unbilledLoading, setUnbilledLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -207,6 +223,96 @@ function NewStatementForm() {
     } else {
       setCompanyPrices([]);
     }
+  }
+
+  // companyId가 어떤 경로로든 바뀌면 미반영 출고 재조회
+  useEffect(() => {
+    if (companyId) {
+      fetchUnbilledLogs(companyId);
+    } else {
+      setUnbilledLines([]);
+      setUnbilledRawLogs([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
+  // 최근 3개월간 어느 명세서에도 들어가지 않은 출고를 식별
+  async function fetchUnbilledLogs(cId: string) {
+    setUnbilledLoading(true);
+    const now = new Date();
+    const fromDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const from = fromDate.toISOString().slice(0, 10);
+    const to = now.toISOString().slice(0, 10);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const [logsRes, stmtsRes] = await Promise.all([
+      db.from("inventory_logs")
+        .select("id, product_id, quantity, unit_price, log_date, reason, products(name, unit, box_quantity)")
+        .eq("type", "out")
+        .eq("company_id", cId)
+        .gte("log_date", from)
+        .lte("log_date", to)
+        .order("log_date"),
+      db.from("statements")
+        .select("id, statement_items(*)")
+        .eq("company_id", cId)
+        .gte("statement_date", from)
+        .lte("statement_date", to),
+    ]);
+
+    const rawLogs = (logsRes.data || []) as RawSalesLog[];
+    const salesLines: SalesLineForMatch[] = rawLogs.map((log) => ({
+      id: log.id,
+      product_name: log.products?.name || log.reason || "기타",
+      quantity: log.quantity,
+      unit_price: log.unit_price || 0,
+      amount: log.quantity * (log.unit_price || 0),
+      log_date: log.log_date,
+      unit: log.products?.unit,
+    }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stmtItems = (stmtsRes.data || []).flatMap((s: any) => s.statement_items || []);
+    const match = matchSalesToStatements(salesLines, stmtItems);
+
+    setUnbilledLines(match.missingLines);
+    setUnbilledRawLogs(rawLogs);
+    setUnbilledLoading(false);
+  }
+
+  // 미반영 출고를 명세서 항목으로 채움 (상품별 집계 + 박스 단위 변환)
+  function importUnbilled() {
+    const missingIds = new Set(unbilledLines.map((l) => l.id));
+    const missingLogs = unbilledRawLogs.filter((log) => missingIds.has(log.id));
+    if (missingLogs.length === 0) return;
+
+    const productMap = new Map<string, StatementItemDraft>();
+    for (const log of missingLogs) {
+      const key = log.product_id || `manual_${log.reason || "기타"}`;
+      const boxQty = log.products?.box_quantity || 1;
+      const isBox = boxQty > 1;
+      const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
+      const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
+      const existing = productMap.get(key);
+      if (existing) {
+        existing.quantity += displayQty;
+        existing.amount = existing.quantity * existing.unit_price;
+      } else {
+        productMap.set(key, {
+          product_id: log.product_id || null,
+          product_name: log.products?.name || log.reason || "기타",
+          specification: isBox ? `1박스/${boxQty}${log.products?.unit || "EA"}` : "",
+          unit: isBox ? "박스" : (log.products?.unit || "식"),
+          quantity: displayQty,
+          unit_price: displayPrice,
+          amount: displayQty * displayPrice,
+        });
+      }
+    }
+    setItems(Array.from(productMap.values()));
+    const lastDate = [...missingLogs].sort((a, b) => a.log_date.localeCompare(b.log_date)).pop()?.log_date;
+    if (lastDate) setStatementDate(lastDate);
   }
 
   // 상품의 실제 적용 단가 (거래처별 단가 > 기본 판매가)
@@ -456,6 +562,59 @@ function NewStatementForm() {
             />
           </div>
         </div>
+
+        {/* 미반영 출고 크로스체크 패널 */}
+        {companyId && unbilledLines.length > 0 && (() => {
+          const totalAmount = unbilledLines.reduce((s, l) => s + l.amount, 0);
+          return (
+            <div className="rounded-2xl border-2 border-red-500/50 bg-red-500/10 p-6 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={22} className="text-red-400 shrink-0" />
+                  <div>
+                    <h2 className="text-lg font-bold text-red-400">
+                      미반영 출고 {unbilledLines.length}건 · {formatNumber(totalAmount)}원
+                    </h2>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      최근 3개월간 이 거래처에서 출고됐지만 어느 명세서에도 포함되지 않은 항목입니다.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={importUnbilled}
+                  className="shrink-0 px-4 py-2 rounded-xl bg-red-500/25 border border-red-500/50 text-red-300 font-bold text-sm hover:bg-red-500/35 transition-colors"
+                >
+                  모두 항목에 채우기
+                </button>
+              </div>
+              <ul className="space-y-1 max-h-64 overflow-y-auto rounded-lg bg-bg-dark/40 p-2">
+                {unbilledLines.map((l, i) => (
+                  <li key={i} className="flex justify-between text-xs bg-red-500/10 rounded px-3 py-2">
+                    <span className="truncate">
+                      <span className="text-text-muted">{formatDate(l.log_date ?? "")}</span>
+                      <span className="mx-2">·</span>
+                      <span className="text-text-primary font-medium">{l.product_name}</span>
+                      <span className="text-text-muted ml-2">× {formatNumber(l.quantity)}{l.unit || ""}</span>
+                      <span className="text-text-muted ml-2">@ {formatNumber(l.unit_price)}</span>
+                    </span>
+                    <span className="text-red-400 font-bold shrink-0 ml-2">{formatNumber(l.amount)}원</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
+        {companyId && unbilledLoading && unbilledLines.length === 0 && (
+          <div className="rounded-xl border border-border bg-bg-card p-3 text-xs text-text-muted text-center">
+            미반영 출고 확인 중…
+          </div>
+        )}
+        {companyId && !unbilledLoading && unbilledLines.length === 0 && unbilledRawLogs.length > 0 && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-400 flex items-center gap-2">
+            <ShoppingCart size={14} /> 최근 3개월 출고가 모두 명세서에 반영되어 있습니다.
+          </div>
+        )}
 
         {/* 판매 데이터 불러오기 */}
         {showSalesImport && (
