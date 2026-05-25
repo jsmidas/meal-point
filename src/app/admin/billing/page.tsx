@@ -18,6 +18,7 @@ import {
   Plus,
   ExternalLink,
   AlertTriangle,
+  Split,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -97,6 +98,7 @@ export default function BillingPage() {
   const [payDepositor, setPayDepositor] = useState("");
   const [payBank, setPayBank] = useState("");
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null); // 수정 모드
+  const [splittingPayment, setSplittingPayment] = useState<Payment | null>(null); // 분할 모드 (기존 입금을 명세서별로 재분배)
 
   // 분배 충당: 패널 열림 여부 + 버킷별 충당액 (key는 billingId, 당월은 "__current__")
   const [payShowAllocation, setPayShowAllocation] = useState(false);
@@ -402,9 +404,15 @@ export default function BillingPage() {
 
     setPaySubmitting(true);
     const groupId = allocPlan.entries.length > 1 ? crypto.randomUUID() : null;
+    const affectedBillingIds: string[] = [];
+
+    // 분할 모드: 기존 입금 row를 삭제 (반제 처리). 분배 합계 = 입금액 보장됨.
+    if (splittingPayment) {
+      affectedBillingIds.push(splittingPayment.billing_id);
+      await dbDelete("payments", { id: splittingPayment.id });
+    }
 
     // 충당 대상별 insert
-    const affectedBillingIds: string[] = [];
     for (const entry of allocPlan.entries) {
       let billingId = entry.billingId;
 
@@ -440,7 +448,7 @@ export default function BillingPage() {
     }
 
     // 각 billing의 paid_amount 재계산
-    for (const bid of affectedBillingIds) {
+    for (const bid of Array.from(new Set(affectedBillingIds))) {
       await syncBillingPaidById(bid);
     }
 
@@ -462,9 +470,11 @@ export default function BillingPage() {
   };
 
   // 당월 명세서별 미결 계산 (billing.payments의 statement_id 기준)
-  function computeCurrentStatementsUnpaid(row: CompanyRow): StatementUnpaid[] {
+  // splittingPayment이 있으면 그 입금의 영향을 제거 (마치 없는 것처럼 재계산)
+  function computeCurrentStatementsUnpaid(row: CompanyRow, excludePayment: Payment | null): StatementUnpaid[] {
     const paidByStmt: Record<string, number> = {};
     for (const p of row.billing?.payments || []) {
+      if (excludePayment && p.id === excludePayment.id) continue;
       if (!p.statement_id) continue;
       paidByStmt[p.statement_id] = (paidByStmt[p.statement_id] || 0) + p.amount;
     }
@@ -487,35 +497,52 @@ export default function BillingPage() {
     if (!payModalRow) return [];
     const buckets: AllocBucket[] = [];
     // 이전 월 미결 명세서들 + 청구단위 미분류 잔액
+    // 분할 모드의 입금이 이전 월에 속하는 경우, 그 영향을 제거해 미결을 재계산
     const prev = prevUnpaidDetailMap[payModalRow.id] || [];
+    const splitBillingId = splittingPayment?.billing_id;
+    const splitStmtId = splittingPayment?.statement_id;
+    const splitAmount = splittingPayment?.amount ?? 0;
     for (const detail of prev) {
+      const isSplitTargetBilling = splittingPayment && detail.billingId === splitBillingId;
       for (const s of detail.statements) {
-        buckets.push({
-          key: `s:${s.statementId}`,
-          billingId: detail.billingId,
-          billingMonth: detail.billingMonth,
-          statementId: s.statementId,
-          statementNumber: s.statementNumber,
-          statementDate: s.statementDate,
-          outstanding: s.outstanding,
-          isCurrent: false,
-          isStatement: true,
-        });
+        let outstanding = s.outstanding;
+        // 분할 대상 입금이 이 명세서를 충당하고 있다면 그 효과를 되돌림
+        if (isSplitTargetBilling && splitStmtId === s.statementId) {
+          outstanding += splitAmount;
+        }
+        if (outstanding > 0) {
+          buckets.push({
+            key: `s:${s.statementId}`,
+            billingId: detail.billingId,
+            billingMonth: detail.billingMonth,
+            statementId: s.statementId,
+            statementNumber: s.statementNumber,
+            statementDate: s.statementDate,
+            outstanding,
+            isCurrent: false,
+            isStatement: true,
+          });
+        }
       }
-      if (detail.unclassified > 0) {
+      // 분류 미정: 분할 대상이 statement_id 없는 청구단위 충당이면 unclassified에 +amount
+      let unclassified = detail.unclassified;
+      if (isSplitTargetBilling && !splitStmtId) {
+        unclassified += splitAmount;
+      }
+      if (unclassified > 0) {
         buckets.push({
           key: `b:${detail.billingId}`,
           billingId: detail.billingId,
           billingMonth: detail.billingMonth,
           statementId: null,
-          outstanding: detail.unclassified,
+          outstanding: unclassified,
           isCurrent: false,
           isStatement: false,
         });
       }
     }
-    // 당월 명세서들
-    const curStmts = computeCurrentStatementsUnpaid(payModalRow);
+    // 당월 명세서들 (splittingPayment 영향 제거)
+    const curStmts = computeCurrentStatementsUnpaid(payModalRow, splittingPayment);
     for (const s of curStmts) {
       buckets.push({
         key: `s:${s.statementId}`,
@@ -532,14 +559,19 @@ export default function BillingPage() {
     // 당월 청구단위 잔액 (overpayment 받기용 — 항상 포함)
     const currentBilling = payModalRow.billing;
     const curStmtSum = curStmts.reduce((s, x) => s + x.outstanding, 0);
-    let curUnclassified: number;
+    // 청구 outstanding: 분할 대상 입금이 당월 청구에 속하면 그 영향 제거 (+amount)
+    let billingOutstanding: number;
     if (currentBilling) {
-      curUnclassified = currentBilling.total_amount - currentBilling.paid_amount - curStmtSum;
+      billingOutstanding = currentBilling.total_amount - currentBilling.paid_amount;
+      if (splittingPayment && splitBillingId === currentBilling.id) {
+        billingOutstanding += splitAmount;
+      }
     } else {
-      curUnclassified = payModalRow.sales.amount > 0
-        ? payModalRow.sales.amount + Math.round(payModalRow.sales.amount * 0.1) - curStmtSum
+      billingOutstanding = payModalRow.sales.amount > 0
+        ? payModalRow.sales.amount + Math.round(payModalRow.sales.amount * 0.1)
         : 0;
     }
+    const curUnclassified = billingOutstanding - curStmtSum;
     buckets.push({
       key: `b:${currentBilling?.id ?? CURRENT_BUCKET_KEY}`,
       billingId: currentBilling?.id ?? null,
@@ -550,7 +582,7 @@ export default function BillingPage() {
       isStatement: false,
     });
     return buckets;
-  }, [payModalRow, prevUnpaidDetailMap, month]);
+  }, [payModalRow, prevUnpaidDetailMap, month, splittingPayment]);
 
   // 분배 합계
   const allocSum = useMemo(
@@ -565,7 +597,8 @@ export default function BillingPage() {
     entries: Array<{ billingId: string | null; statementId: string | null; amount: number }>;
   } {
     // 분배 패널 미사용: 전액 당월 청구단위에 (기존 동작)
-    if (!payShowAllocation) {
+    // 단, 분할 모드는 항상 분배 패널 기반이어야 함 (단일 entry로 빠지면 분할 의미가 없어짐)
+    if (!payShowAllocation && !splittingPayment) {
       return {
         valid: true,
         entries: [{ billingId: payModalRow?.billing?.id ?? null, statementId: null, amount: payAmount }],
@@ -637,6 +670,7 @@ export default function BillingPage() {
     setPayDepositor("");
     setPayBank("");
     setEditingPayment(null);
+    setSplittingPayment(null);
     setPaySubmitting(false);
     setPayShowAllocation(false);
     setPayAllocations({});
@@ -645,6 +679,7 @@ export default function BillingPage() {
   function openEditPayment(payment: Payment, row: CompanyRow) {
     setPayModalRow(row);
     setEditingPayment(payment);
+    setSplittingPayment(null);
     setPayAmount(payment.amount);
     setPayDate(payment.payment_date);
     setPayMethod(payment.payment_method || "bank_transfer");
@@ -652,6 +687,24 @@ export default function BillingPage() {
     setPayDepositor(payment.depositor_name || "");
     setPayBank(payment.bank_name || "");
     setPayShowAllocation(false);
+    setPayAllocations({});
+  }
+
+  // 분할/재매칭: 기존 입금을 명세서별로 재분배
+  // - 모달의 입금액·입금일 등은 prefill되며 편집 가능
+  // - 분배 패널이 강제로 펼쳐지고, 미결 계산에서 이 입금의 영향을 제거함 (마치 없는 것처럼)
+  // - 저장 시 기존 row 삭제 + 분배에 따라 다중 insert (반제 처리)
+  function openSplitPayment(payment: Payment, row: CompanyRow) {
+    setPayModalRow(row);
+    setEditingPayment(null);
+    setSplittingPayment(payment);
+    setPayAmount(payment.amount);
+    setPayDate(payment.payment_date);
+    setPayMethod(payment.payment_method || "bank_transfer");
+    setPayNotes(payment.notes || "");
+    setPayDepositor(payment.depositor_name || "");
+    setPayBank(payment.bank_name || "");
+    setPayShowAllocation(true);
     setPayAllocations({});
   }
 
@@ -1079,25 +1132,28 @@ export default function BillingPage() {
                         <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${paidPct}%` }} aria-label={`수금률 ${paidPct}%`} />
                       </div>
                     )}
-                    {/* 입금 처리 버튼 - 항상 표시 */}
-                    {(!billing || unpaid > 0) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPayModalRow(row);
-                          setEditingPayment(null);
-                          setPayAmount(0);
-                          setPayDate(new Date().toISOString().slice(0, 10));
-                          setPayMethod("bank_transfer");
-                          setPayNotes("");
-                          setPayDepositor("");
-                          setPayBank("");
-                        }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
-                      >
-                        <CreditCard size={12} /> 입금 처리
-                      </button>
-                    )}
+                    {/* 입금 처리 버튼 — 항상 노출 (이전 월 미수/조정 입금/과입금 환불 대응) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayModalRow(row);
+                        setEditingPayment(null);
+                        setSplittingPayment(null);
+                        setPayAmount(0);
+                        setPayDate(new Date().toISOString().slice(0, 10));
+                        setPayMethod("bank_transfer");
+                        setPayNotes("");
+                        setPayDepositor("");
+                        setPayBank("");
+                        // 이전 월 미수가 있으면 분배 패널 자동 펼침 (충당 권장)
+                        const hasPrev = (prevUnpaidDetailMap[row.id] || []).some((d) => d.outstanding > 0);
+                        setPayShowAllocation(hasPrev);
+                        setPayAllocations({});
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                    >
+                      <CreditCard size={12} /> 입금 처리
+                    </button>
                     {/* 입금 이력 */}
                     {billing && billing.payments.length > 0 && (
                       <div className="mt-2 space-y-1">
@@ -1144,7 +1200,17 @@ export default function BillingPage() {
                             <span className="flex items-center gap-0.5 shrink-0">
                               <button
                                 type="button"
+                                onClick={() => openSplitPayment(p, row)}
+                                aria-label="입금 분할/재매칭"
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-purple-400/10 text-text-muted hover:text-purple-400 transition-all"
+                                title="입금 분할/재매칭 — 명세서별로 재분배"
+                              >
+                                <Split size={10} />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openEditPayment(p, row)}
+                                aria-label="입금 수정"
                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-blue-400/10 text-text-muted hover:text-blue-400 transition-all"
                                 title="입금 수정"
                               >
@@ -1153,6 +1219,7 @@ export default function BillingPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDeletePayment(p, billing.id)}
+                                aria-label="입금 삭제"
                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-all"
                                 title="입금 삭제"
                               >
@@ -1344,10 +1411,26 @@ export default function BillingPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-base font-bold text-text-primary">{editingPayment ? "입금 수정" : "입금 처리"} — {payModalRow.name}</h2>
-              <button type="button" onClick={closePayModal} className="text-text-muted hover:text-text-primary"><X size={20} /></button>
+              <h2 className="text-base font-bold text-text-primary">
+                {splittingPayment ? "입금 분할/재매칭" : editingPayment ? "입금 수정" : "입금 처리"} — {payModalRow.name}
+              </h2>
+              <button type="button" onClick={closePayModal} className="text-text-muted hover:text-text-primary" aria-label="모달 닫기"><X size={20} /></button>
             </div>
             <form onSubmit={handlePayment} className="p-6 space-y-4">
+              {/* 분할 모드 안내 */}
+              {splittingPayment && (
+                <div className="rounded-xl bg-purple-500/10 border-2 border-purple-500/40 px-4 py-3 text-xs text-purple-200">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Split size={14} />
+                    <span className="font-bold">분할/재매칭 모드 (반제 처리)</span>
+                  </div>
+                  <p className="text-purple-200/80">
+                    기존 입금 <span className="font-mono font-semibold">+{formatNumber(splittingPayment.amount)}원</span>
+                    {splittingPayment.payment_date && <> ({splittingPayment.payment_date})</>}
+                    {" "}을 명세서별로 재분배합니다. 저장 시 원래 row는 삭제되고 분배 결과로 새로 생성됩니다.
+                  </p>
+                </div>
+              )}
               {payModalRow.billing ? (() => {
                 const u = payModalRow.billing.total_amount - payModalRow.billing.paid_amount;
                 return (
@@ -1373,10 +1456,11 @@ export default function BillingPage() {
                       <span>이전 월 {prev < 0 ? "과입금" : "미수금"}{" "}
                         <span className="font-bold">{prev > 0 ? "+" : ""}{formatNumber(prev)}원</span>
                         이 남아있습니다.</span>
-                      {hasUnpaid && (
+                      {hasUnpaid && !splittingPayment && (
                         <button
                           type="button"
                           onClick={() => setPayShowAllocation((v) => !v)}
+                          aria-label={payShowAllocation ? "분배 닫기" : "분배 충당"}
                           className="ml-auto text-[11px] font-semibold underline decoration-dotted hover:no-underline shrink-0"
                         >
                           {payShowAllocation ? "분배 닫기" : "분배 충당"}
@@ -1443,7 +1527,7 @@ export default function BillingPage() {
               </div>
 
               {/* 충당 분배 패널 — 명세서 1건씩 미결을 표시하고 건별 충당 */}
-              {payShowAllocation && !editingPayment && allocBuckets.length > 0 && (() => {
+              {(payShowAllocation || splittingPayment) && !editingPayment && allocBuckets.length > 0 && (() => {
                 const sumDiff = payAmount - allocSum;
                 const sumOk = payAmount > 0 && sumDiff === 0;
                 // 월별로 그룹화
@@ -1574,10 +1658,10 @@ export default function BillingPage() {
                 <button type="button" onClick={closePayModal} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
                 <button
                   type="submit"
-                  disabled={paySubmitting || (payShowAllocation && !editingPayment && allocSum !== payAmount)}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={paySubmitting || ((payShowAllocation || !!splittingPayment) && !editingPayment && allocSum !== payAmount)}
+                  className={`px-5 py-2.5 rounded-xl font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white ${splittingPayment ? "bg-purple-500 hover:bg-purple-600" : "bg-emerald-500 hover:bg-emerald-600"}`}
                 >
-                  {paySubmitting ? "처리 중..." : editingPayment ? "수정 완료" : "입금 확인"}
+                  {paySubmitting ? "처리 중..." : splittingPayment ? "분할 저장 (반제)" : editingPayment ? "수정 완료" : "입금 확인"}
                 </button>
               </div>
             </form>
