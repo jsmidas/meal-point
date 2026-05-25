@@ -504,6 +504,7 @@ export type Database = {
           depositor_name: string | null;
           bank_name: string | null;
           payment_group_id: string | null;
+          statement_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -515,6 +516,7 @@ export type Database = {
           depositor_name?: string | null;
           bank_name?: string | null;
           payment_group_id?: string | null;
+          statement_id?: string | null;
         };
         Update: {
           billing_id?: string;
@@ -525,6 +527,7 @@ export type Database = {
           depositor_name?: string | null;
           bank_name?: string | null;
           payment_group_id?: string | null;
+          statement_id?: string | null;
         };
       };
       inventory: {
