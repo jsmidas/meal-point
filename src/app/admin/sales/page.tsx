@@ -552,11 +552,19 @@ export default function SalesPage() {
     return days;
   }, [month]);
 
-  // 선택된 날짜의 판매 내역
+  // 선택된 날짜의 판매 내역 (거래처 마스터 순서로 정렬, 같은 거래처 내에서는 원래 순서 유지)
   const selectedDayLogs = useMemo(() => {
     if (!selectedDate) return [];
-    return dailySummary.get(selectedDate)?.logs || [];
-  }, [selectedDate, dailySummary]);
+    const rawLogs = dailySummary.get(selectedDate)?.logs || [];
+    const companyOrder = new Map<string, number>();
+    companies.forEach((c, i) => companyOrder.set(c.id, i));
+    const NONE = Number.MAX_SAFE_INTEGER;
+    return [...rawLogs].sort((a, b) => {
+      const ai = a.company_id ? companyOrder.get(a.company_id) ?? NONE : NONE;
+      const bi = b.company_id ? companyOrder.get(b.company_id) ?? NONE : NONE;
+      return ai - bi;
+    });
+  }, [selectedDate, dailySummary, companies]);
 
   return (
     <div>
