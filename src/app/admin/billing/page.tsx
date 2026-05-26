@@ -376,7 +376,11 @@ export default function BillingPage() {
   const [paySubmitting, setPaySubmitting] = useState(false);
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payModalRow || payAmount <= 0 || paySubmitting) return;
+    if (!payModalRow || paySubmitting) return;
+    if (payAmount <= 0) {
+      alert("입금액을 입력하세요.");
+      return;
+    }
 
     // 수정 모드: 단일 row 갱신 (분배 미지원, 기존 동작 유지)
     if (editingPayment) {
@@ -1658,7 +1662,7 @@ export default function BillingPage() {
                 <button type="button" onClick={closePayModal} className="px-5 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">취소</button>
                 <button
                   type="submit"
-                  disabled={paySubmitting || ((payShowAllocation || !!splittingPayment) && !editingPayment && allocSum !== payAmount)}
+                  disabled={paySubmitting || payAmount <= 0 || ((payShowAllocation || !!splittingPayment) && !editingPayment && allocSum !== payAmount)}
                   className={`px-5 py-2.5 rounded-xl font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white ${splittingPayment ? "bg-purple-500 hover:bg-purple-600" : "bg-emerald-500 hover:bg-emerald-600"}`}
                 >
                   {paySubmitting ? "처리 중..." : splittingPayment ? "분할 저장 (반제)" : editingPayment ? "수정 완료" : "입금 확인"}
