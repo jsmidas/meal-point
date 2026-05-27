@@ -345,6 +345,24 @@ export default function InboundPage() {
         </button>
       </div>
 
+      {/* 매입처별 당월 누계 칩 */}
+      {!loading && supplierSummary.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 min-w-[110px]">
+            <div className="text-[11px] text-emerald-400 font-medium truncate">전체 합계</div>
+            <div className="text-sm font-bold text-emerald-400">{formatNumber(monthTotal.totalAmount)}원</div>
+            <div className="text-[10px] text-emerald-400/70">{filteredLogs.length}건</div>
+          </div>
+          {supplierSummary.map((s) => (
+            <div key={s.id} className="px-3 py-2 rounded-lg bg-bg-card border border-border min-w-[110px]">
+              <div className="text-[11px] text-text-muted font-medium truncate">{s.name}</div>
+              <div className="text-sm font-bold text-text-primary">{formatNumber(s.amount)}원</div>
+              <div className="text-[10px] text-text-muted">{s.count}건</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 매입처 필터 */}
       {suppliers.length > 0 && (
         <div className="flex items-center justify-center gap-2 mb-6">
