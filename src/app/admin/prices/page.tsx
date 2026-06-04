@@ -66,13 +66,13 @@ export default function PricesPage() {
     setSaved(false);
   }, [mode]);
 
-  // 모드별 거래처 (sell=판매처/customer, cost=매입처/vendor, both는 양쪽 모두)
+  // 모드별 거래처 (sell=판매처/customer, cost=매입처/supplier, both는 양쪽 모두)
   const filteredCompanies = useMemo(() => {
     return companies.filter((c) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ct = (c as any).company_type || "customer";
       if (mode === "sell") return ct === "customer" || ct === "both";
-      return ct === "vendor" || ct === "both";
+      return ct === "supplier" || ct === "both";
     });
   }, [companies, mode]);
 
