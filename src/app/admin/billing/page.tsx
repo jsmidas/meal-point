@@ -156,46 +156,74 @@ export default function BillingPage() {
 
     // 이전 월 미수 상세 (청구별 + 그 안의 명세서별)
     const prevDetail: Record<string, PrevUnpaidDetail[]> = {};
-    // 1) 청구별로 stub 만들기
-    const billingByKey: Record<string, PrevUnpaidDetail> = {}; // `${company_id}|${month}` → detail
+    // 1) 청구별로 stub 만들기 (paid_amount/total_amount 보존 — FIFO 분배에 사용)
+    type DetailWithRaw = PrevUnpaidDetail & { paidAmount: number; totalAmount: number };
+    const billingByKey: Record<string, DetailWithRaw> = {}; // `${company_id}|${month}` → detail
     for (const b of prevBillRes.data || []) {
       const u = b.total_amount - b.paid_amount;
       if (u === 0) continue;
       const key = `${b.company_id}|${b.billing_month}`;
-      const detail: PrevUnpaidDetail = {
+      const detail: DetailWithRaw = {
         billingId: b.id,
         billingMonth: b.billing_month,
         outstanding: u,
         statements: [],
         unclassified: 0,
+        paidAmount: b.paid_amount,
+        totalAmount: b.total_amount,
       };
       billingByKey[key] = detail;
       if (!prevDetail[b.company_id]) prevDetail[b.company_id] = [];
       prevDetail[b.company_id].push(detail);
     }
-    // 2) 각 명세서를 (company_id, statement_date의 YYYY-MM) 청구에 매핑
+    // 2) 각 명세서를 청구별로 그룹핑 (statement_id 태깅된 입금만 우선 차감)
+    type StmtRow = { id: string; statement_number: string; statement_date: string; total_amount: number; taggedPaid: number };
+    const stmtsByBillingId: Record<string, StmtRow[]> = {};
     for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; total_amount: number }>) {
       const stMonth = s.statement_date.slice(0, 7);
       const key = `${s.company_id}|${stMonth}`;
       const detail = billingByKey[key];
-      if (!detail) continue; // 청구가 없으면 무시 (드물 것)
-      const paid = paidByStmt[s.id] || 0;
-      const outstanding = s.total_amount - paid;
-      if (outstanding > 0) {
-        detail.statements.push({
-          statementId: s.id,
-          statementNumber: s.statement_number,
-          statementDate: s.statement_date,
-          totalAmount: s.total_amount,
-          paid,
-          outstanding,
-        });
-      }
+      if (!detail) continue;
+      const taggedPaid = paidByStmt[s.id] || 0;
+      if (!stmtsByBillingId[detail.billingId]) stmtsByBillingId[detail.billingId] = [];
+      stmtsByBillingId[detail.billingId].push({
+        id: s.id,
+        statement_number: s.statement_number,
+        statement_date: s.statement_date,
+        total_amount: s.total_amount,
+        taggedPaid,
+      });
     }
-    // 3) 청구 outstanding 과 명세서 outstanding 합 차이 = 분류 미정
+    // 3) 청구단위 입금(statement_id=NULL)은 명세서 날짜순으로 FIFO 가상 분배
+    //    — payments 테이블 자체는 건드리지 않고, 표시 계산만 정리
     for (const detail of Object.values(billingByKey)) {
+      const stmts = (stmtsByBillingId[detail.billingId] || [])
+        .slice()
+        .sort((a, b) => a.statement_date.localeCompare(b.statement_date));
+      const taggedSum = stmts.reduce((s, x) => s + x.taggedPaid, 0);
+      let unclassifiedPaid = Math.max(0, detail.paidAmount - taggedSum); // 청구단위 충당량
+
+      for (const stmt of stmts) {
+        const outstandingAfterTag = stmt.total_amount - stmt.taggedPaid;
+        const alloc = Math.min(unclassifiedPaid, Math.max(0, outstandingAfterTag));
+        unclassifiedPaid -= alloc;
+        const effectivePaid = stmt.taggedPaid + alloc;
+        const outstanding = stmt.total_amount - effectivePaid;
+        if (outstanding > 0) {
+          detail.statements.push({
+            statementId: stmt.id,
+            statementNumber: stmt.statement_number,
+            statementDate: stmt.statement_date,
+            totalAmount: stmt.total_amount,
+            paid: effectivePaid,
+            outstanding,
+          });
+        }
+      }
+      // 분류 미정 = 청구 outstanding - 명세서 outstanding 합
+      // (FIFO 분배 후에도 잔액이 남으면 보통 0, 과입금이면 음수)
       const stmtSum = detail.statements.reduce((s, x) => s + x.outstanding, 0);
-      detail.unclassified = detail.outstanding - stmtSum; // 양수=명세서 미결 외에 추가 미결, 음수=청구 단위 과입금
+      detail.unclassified = detail.outstanding - stmtSum;
     }
 
     const companies: Company[] = compRes.data || [];
