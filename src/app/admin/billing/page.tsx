@@ -497,6 +497,8 @@ export default function BillingPage() {
     statementNumber?: string;
     statementDate?: string;
     outstanding: number; // 양수=미수, 음수=과입금(청구단위)
+    paid?: number; // 이미 충당된 금액 (명세서 단위)
+    totalAmount?: number; // 명세서 총액
     isCurrent: boolean;
     isStatement: boolean;
   };
@@ -551,6 +553,8 @@ export default function BillingPage() {
             statementNumber: s.statementNumber,
             statementDate: s.statementDate,
             outstanding,
+            paid: s.totalAmount - outstanding,
+            totalAmount: s.totalAmount,
             isCurrent: false,
             isStatement: true,
           });
@@ -584,6 +588,8 @@ export default function BillingPage() {
         statementNumber: s.statementNumber,
         statementDate: s.statementDate,
         outstanding: s.outstanding,
+        paid: s.paid,
+        totalAmount: s.totalAmount,
         isCurrent: true,
         isStatement: true,
       });
@@ -1634,6 +1640,11 @@ export default function BillingPage() {
                                       {b.outstanding > 0 ? "+" : ""}{formatNumber(b.outstanding)}원
                                     </span>
                                   </div>
+                                  {b.isStatement && typeof b.paid === "number" && typeof b.totalAmount === "number" && b.paid > 0 && (
+                                    <p className="text-[9px] text-emerald-400/80 mt-0.5">
+                                      이미 입금 {formatNumber(b.paid)}원 / 총 {formatNumber(b.totalAmount)}원
+                                    </p>
+                                  )}
                                   {allocated > 0 && (
                                     <p className="text-[9px] text-text-muted mt-0.5">
                                       충당 후 잔여 {remainingAfter > 0 ? "+" : ""}{formatNumber(remainingAfter)}원
