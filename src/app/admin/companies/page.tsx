@@ -155,8 +155,42 @@ export default function CompaniesPage() {
                   key={company.id}
                   className="border-b border-border hover:bg-bg-card-hover transition-colors"
                 >
-                  <td className="px-4 py-3 text-text-primary font-medium">
-                    {company.name}
+                  <td className="px-4 py-3 text-text-primary font-medium relative">
+                    {(() => {
+                      const info: { label: string; value: string }[] = [];
+                      if (company.address) info.push({ label: "주소", value: company.address });
+                      if (company.phone) info.push({ label: "전화", value: company.phone });
+                      if (company.email) info.push({ label: "이메일", value: company.email });
+                      const bizDetail = [company.biz_type, company.biz_category].filter(Boolean).join(" / ");
+                      if (bizDetail) info.push({ label: "업태/종목", value: bizDetail });
+                      if (company.notes) info.push({ label: "메모", value: company.notes });
+                      const hasInfo = info.length > 0;
+                      return (
+                        <div className="relative inline-block group">
+                          <span className={hasInfo ? "border-b border-dotted border-text-muted/40" : ""}>
+                            {company.name}
+                          </span>
+                          {hasInfo && (
+                            <div
+                              role="tooltip"
+                              className="absolute left-0 top-full mt-2 z-30 w-72 p-3 rounded-xl border border-border bg-bg-card shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity pointer-events-none"
+                            >
+                              <div className="text-xs font-bold text-text-primary mb-2 truncate">
+                                {company.name}
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                {info.map((it) => (
+                                  <div key={it.label} className="flex gap-2">
+                                    <span className="text-text-muted shrink-0 min-w-[3.5rem]">{it.label}</span>
+                                    <span className="text-text-secondary break-all">{it.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-text-secondary">
                     {company.ceo_name}
