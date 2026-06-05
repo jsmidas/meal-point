@@ -50,6 +50,13 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  logoChip: {
+    backgroundColor: "white",
+    borderRadius: 4,
+    padding: "4 8",
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
   headerTitle: {
     color: "white",
     fontSize: 18,
@@ -285,7 +292,9 @@ export default function DeliveryReceiptPdf({ statement, companyInfo }: Props) {
         <View style={s.header}>
           <View>
             {companyInfo?.logo_image_url && (
-              <Image src={companyInfo.logo_image_url} style={{ height: 28, objectFit: "contain", marginBottom: 4 }} />
+              <View style={s.logoChip}>
+                <Image src={companyInfo.logo_image_url} style={{ height: 24, objectFit: "contain" }} />
+              </View>
             )}
             <Text style={s.headerTitle}>인 수 증</Text>
             <Text style={s.headerSub}>DELIVERY RECEIPT</Text>
