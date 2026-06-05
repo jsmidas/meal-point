@@ -15,6 +15,11 @@ const PdfDownloadButton = dynamic(
   { ssr: false },
 );
 
+const ReceiptOpenButton = dynamic(
+  () => import("@/components/pdf/ReceiptOpenButton"),
+  { ssr: false },
+);
+
 const SEND_METHODS: Record<string, string> = {
   manual: "직접 전달",
   email: "이메일",
@@ -268,6 +273,7 @@ export default function StatementDetailPage() {
               <Send size={16} /> 발송 기록
             </button>
             <PdfDownloadButton statement={statement} companyInfo={companyInfo} />
+            <ReceiptOpenButton statement={statement} companyInfo={companyInfo} />
             <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-bg-card border border-border text-text-secondary hover:text-text-primary transition-colors"
