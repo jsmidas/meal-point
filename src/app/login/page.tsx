@@ -53,13 +53,9 @@ export default function LoginPage() {
           nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
             ? nextParam
             : null;
+        // 거래처(company)는 로그인 후 메인페이지로 — 거기서 "주문하기"로 포털 진입
         router.push(
-          safeNext ??
-            (data.role === "admin"
-              ? "/admin"
-              : data.role === "company"
-                ? "/portal"
-                : "/"),
+          safeNext ?? (data.role === "admin" ? "/admin" : "/"),
         );
       } else {
         setError(data.error || "로그인에 실패했습니다.");

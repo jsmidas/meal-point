@@ -57,11 +57,9 @@ export default function Header() {
   }
 
   const displayName = auth.role === "admin" ? "관리자" : auth.name || "회원";
-  // 거래처(발주 계정)로 로그인돼 있으면 발주 작성으로 바로, 아니면 로그인 후 발주 작성으로
+  // 거래처(발주 계정)로 로그인돼 있으면 주문 전용 페이지로, 아니면 로그인(→ 메인) 거쳐 진입
   const orderHref =
-    auth.authenticated && auth.role === "company"
-      ? "/portal/order/new"
-      : "/login?next=/portal/order/new";
+    auth.authenticated && auth.role === "company" ? "/portal/order/new" : "/login";
 
   return (
     <header

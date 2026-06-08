@@ -29,7 +29,7 @@ function getAuth(request: NextRequest): {
 /** 역할별 기본 진입 경로 */
 function homeForRole(role: string): string {
   if (role === "admin") return "/admin";
-  if (role === "company") return "/portal";
+  // 거래처(company)는 메인페이지로 — 거기서 "주문하기"로 포털 진입
   return "/";
 }
 
