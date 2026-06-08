@@ -45,3 +45,6 @@ next-env.d.ts
 
 # supabase temp
 supabase/.temp/
+
+# playwright mcp 페이지 스냅샷 (일회성 산출물)
+.playwright-mcp/
