@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
+import type { Product, Company, InventoryLog, CompanyPriceHistory } from "@/lib/supabase/types";
 import { formatNumber, formatDate } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import {
@@ -26,6 +26,7 @@ export default function InboundPage() {
   const [logs, setLogs] = useState<InboundLog[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [costHistory, setCostHistory] = useState<CompanyPriceHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 월 네비게이션
@@ -68,7 +69,7 @@ export default function InboundPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
-    const [logRes, prodRes, compRes] = await Promise.all([
+    const [logRes, prodRes, compRes, histRes] = await Promise.all([
       db
         .from("inventory_logs")
         .select("*, companies(*), products(*)")
@@ -77,11 +78,17 @@ export default function InboundPage() {
         .limit(500),
       db.from("products").select("*").eq("is_active", true).order("name"),
       db.from("companies").select("*").eq("is_active", true).order("name"),
+      db
+        .from("company_price_history")
+        .select("*")
+        .eq("price_type", "cost")
+        .order("effective_from", { ascending: false }),
     ]);
 
     setLogs(logRes.data || []);
     setProducts(prodRes.data || []);
     setCompanies(compRes.data || []);
+    setCostHistory(histRes.data || []);
     setLoading(false);
   }
 
@@ -97,6 +104,22 @@ export default function InboundPage() {
       return ct === "supplier" || ct === "both";
     });
   }, [companies]);
+
+  // 입고 단가 결정: 매입처별 단가(company_price_history cost) 우선, 없으면 상품 기본 매입가
+  // costHistory 는 effective_from desc 정렬 → 조건 충족 첫 건이 최신 적용가
+  function resolveUnitPrice(productId: string, companyId: string, logDate: string): number {
+    const product = products.find((p) => p.id === productId);
+    if (companyId) {
+      const match = costHistory.find(
+        (h) =>
+          h.product_id === productId &&
+          h.company_id === companyId &&
+          h.effective_from <= logDate
+      );
+      if (match) return match.price;
+    }
+    return product?.cost_price || 0;
+  }
 
   // 해당 월 입고 로그 필터
   const monthLogs = useMemo(() => {
@@ -787,8 +810,12 @@ export default function InboundPage() {
                 <select
                   value={form.product_id}
                   onChange={(e) => {
-                    const product = products.find((p) => p.id === e.target.value);
-                    setForm({ ...form, product_id: e.target.value, unit_price: product?.cost_price || 0 });
+                    const productId = e.target.value;
+                    setForm({
+                      ...form,
+                      product_id: productId,
+                      unit_price: resolveUnitPrice(productId, form.company_id, form.log_date),
+                    });
                   }}
                   required
                   aria-label="입고 상품 선택"
@@ -806,7 +833,14 @@ export default function InboundPage() {
                 <label className="block text-sm text-text-secondary mb-1">매입처 (공급업체)</label>
                 <select
                   value={form.company_id}
-                  onChange={(e) => setForm({ ...form, company_id: e.target.value })}
+                  onChange={(e) => {
+                    const companyId = e.target.value;
+                    setForm({
+                      ...form,
+                      company_id: companyId,
+                      unit_price: resolveUnitPrice(form.product_id, companyId, form.log_date),
+                    });
+                  }}
                   aria-label="매입처 선택"
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                 >
@@ -885,7 +919,14 @@ export default function InboundPage() {
                 <input
                   type="date"
                   value={form.log_date}
-                  onChange={(e) => setForm({ ...form, log_date: e.target.value })}
+                  onChange={(e) => {
+                    const logDate = e.target.value;
+                    setForm({
+                      ...form,
+                      log_date: logDate,
+                      unit_price: resolveUnitPrice(form.product_id, form.company_id, logDate),
+                    });
+                  }}
                   aria-label="입고일"
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                 />
