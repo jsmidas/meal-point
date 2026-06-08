@@ -25,7 +25,7 @@ export default async function PortalLayout({
         companyName={company?.name || "거래처"}
         userName={session.name}
       />
-      <main className="max-w-4xl mx-auto px-4 py-8">{children}</main>
+      <main className="max-w-3xl mx-auto px-5 sm:px-8 py-8 sm:py-10">{children}</main>
     </div>
   );
 }
