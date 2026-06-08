@@ -47,12 +47,19 @@ export default function LoginPage() {
         } else {
           localStorage.removeItem(STORAGE_KEY);
         }
+        // ?next= 가 있으면 로그인 후 그 경로로 (상대경로만 허용 — 오픈 리다이렉트 방지)
+        const nextParam = new URLSearchParams(window.location.search).get("next");
+        const safeNext =
+          nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
+            ? nextParam
+            : null;
         router.push(
-          data.role === "admin"
-            ? "/admin"
-            : data.role === "company"
-              ? "/portal"
-              : "/",
+          safeNext ??
+            (data.role === "admin"
+              ? "/admin"
+              : data.role === "company"
+                ? "/portal"
+                : "/"),
         );
       } else {
         setError(data.error || "로그인에 실패했습니다.");

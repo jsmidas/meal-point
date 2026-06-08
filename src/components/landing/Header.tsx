@@ -57,6 +57,11 @@ export default function Header() {
   }
 
   const displayName = auth.role === "admin" ? "관리자" : auth.name || "회원";
+  // 거래처(발주 계정)로 로그인돼 있으면 발주 작성으로 바로, 아니면 로그인 후 발주 작성으로
+  const orderHref =
+    auth.authenticated && auth.role === "company"
+      ? "/portal/order/new"
+      : "/login?next=/portal/order/new";
 
   return (
     <header
@@ -114,6 +119,12 @@ export default function Header() {
               {link.label}
             </a>
           ))}
+          <Link
+            href={orderHref}
+            className="text-sm px-5 py-2 rounded-full bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors"
+          >
+            주문하기
+          </Link>
           {auth.authenticated ? (
             <div className="flex items-center gap-3">
               {auth.role === "admin" && (
@@ -168,6 +179,13 @@ export default function Header() {
               {link.label}
             </a>
           ))}
+          <Link
+            href={orderHref}
+            className="block my-2 py-3 text-center rounded-full bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors"
+            onClick={() => setMobileOpen(false)}
+          >
+            주문하기
+          </Link>
           {auth.authenticated ? (
             <>
               {auth.role === "admin" && (
