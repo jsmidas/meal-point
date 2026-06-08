@@ -36,7 +36,7 @@ export default function PortalNav({
       <div className="max-w-4xl mx-auto px-4">
         <div className="flex items-center justify-between py-3">
           <div className="flex items-center gap-2 min-w-0">
-            <Link href="/portal" className="text-lg font-bold text-text-primary shrink-0">
+            <Link href="/" className="text-lg font-bold text-text-primary shrink-0">
               밀포인트
             </Link>
             <span className="text-xs text-text-muted bg-bg-dark px-2 py-0.5 rounded-full truncate">
