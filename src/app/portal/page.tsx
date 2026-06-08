@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, PlusCircle, ChevronDown } from "lucide-react";
+import { ClipboardList, PlusCircle, ChevronDown, Pencil, X } from "lucide-react";
 import { ORDER_STATUS, formatNumber, formatDate } from "@/lib/utils";
 
 interface PortalOrderItem {
@@ -28,15 +28,37 @@ export default function PortalHomePage() {
   const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await fetch("/api/portal/orders");
+    const data = await res.json();
+    if (data.ok) setOrders(data.orders);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/portal/orders");
-      const data = await res.json();
-      if (data.ok) setOrders(data.orders);
-      setLoading(false);
+    void (async () => {
+      await load();
     })();
-  }, []);
+  }, [load]);
+
+  async function cancelOrder(id: string) {
+    if (!confirm("이 발주를 취소하시겠습니까?")) return;
+    setCancelling(id);
+    const res = await fetch(`/api/portal/orders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel" }),
+    });
+    const data = await res.json();
+    setCancelling(null);
+    if (!data.ok) {
+      alert(data.error || "취소에 실패했습니다.");
+      return;
+    }
+    load();
+  }
 
   return (
     <div>
@@ -127,6 +149,24 @@ export default function PortalHomePage() {
                     </table>
                     {o.notes && (
                       <p className="mt-3 text-xs text-text-muted">메모: {o.notes}</p>
+                    )}
+                    {o.status === "pending" && (
+                      <div className="mt-3 pt-3 border-t border-border/50 flex justify-end gap-2">
+                        <Link
+                          href={`/portal/order/new?edit=${o.id}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-text-secondary text-xs font-medium hover:bg-bg-card-hover transition-colors"
+                        >
+                          <Pencil size={14} /> 수정
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => cancelOrder(o.id)}
+                          disabled={cancelling === o.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-400/30 text-red-400 text-xs font-medium hover:bg-red-400/10 transition-colors disabled:opacity-50"
+                        >
+                          <X size={14} /> {cancelling === o.id ? "취소 중..." : "발주 취소"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

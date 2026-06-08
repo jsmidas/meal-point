@@ -28,13 +28,39 @@ export default function PortalNewOrderPage() {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
 
   useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("edit");
     (async () => {
       const res = await fetch("/api/portal/products");
       const data = await res.json();
       if (data.ok) setProducts(data.products);
       else setError(data.error || "상품을 불러오지 못했습니다.");
+
+      // 수정 모드: 기존 발주 불러와 폼 프리필
+      if (id) {
+        setEditId(id);
+        const r = await fetch(`/api/portal/orders/${id}`);
+        const d = await r.json();
+        if (d.ok && d.order) {
+          if (d.order.status !== "pending") {
+            setError("이미 처리 중인 발주는 수정할 수 없습니다.");
+          }
+          setLines(
+            (d.order.order_items || []).map(
+              (it: { product_id: string; quantity: number }) => ({
+                product_id: it.product_id,
+                quantity: it.quantity,
+              }),
+            ),
+          );
+          setNotes(d.order.notes || "");
+          if (d.order.order_date) setOrderDate(d.order.order_date);
+        } else {
+          setError(d.error || "발주를 불러오지 못했습니다.");
+        }
+      }
       setLoading(false);
     })();
   }, []);
@@ -69,20 +95,23 @@ export default function PortalNewOrderPage() {
     setSaving(true);
     setError(null);
 
-    const res = await fetch("/api/portal/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: valid.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
-        notes,
-        order_date: orderDate,
-      }),
-    });
+    const res = await fetch(
+      editId ? `/api/portal/orders/${editId}` : "/api/portal/orders",
+      {
+        method: editId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: valid.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+          notes,
+          order_date: orderDate,
+        }),
+      },
+    );
     const data = await res.json();
     setSaving(false);
 
     if (!data.ok) {
-      setError(data.error || "발주에 실패했습니다.");
+      setError(data.error || (editId ? "수정에 실패했습니다." : "발주에 실패했습니다."));
       return;
     }
     router.push("/portal");
@@ -97,7 +126,7 @@ export default function PortalNewOrderPage() {
         >
           <ArrowLeft size={20} />
         </Link>
-        <h1 className="text-xl font-bold text-text-primary">새 발주</h1>
+        <h1 className="text-xl font-bold text-text-primary">{editId ? "발주 수정" : "새 발주"}</h1>
       </div>
 
       {error && (
@@ -235,7 +264,7 @@ export default function PortalNewOrderPage() {
               disabled={saving || lines.length === 0}
               className="flex-1 py-3 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
             >
-              {saving ? "발주 중..." : "발주 넣기"}
+              {saving ? "저장 중..." : editId ? "수정 저장" : "발주 넣기"}
             </button>
           </div>
         </form>
