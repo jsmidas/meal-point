@@ -24,14 +24,21 @@ import { useRouter } from "next/navigation";
 
 type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
 type SalesData = { amount: number; count: number; logs: SalesLog[] };
-type StatementWithItems = Statement & { statement_items: StatementItem[] };
+// 명세서에 발행 지점(거래처) 정보를 조인해 보존 — 합산 카드에서 지점명 라벨용
+type StatementWithItems = Statement & {
+  statement_items: StatementItem[];
+  companies?: { id: string; name: string; biz_number: string } | null;
+};
 
 type CompanyRow = {
-  id: string;
-  name: string;
+  id: string; // 그룹 대표(primary) company_id
+  name: string; // 대표 상호명
   sales: SalesData;
   statements: StatementWithItems[];
   billing: BillingWithPayments | null;
+  members: Company[]; // 같은 사업자번호로 묶인 지점 거래처들 (대표 포함)
+  groupBizNumber: string;
+  strayBillings?: { companyName: string; billingMonth: string }[]; // 비-primary 멤버의 기존 billing (경고용)
 };
 
 // 출고 로그 → 매칭용 라인 변환
@@ -64,6 +71,7 @@ export default function BillingPage() {
     totalAmount: number;
     paid: number;
     outstanding: number;
+    companyName?: string; // 발행 지점명 (합산 그룹에서 어느 지점 명세서인지)
   };
   type PrevUnpaidDetail = {
     billingId: string;
@@ -108,6 +116,9 @@ export default function BillingPage() {
   // 판매 상세 모달
   const [salesDetailModal, setSalesDetailModal] = useState<{ companyName: string; logs: SalesLog[]; statements: StatementWithItems[]; billing: BillingWithPayments | null } | null>(null);
 
+  // 명세서 발행 지점 선택 (합산 그룹에서 어느 지점으로 발행할지)
+  const [stmtPickerRow, setStmtPickerRow] = useState<CompanyRow | null>(null);
+
   // 청구 생성 모달
   const [billingModal, setBillingModal] = useState<{ companyId: string; companyName: string; salesAmount: number } | null>(null);
   const [billingSupply, setBillingSupply] = useState(0);
@@ -135,13 +146,40 @@ export default function BillingPage() {
 
     const [salesRes, stmtRes, billRes, compRes, confirmRes, prevBillRes, prevStmtRes] = await Promise.all([
       db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date"),
-      db.from("statements").select("*, statement_items(*)").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
+      db.from("statements").select("*, statement_items(*), companies(id, name, biz_number)").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
       db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }),
-      db.from("statements").select("id, company_id, statement_number, statement_date, total_amount").lt("statement_date", from).order("statement_date", { ascending: true }),
+      db.from("statements").select("id, company_id, statement_number, statement_date, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }),
     ]);
+
+    // ── 사업자번호 그룹 인덱스 ──
+    // 같은 biz_number의 active 거래처(지점)를 한 그룹으로 묶고, 대표(primary)를 정한다.
+    // primary = 같은 biz_number 중 company.id 사전순 최소값 (name 변경과 무관, tie 없음).
+    // biz_number가 빈값이면 자기 자신을 primary로 (오집계 방지).
+    const allCompaniesRaw: Company[] = compRes.data || [];
+    const bizGroups = new Map<string, Company[]>(); // biz_number → 멤버들
+    for (const c of allCompaniesRaw) {
+      const bn = (c.biz_number || "").trim();
+      const key = bn || `__self__:${c.id}`;
+      const arr = bizGroups.get(key) || [];
+      arr.push(c);
+      bizGroups.set(key, arr);
+    }
+    const primaryByCompanyId: Record<string, string> = {};
+    const membersByPrimary: Record<string, Company[]> = {};
+    for (const members of bizGroups.values()) {
+      // 대표 = 가장 먼저 생성된 거래처 (기존 청구·입금 이력 보유자). created_at 동률은 id로.
+      const sorted = members.slice().sort((a, b) =>
+        (a.created_at || "").localeCompare(b.created_at || "") || a.id.localeCompare(b.id),
+      );
+      const primary = sorted[0].id;
+      membersByPrimary[primary] = sorted;
+      for (const m of sorted) primaryByCompanyId[m.id] = primary;
+    }
+    const toPrimary = (companyId: string | null | undefined): string =>
+      (companyId && primaryByCompanyId[companyId]) || companyId || "";
 
     // 이전 월 명세서별 매칭 입금 합산
     const prevStmtIds: string[] = (prevStmtRes.data || []).map((s: { id: string }) => s.id);
@@ -155,14 +193,18 @@ export default function BillingPage() {
     }
 
     // 이전 월 미수 상세 (청구별 + 그 안의 명세서별)
+    // 합산: prevDetail는 그룹 대표(primary) company_id로 키잉한다.
     const prevDetail: Record<string, PrevUnpaidDetail[]> = {};
     // 1) 청구별로 stub 만들기 (paid_amount/total_amount 보존 — FIFO 분배에 사용)
     type DetailWithRaw = PrevUnpaidDetail & { paidAmount: number; totalAmount: number };
-    const billingByKey: Record<string, DetailWithRaw> = {}; // `${company_id}|${month}` → detail
+    // 명세서→청구 매핑을 견고하게: 원본 (company_id, month) exact 매핑 + 그룹(primary, month) fallback
+    const billingByExactKey: Record<string, DetailWithRaw> = {}; // `${orig_company_id}|${month}` → detail
+    const detailsByGroupMonth: Record<string, DetailWithRaw[]> = {}; // `${primary}|${month}` → details
+    const allDetails: DetailWithRaw[] = [];
     for (const b of prevBillRes.data || []) {
       const u = b.total_amount - b.paid_amount;
       if (u === 0) continue;
-      const key = `${b.company_id}|${b.billing_month}`;
+      const primary = toPrimary(b.company_id);
       const detail: DetailWithRaw = {
         billingId: b.id,
         billingMonth: b.billing_month,
@@ -172,17 +214,22 @@ export default function BillingPage() {
         paidAmount: b.paid_amount,
         totalAmount: b.total_amount,
       };
-      billingByKey[key] = detail;
-      if (!prevDetail[b.company_id]) prevDetail[b.company_id] = [];
-      prevDetail[b.company_id].push(detail);
+      billingByExactKey[`${b.company_id}|${b.billing_month}`] = detail;
+      const gmKey = `${primary}|${b.billing_month}`;
+      (detailsByGroupMonth[gmKey] ||= []).push(detail);
+      allDetails.push(detail);
+      (prevDetail[primary] ||= []).push(detail);
     }
     // 2) 각 명세서를 청구별로 그룹핑 (statement_id 태깅된 입금만 우선 차감)
-    type StmtRow = { id: string; statement_number: string; statement_date: string; total_amount: number; taggedPaid: number };
+    //    - 자기 (company_id, month) 청구가 있으면 거기에(레거시 지점 자체 청구)
+    //    - 없으면 그룹의 그 달 청구로 (지점 명세서 → 대표 합산 청구)
+    type StmtRow = { id: string; statement_number: string; statement_date: string; total_amount: number; taggedPaid: number; companyName?: string };
     const stmtsByBillingId: Record<string, StmtRow[]> = {};
-    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; total_amount: number }>) {
+    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; total_amount: number; companies?: { id: string; name: string } | null }>) {
       const stMonth = s.statement_date.slice(0, 7);
-      const key = `${s.company_id}|${stMonth}`;
-      const detail = billingByKey[key];
+      const exact = billingByExactKey[`${s.company_id}|${stMonth}`];
+      const groupList = detailsByGroupMonth[`${toPrimary(s.company_id)}|${stMonth}`] || [];
+      const detail = exact || groupList[0];
       if (!detail) continue;
       const taggedPaid = paidByStmt[s.id] || 0;
       if (!stmtsByBillingId[detail.billingId]) stmtsByBillingId[detail.billingId] = [];
@@ -192,11 +239,12 @@ export default function BillingPage() {
         statement_date: s.statement_date,
         total_amount: s.total_amount,
         taggedPaid,
+        companyName: s.companies?.name,
       });
     }
     // 3) 청구단위 입금(statement_id=NULL)은 명세서 날짜순으로 FIFO 가상 분배
     //    — payments 테이블 자체는 건드리지 않고, 표시 계산만 정리
-    for (const detail of Object.values(billingByKey)) {
+    for (const detail of allDetails) {
       const stmts = (stmtsByBillingId[detail.billingId] || [])
         .slice()
         .sort((a, b) => a.statement_date.localeCompare(b.statement_date));
@@ -217,6 +265,7 @@ export default function BillingPage() {
             totalAmount: stmt.total_amount,
             paid: effectivePaid,
             outstanding,
+            companyName: stmt.companyName,
           });
         }
       }
@@ -235,34 +284,47 @@ export default function BillingPage() {
       if (c.company_id) confirmedCompanyIds.add(c.company_id);
     }
 
-    // 판매 집계 (체크된 거래처만)
+    // 판매 집계 (체크된 거래처만) — 그룹 대표(primary) 키로 합산, log엔 원본 company_id 보존
     const salesMap = new Map<string, SalesData>();
     for (const log of salesRes.data || []) {
       if (!log.company_id) continue;
       if (!confirmedCompanyIds.has(log.company_id)) continue;
-      const ex = salesMap.get(log.company_id) || { amount: 0, count: 0, logs: [] as SalesLog[] };
+      const key = toPrimary(log.company_id);
+      const ex = salesMap.get(key) || { amount: 0, count: 0, logs: [] as SalesLog[] };
       ex.amount += log.quantity * (log.unit_price || 0);
       ex.count += 1;
       ex.logs.push(log);
-      salesMap.set(log.company_id, ex);
+      salesMap.set(key, ex);
     }
 
-    // 명세서 집계 (체크된 거래처만)
+    // 명세서 집계 (체크된 거래처만) — 그룹 대표 키로 전 지점 명세서 concat
     const stmtMap = new Map<string, StatementWithItems[]>();
     for (const s of stmtRes.data || []) {
       if (!confirmedCompanyIds.has(s.company_id)) continue;
-      const arr = stmtMap.get(s.company_id) || [];
+      const key = toPrimary(s.company_id);
+      const arr = stmtMap.get(key) || [];
       arr.push(s);
-      stmtMap.set(s.company_id, arr);
+      stmtMap.set(key, arr);
     }
 
-    // 청구 집계 + 명세서 기준 자동 동기화
+    // 청구 집계 + 명세서 기준 자동 동기화 (그룹 대표 1건)
+    // - 대표(primary) 본인 청구만 그룹 청구로 채택, 비-primary 멤버 청구는 stray로 분리(자동 merge 금지)
     const billMap = new Map<string, BillingWithPayments>();
+    const strayByPrimary: Record<string, { companyName: string; billingMonth: string }[]> = {};
     for (const b of billRes.data || []) {
-      billMap.set(b.company_id, b);
-
-      // 명세서가 있으면 명세서 합산으로 청구 금액 자동 보정
-      const stmts = stmtMap.get(b.company_id);
+      const primary = toPrimary(b.company_id);
+      if (b.company_id === primary) {
+        billMap.set(primary, b);
+      } else {
+        (strayByPrimary[primary] ||= []).push({
+          companyName: b.companies?.name || "(알 수 없음)",
+          billingMonth: b.billing_month,
+        });
+      }
+    }
+    // 대표 청구를 그룹 전체 명세서 합으로 자동 보정 (합산 후 round → 세금계산서와 1원 정합)
+    for (const [primary, b] of billMap) {
+      const stmts = stmtMap.get(primary);
       if (stmts && stmts.length > 0) {
         const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
         const stmtTax = Math.round(stmtSupply * 0.1);
@@ -282,25 +344,30 @@ export default function BillingPage() {
       }
     }
 
-    // 체크된 거래처 중 활동이 있는 거래처만
+    // 활동이 있는 그룹(대표 키)만 — 모든 키는 이미 primary 기준
+    const groupConfirmed = (primary: string) =>
+      (membersByPrimary[primary] || []).some((m) => confirmedCompanyIds.has(m.id));
     const activeIds = new Set([...salesMap.keys(), ...stmtMap.keys()]);
-    // 청구가 있는 거래처도 포함 (이미 진행 중인 정산)
+    // 청구가 있는 그룹도 포함 (이미 진행 중인 정산)
     for (const key of billMap.keys()) {
-      if (confirmedCompanyIds.has(key)) activeIds.add(key);
+      if (groupConfirmed(key)) activeIds.add(key);
     }
-    // 이전 월 미수가 남아있는 거래처도 포함 (당월 활동 없어도 분배 입금 가능)
+    // 이전 월 미수가 남아있는 그룹도 포함 (당월 활동 없어도 분배 입금 가능)
     for (const key of Object.keys(prevDetail)) {
       if (prevDetail[key].some((d) => d.outstanding > 0)) activeIds.add(key);
     }
 
     const rows: CompanyRow[] = companies
-      .filter((c) => activeIds.has(c.id))
+      .filter((c) => primaryByCompanyId[c.id] === c.id && activeIds.has(c.id)) // 대표만 (중복 카드 방지)
       .map((c) => ({
         id: c.id,
         name: c.name,
         sales: salesMap.get(c.id) || { amount: 0, count: 0, logs: [] },
         statements: stmtMap.get(c.id) || [],
         billing: billMap.get(c.id) || null,
+        members: membersByPrimary[c.id] || [c],
+        groupBizNumber: (c.biz_number || "").trim(),
+        strayBillings: strayByPrimary[c.id],
       }))
       .sort((a, b) => b.sales.amount - a.sales.amount);
 
@@ -499,6 +566,7 @@ export default function BillingPage() {
     outstanding: number; // 양수=미수, 음수=과입금(청구단위)
     paid?: number; // 이미 충당된 금액 (명세서 단위)
     totalAmount?: number; // 명세서 총액
+    companyName?: string; // 발행 지점명 (합산 그룹)
     isCurrent: boolean;
     isStatement: boolean;
   };
@@ -522,6 +590,7 @@ export default function BillingPage() {
           totalAmount: s.total_amount,
           paid,
           outstanding: s.total_amount - paid,
+          companyName: s.companies?.name,
         };
       })
       .filter((s) => s.outstanding > 0);
@@ -555,6 +624,7 @@ export default function BillingPage() {
             outstanding,
             paid: s.totalAmount - outstanding,
             totalAmount: s.totalAmount,
+            companyName: s.companyName,
             isCurrent: false,
             isStatement: true,
           });
@@ -590,6 +660,7 @@ export default function BillingPage() {
         outstanding: s.outstanding,
         paid: s.paid,
         totalAmount: s.totalAmount,
+        companyName: s.companyName,
         isCurrent: true,
         isStatement: true,
       });
@@ -851,6 +922,16 @@ export default function BillingPage() {
   const stmtFrom = `${month}-01`;
   const stmtTo = `${month}-${String(lastDay).padStart(2, "0")}`;
 
+  // 특정 지점(company_id)으로 명세서 발행 페이지 이동
+  function pushNewStatement(companyId: string) {
+    router.push(`/admin/statements/new?salesCompanyId=${companyId}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`);
+  }
+  // 명세서 발행 시작 — 단일 거래처는 바로, 합산 그룹(지점 2곳+)은 지점 선택 팝업
+  function startStatement(row: CompanyRow) {
+    if (row.members.length <= 1) pushNewStatement(row.id);
+    else setStmtPickerRow(row);
+  }
+
   return (
     <div>
       {/* 헤더 */}
@@ -943,6 +1024,22 @@ export default function BillingPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-bold text-text-primary">{row.name}</h3>
+                      {row.members.length > 1 && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] rounded-full px-2 py-0.5 font-semibold text-indigo-300 bg-indigo-500/15 border border-indigo-500/40"
+                          title={`같은 사업자번호(${row.groupBizNumber})의 ${row.members.length}개 지점을 합산 정산합니다: ${row.members.map((mm) => mm.name).join(", ")}`}
+                        >
+                          합산 {row.members.length}개 지점
+                        </span>
+                      )}
+                      {row.strayBillings && row.strayBillings.length > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] rounded-full px-2 py-0.5 font-semibold text-orange-400 bg-orange-500/15 border border-orange-500/40"
+                          title={`지점 레코드에 별도 청구가 남아 있어 합산에서 제외됐습니다: ${row.strayBillings.map((sb) => `${sb.companyName}(${sb.billingMonth})`).join(", ")}. 수동 확인이 필요합니다.`}
+                        >
+                          <AlertTriangle size={11} /> 미합산 청구 {row.strayBillings.length}건
+                        </span>
+                      )}
                       {mismatchSummary && (
                         <span
                           className={`inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-1 font-semibold border ${
@@ -1005,17 +1102,22 @@ export default function BillingPage() {
                         </div>
                         {row.statements.map((s) => (
                           <div key={s.id} className="flex items-center gap-2 justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-emerald-400">{s.statement_number}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs text-emerald-400 shrink-0">{s.statement_number}</span>
+                              {row.members.length > 1 && s.companies?.name && (
+                                <span className="text-[10px] text-indigo-300/80 truncate" title={s.companies.name}>
+                                  {s.companies.name}
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => router.push(`/admin/statements/${s.id}`)}
-                                className="inline-flex items-center gap-0.5 text-[11px] text-text-muted hover:text-primary transition-colors"
+                                className="inline-flex items-center gap-0.5 text-[11px] text-text-muted hover:text-primary transition-colors shrink-0"
                               >
                                 <ExternalLink size={10} /> PDF
                               </button>
                             </div>
-                            <span className="text-[11px] text-text-secondary">{formatNumber(s.total_amount)}원</span>
+                            <span className="text-[11px] text-text-secondary shrink-0">{formatNumber(s.total_amount)}원</span>
                           </div>
                         ))}
                         {/* 청구에서 빠진 출고 강조 박스 */}
@@ -1040,7 +1142,7 @@ export default function BillingPage() {
                             </ul>
                             <button
                               type="button"
-                              onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
+                              onClick={() => startStatement(row)}
                               className="w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-red-500/25 border border-red-500/50 text-red-300 text-[11px] font-bold hover:bg-red-500/35 transition-colors"
                             >
                               <Plus size={11} /> 누락분 명세서 발행
@@ -1049,7 +1151,7 @@ export default function BillingPage() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
+                            onClick={() => startStatement(row)}
                             className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary"
                           >
                             <Plus size={10} /> 추가 발행
@@ -1061,7 +1163,7 @@ export default function BillingPage() {
                         <p className="text-xs text-text-muted mb-2">미발행</p>
                         <button
                           type="button"
-                          onClick={() => router.push(`/admin/statements/new?salesCompanyId=${row.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`)}
+                          onClick={() => startStatement(row)}
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
                         >
                           <FileText size={12} /> 명세서 발행
@@ -1351,8 +1453,9 @@ export default function BillingPage() {
                       <button
                         type="button"
                         onClick={() => {
+                          const r = taxModal;
                           setTaxModal(null);
-                          router.push(`/admin/statements/new?salesCompanyId=${taxModal.id}&salesFrom=${stmtFrom}&salesTo=${stmtTo}`);
+                          startStatement(r);
                         }}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/25 border border-red-500/50 text-red-300 text-xs font-bold hover:bg-red-500/35 transition-colors"
                       >
@@ -1385,6 +1488,9 @@ export default function BillingPage() {
                             className="w-4 h-4 accent-primary"
                           />
                           <span className="text-xs text-text-secondary">{s.statement_number}</span>
+                          {taxModal.members.length > 1 && s.companies?.name && (
+                            <span className="text-[10px] text-indigo-300/80">{s.companies.name}</span>
+                          )}
                           <span className="text-[11px] text-text-muted">{s.statement_date}</span>
                         </div>
                         <span className="text-xs font-medium text-text-primary">{formatNumber(s.supply_amount)}원</span>
@@ -1635,6 +1741,9 @@ export default function BillingPage() {
                                     <span className={`text-[11px] truncate ${b.isStatement ? "text-text-primary" : "text-yellow-400/80 italic"}`}>
                                       {label}
                                     </span>
+                                    {b.isStatement && payModalRow.members.length > 1 && b.companyName && (
+                                      <span className="text-[10px] text-indigo-300/80 shrink-0">{b.companyName}</span>
+                                    )}
                                     <span className={`text-[10px] font-medium shrink-0 ${b.outstanding > 0 ? "text-red-400" : b.outstanding < 0 ? "text-blue-400" : "text-text-muted"}`}>
                                       {b.outstanding > 0 ? "미수 " : b.outstanding < 0 ? "과입금 " : "정산 "}
                                       {b.outstanding > 0 ? "+" : ""}{formatNumber(b.outstanding)}원
@@ -1708,6 +1817,39 @@ export default function BillingPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 명세서 발행 지점 선택 모달 (합산 그룹) */}
+      {stmtPickerRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg-card border border-border rounded-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="text-base font-bold text-text-primary">발행할 지점 선택</h2>
+              <button type="button" onClick={() => setStmtPickerRow(null)} className="text-text-muted hover:text-text-primary" aria-label="닫기"><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-2">
+              <p className="text-xs text-text-muted px-1 pb-1">
+                {stmtPickerRow.groupBizNumber} · 같은 사업자의 지점이 여러 곳입니다. 어느 지점으로 명세서를 발행할까요?
+              </p>
+              {stmtPickerRow.members.map((mem) => (
+                <button
+                  key={mem.id}
+                  type="button"
+                  onClick={() => {
+                    setStmtPickerRow(null);
+                    pushNewStatement(mem.id);
+                  }}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-border bg-bg-dark hover:border-primary hover:bg-bg-card-hover transition-colors text-left"
+                >
+                  <span className="text-sm font-medium text-text-primary">{mem.name}</span>
+                  {mem.id === stmtPickerRow.id && (
+                    <span className="text-[10px] text-primary bg-primary/10 rounded-full px-2 py-0.5">대표</span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
