@@ -6,25 +6,33 @@ import { createClient } from "@/lib/supabase/client";
 import type { OrderWithItems } from "@/lib/supabase/types";
 import { ORDER_STATUS, formatNumber, formatDate } from "@/lib/utils";
 import { dbUpdate, dbDelete } from "@/lib/db";
-import { ArrowLeft, FileText, Trash2 } from "lucide-react";
+import { ArrowLeft, FileText, Trash2, Check, X, Store } from "lucide-react";
 import Link from "next/link";
+
+// 포털 발주 출처/발주자 정보를 포함한 확장 타입
+type OrderDetail = OrderWithItems & {
+  source?: string;
+  created_by_member?: { name: string; login_id: string | null } | null;
+};
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
 
-  const [order, setOrder] = useState<OrderWithItems | null>(null);
+  const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function fetchOrder() {
     setLoading(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.from("orders") as any)
-      .select("*, companies(*), order_items(*)")
+      .select(
+        "*, companies(*), order_items(*), created_by_member:members!created_by(name, login_id)",
+      )
       .eq("id", id)
       .single();
-    setOrder(data as OrderWithItems | null);
+    setOrder(data as OrderDetail | null);
     setLoading(false);
   }
 
@@ -69,10 +77,27 @@ export default function OrderDetailPage() {
           <ArrowLeft size={20} />
         </Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-text-primary">
-            {order.order_number}
-          </h1>
-          <p className="text-sm text-text-secondary">{order.companies.name}</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-text-primary">
+              {order.order_number}
+            </h1>
+            {order.source === "portal" && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                <Store size={12} /> 포털 발주
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-text-secondary">
+            {order.companies.name}
+            {order.source === "portal" && order.created_by_member && (
+              <span className="text-text-muted">
+                {" "}· 발주자 {order.created_by_member.name}
+                {order.created_by_member.login_id
+                  ? ` (${order.created_by_member.login_id})`
+                  : ""}
+              </span>
+            )}
+          </p>
         </div>
         <span
           className={`px-3 py-1 rounded-full text-sm font-medium ${st.color}`}
@@ -80,6 +105,32 @@ export default function OrderDetailPage() {
           {st.label}
         </span>
       </div>
+
+      {/* 포털 발주 승인 대기 — 빠른 승인/반려 */}
+      {order.source === "portal" && order.status === "pending" && (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 mb-6">
+          <p className="text-sm text-text-primary font-medium mb-1">
+            거래처가 포털로 넣은 발주입니다. 검토 후 승인하거나 반려하세요.
+          </p>
+          <p className="text-xs text-text-muted mb-4">
+            승인하면 ‘확인’ 상태로, 반려하면 ‘취소’ 상태로 변경됩니다. 단가·수량은 아래에서 확인하세요.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => updateStatus("confirmed")}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+            >
+              <Check size={16} /> 승인 (확인 처리)
+            </button>
+            <button
+              onClick={() => updateStatus("cancelled")}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-400/40 text-red-400 font-semibold text-sm hover:bg-red-400/10 transition-colors"
+            >
+              <X size={16} /> 반려 (취소 처리)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Info Cards */}
       <div className="grid sm:grid-cols-3 gap-4 mb-6">

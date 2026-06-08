@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hashPassword(password);
 
     const { data: member } = await db
-      .select("id, login_id, name, is_active")
+      .select("id, login_id, name, is_active, role, company_id")
       .eq("login_id", id)
       .eq("password_hash", passwordHash)
       .maybeSingle();
@@ -50,14 +50,21 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
+      // role 컬럼이 없는 기존 회원은 'member'로 간주
+      const role = member.role || "member";
       const response = NextResponse.json({
         ok: true,
-        role: "member",
+        role,
         name: member.name,
       });
       response.cookies.set(
         COOKIE_NAME,
-        JSON.stringify({ role: "member", id: member.id, name: member.name }),
+        JSON.stringify({
+          role,
+          id: member.id,
+          name: member.name,
+          company_id: member.company_id || null,
+        }),
         {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -98,6 +105,7 @@ export async function GET(request: NextRequest) {
       authenticated: true,
       role: parsed.role,
       name: parsed.name || null,
+      company_id: parsed.company_id || null,
     });
   } catch {
     // 기존 문자열 토큰 호환 (마이그레이션)

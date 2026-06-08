@@ -177,6 +177,8 @@ export type Database = {
           status: string;
           total_amount: number;
           notes: string | null;
+          created_by: string | null;
+          source: string;
           created_at: string;
           updated_at: string;
         };
@@ -187,6 +189,8 @@ export type Database = {
           status?: string;
           total_amount?: number;
           notes?: string | null;
+          created_by?: string | null;
+          source?: string;
         };
         Update: {
           order_number?: string;
@@ -195,6 +199,8 @@ export type Database = {
           status?: string;
           total_amount?: number;
           notes?: string | null;
+          created_by?: string | null;
+          source?: string;
         };
       };
       order_items: {
@@ -696,6 +702,8 @@ export type Database = {
           provider: string;
           provider_id: string | null;
           is_active: boolean;
+          company_id: string | null;
+          role: string;
           created_at: string;
           updated_at: string;
         };
@@ -709,6 +717,8 @@ export type Database = {
           provider?: string;
           provider_id?: string | null;
           is_active?: boolean;
+          company_id?: string | null;
+          role?: string;
         };
         Update: {
           login_id?: string | null;
@@ -720,6 +730,8 @@ export type Database = {
           provider?: string;
           provider_id?: string | null;
           is_active?: boolean;
+          company_id?: string | null;
+          role?: string;
         };
       };
       company_price_history: {

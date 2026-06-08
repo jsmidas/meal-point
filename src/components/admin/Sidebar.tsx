@@ -23,13 +23,16 @@ import {
   BadgeDollarSign,
   CreditCard,
   Settings,
+  Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
   { href: "/admin", label: "대시보드", icon: LayoutDashboard },
   { href: "/admin/companies", label: "거래처 관리", icon: Building2 },
+  { href: "/admin/accounts", label: "발주 계정", icon: Users },
   { href: "/admin/products", label: "상품 관리", icon: Package },
   { href: "/admin/prices", label: "단가 관리", icon: BadgeDollarSign },
   { href: "/admin/inbound", label: "입고 관리", icon: ArrowDownCircle },
@@ -50,6 +53,22 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [pendingPortalCount, setPendingPortalCount] = useState(0);
+
+  // 미처리 포털 발주(승인 대기) 수 — 주문 관리 메뉴 알림 배지
+  useEffect(() => {
+    const supabase = createClient();
+    async function loadPending() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count } = await (supabase.from("orders") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("source", "portal")
+        .eq("status", "pending");
+      setPendingPortalCount(count || 0);
+    }
+    loadPending();
+    // 경로 이동 시(승인/반려 후) 다시 집계
+  }, [pathname]);
 
   async function handleLogout() {
     await fetch("/api/auth", {
@@ -77,7 +96,12 @@ export default function Sidebar() {
           }`}
         >
           <item.icon size={20} />
-          {item.label}
+          <span className="flex-1">{item.label}</span>
+          {item.href === "/admin/orders" && pendingPortalCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-bg-dark text-xs font-bold">
+              {pendingPortalCount}
+            </span>
+          )}
         </Link>
       ))}
     </>

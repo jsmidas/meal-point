@@ -47,7 +47,13 @@ export default function LoginPage() {
         } else {
           localStorage.removeItem(STORAGE_KEY);
         }
-        router.push(data.role === "admin" ? "/admin" : "/");
+        router.push(
+          data.role === "admin"
+            ? "/admin"
+            : data.role === "company"
+              ? "/portal"
+              : "/",
+        );
       } else {
         setError(data.error || "로그인에 실패했습니다.");
       }

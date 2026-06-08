@@ -4,6 +4,7 @@ import { useState } from "react";
 import { dbInsert, dbUpdate } from "@/lib/db";
 import type { Company } from "@/lib/supabase/types";
 import { X } from "lucide-react";
+import CompanyAccountsSection from "./CompanyAccountsSection";
 
 interface Props {
   company: Company | null;
@@ -175,6 +176,11 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
               className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors resize-none"
             />
           </div>
+
+          {/* 발주 계정 — 편집 중인 판매처(또는 양쪽)에만 노출 */}
+          {isEdit && form.company_type !== "supplier" && (
+            <CompanyAccountsSection companyId={company!.id} />
+          )}
 
           <div className="flex items-center justify-between pt-2">
             <div className="flex items-center gap-2">

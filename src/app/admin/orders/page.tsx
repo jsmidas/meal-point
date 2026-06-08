@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { dbUpdate } from "@/lib/db";
 import type { OrderWithCompany } from "@/lib/supabase/types";
-import { Plus, Search, Eye, ShoppingCart } from "lucide-react";
+import { Plus, Search, Eye, ShoppingCart, Check, X } from "lucide-react";
 import Link from "next/link";
 import { ORDER_STATUS, formatNumber, formatDate } from "@/lib/utils";
 
@@ -29,6 +30,18 @@ export default function OrdersPage() {
     fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleQuickStatus(
+    e: React.MouseEvent,
+    orderId: string,
+    status: string,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (status === "cancelled" && !confirm("이 발주를 반려(취소)하시겠습니까?")) return;
+    await dbUpdate("orders", { status }, { id: orderId });
+    fetchOrders();
+  }
 
   const filtered = orders.filter((o) => {
     const matchSearch =
@@ -133,7 +146,14 @@ export default function OrdersPage() {
                     className="border-b border-border hover:bg-bg-card-hover transition-colors"
                   >
                     <td className="px-4 py-3 text-text-primary font-mono text-xs">
-                      {order.order_number}
+                      <div className="flex items-center gap-1.5">
+                        {order.order_number}
+                        {order.source === "portal" && (
+                          <span className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary not-italic">
+                            포털
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-text-primary font-medium">
                       {order.companies.name}
@@ -152,12 +172,34 @@ export default function OrdersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/admin/orders/${order.id}`}
-                        className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-primary transition-colors inline-flex"
-                      >
-                        <Eye size={16} />
-                      </Link>
+                      <div className="flex items-center justify-end gap-1">
+                        {order.source === "portal" && order.status === "pending" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickStatus(e, order.id, "confirmed")}
+                              title="승인 (확인 처리)"
+                              className="p-2 rounded-lg hover:bg-primary/10 text-text-muted hover:text-primary transition-colors"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickStatus(e, order.id, "cancelled")}
+                              title="반려 (취소 처리)"
+                              className="p-2 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          </>
+                        )}
+                        <Link
+                          href={`/admin/orders/${order.id}`}
+                          className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-primary transition-colors inline-flex"
+                        >
+                          <Eye size={16} />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
