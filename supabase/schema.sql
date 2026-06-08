@@ -26,7 +26,7 @@ CREATE TABLE companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   ceo_name TEXT NOT NULL,
-  biz_number TEXT NOT NULL UNIQUE,
+  biz_number TEXT NOT NULL,
   biz_type TEXT,
   biz_category TEXT,
   address TEXT,
@@ -38,7 +38,9 @@ CREATE TABLE companies (
   notes TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- 같은 사업자번호라도 상호명이 다르면 별도 거래처로 등록 가능 (v28)
+  CONSTRAINT companies_biz_number_name_key UNIQUE (biz_number, name)
 );
 
 -- 상품

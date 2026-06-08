@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { dbInsert, dbUpdate } from "@/lib/db";
-import type { Company, Database } from "@/lib/supabase/types";
+import type { Company } from "@/lib/supabase/types";
 import { X } from "lucide-react";
 
 interface Props {
@@ -43,12 +43,13 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
           contact_person: company.contact_person || "",
           contact_phone: company.contact_phone || "",
           notes: company.notes || "",
-          company_type: (company as any).company_type || "customer",
+          company_type: company.company_type || "customer",
           is_active: company.is_active,
         }
       : emptyForm,
   );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
@@ -64,14 +65,19 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
 
-    if (isEdit) {
-      await dbUpdate("companies", form, { id: company!.id });
-    } else {
-      await dbInsert("companies", form);
-    }
+    const { error: dbError } = isEdit
+      ? await dbUpdate("companies", form, { id: company!.id })
+      : await dbInsert("companies", form);
 
     setSaving(false);
+
+    if (dbError) {
+      setError(dbError);
+      return;
+    }
+
     onSaved();
     onClose();
   }
@@ -115,6 +121,11 @@ export default function CompanyModal({ company, onClose, onSaved }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="rounded-xl border border-red-400/40 bg-red-400/10 px-4 py-3 text-sm text-red-400">
+              저장에 실패했습니다: {error}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fields.map((f) => (
               <div key={f.name}>
