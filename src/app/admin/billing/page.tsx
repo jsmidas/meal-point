@@ -48,6 +48,13 @@ type CompanyRow = {
   strayBillings?: { companyName: string; billingMonth: string }[]; // 비-primary 멤버의 기존 billing (경고용)
 };
 
+// 명세서 합계(공급가 → 세액 10% 가산)로 가정산 청구액 산출.
+// billings의 자동 동기화 로직(total = supply + round(supply*0.1))과 동일 규칙.
+function statementBasedTotal(statements: StatementWithItems[]): number {
+  const supply = statements.reduce((s, st) => s + (st.supply_amount || 0), 0);
+  return supply + Math.round(supply * 0.1);
+}
+
 // 출고 로그 → 매칭용 라인 변환
 function logToSalesLine(log: SalesLog): SalesLineForMatch {
   return {
@@ -395,15 +402,22 @@ export default function BillingPage() {
     let stmtIssued = 0;
     let taxUnissued = 0;
     let totalUnpaid = 0;
+    let totalEstUnpaid = 0; // 당월 가정산 미수 (세금계산서 미발행이라도 명세서 발행분 포함)
     for (const r of companyRows) {
       totalSales += r.sales.amount;
       if (r.statements.length > 0) stmtIssued++;
       if (r.billing && !r.billing.tax_invoice_issued) taxUnissued++;
       // 과입금(음수)도 누계에 반영 → 거래처 환불/이월 추적
       if (r.billing) totalUnpaid += r.billing.total_amount - r.billing.paid_amount;
+      // 가정산: billing 있으면 billing 기준(입금 차감 포함), 없으면 명세서 합계(입금 0)
+      if (r.billing) {
+        totalEstUnpaid += r.billing.total_amount - r.billing.paid_amount;
+      } else if (r.statements.length > 0) {
+        totalEstUnpaid += statementBasedTotal(r.statements);
+      }
     }
     const totalPrevUnpaid = Object.values(prevUnpaidMap).reduce((s, v) => s + v, 0);
-    return { totalSales, stmtIssued, taxUnissued, totalUnpaid, totalPrevUnpaid };
+    return { totalSales, stmtIssued, taxUnissued, totalUnpaid, totalEstUnpaid, totalPrevUnpaid };
   }, [companyRows, prevUnpaidMap]);
 
   // 세금계산서 합산금액 계산 (판매액 기준 동기화)
@@ -956,7 +970,7 @@ export default function BillingPage() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
         <div className="rounded-xl border border-border bg-bg-card p-4">
           <p className="text-xs text-text-muted mb-1">총 판매액</p>
           <p className="text-xl font-bold text-text-primary">{formatNumber(summary.totalSales)}원</p>
@@ -991,6 +1005,23 @@ export default function BillingPage() {
                     이전 월 {formatBalance(summary.totalPrevUnpaid)}
                   </p>
                 )}
+              </>
+            );
+          })()}
+        </div>
+        {/* 가정산 미수 (명세서 발행분 포함 — 세금계산서 미발행이라도 합산) */}
+        <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+          {(() => {
+            const total = summary.totalEstUnpaid + summary.totalPrevUnpaid;
+            return (
+              <>
+                <p className="text-xs text-text-muted mb-1">{total < 0 ? "가정산 과입금" : "가정산 미수"}</p>
+                <p className={`text-xl font-bold ${total > 0 ? "text-primary" : total < 0 ? "text-blue-400" : "text-text-primary"}`}>
+                  {formatBalance(total)}
+                </p>
+                <p className="text-[10px] text-text-muted mt-0.5">
+                  당월 명세서 {formatBalance(summary.totalEstUnpaid)}
+                </p>
               </>
             );
           })()}
@@ -1262,14 +1293,37 @@ export default function BillingPage() {
                         <p className="text-xs text-text-muted">당월 입금 내역 없음</p>
                         {(() => {
                           const prevUnpaid = prevUnpaidMap[row.id] || 0;
-                          return prevUnpaid !== 0 ? (
-                            <div className="flex justify-between text-xs font-bold">
-                              <span className="text-text-muted">{prevUnpaid < 0 ? "이전 월 과입금" : "이전 월 미수금"}</span>
-                              <span className={prevUnpaid < 0 ? "text-blue-400" : "text-orange-400"}>
-                                {formatBalance(prevUnpaid)}
-                              </span>
-                            </div>
-                          ) : null;
+                          // 세금계산서 미발행이라도 명세서 발행분은 가정산 미수로 계산
+                          const estCurrent = row.statements.length > 0 ? statementBasedTotal(row.statements) : 0;
+                          return (
+                            <>
+                              {estCurrent > 0 && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-text-muted">당월 명세서(가정산)</span>
+                                  <span className="text-red-400 font-bold">{formatBalance(estCurrent)}</span>
+                                </div>
+                              )}
+                              {prevUnpaid !== 0 && (
+                                <div className="flex justify-between text-xs font-bold">
+                                  <span className="text-text-muted">{prevUnpaid < 0 ? "이전 월 과입금" : "이전 월 미수금"}</span>
+                                  <span className={prevUnpaid < 0 ? "text-blue-400" : "text-orange-400"}>
+                                    {formatBalance(prevUnpaid)}
+                                  </span>
+                                </div>
+                              )}
+                              {estCurrent > 0 && prevUnpaid !== 0 && (() => {
+                                const totalEst = estCurrent + prevUnpaid;
+                                return (
+                                  <div className="flex justify-between text-xs font-bold mt-0.5 pt-0.5 border-t border-border/50">
+                                    <span className="text-text-muted">{totalEst < 0 ? "누계 과입금" : "누계 가정산 미수"}</span>
+                                    <span className={totalEst < 0 ? "text-blue-400" : "text-primary"}>
+                                      {formatBalance(totalEst)}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                            </>
+                          );
                         })()}
                       </div>
                     )}
