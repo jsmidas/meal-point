@@ -22,6 +22,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+// 잔액 부호 표기: 미수(거래처가 덜 냄)는 '-', 과입금(더 냄)은 '+' 로 표시.
+// 입력 unpaid = 청구액 - 입금액 (양수=미수, 음수=과입금) → 표시 시 부호 반전.
+function formatBalance(unpaid: number) {
+  const v = -unpaid;
+  return `${v > 0 ? "+" : ""}${formatNumber(v)}원`;
+}
+
 type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
 type SalesData = { amount: number; count: number; logs: SalesLog[] };
 // 명세서에 발행 지점(거래처) 정보를 조인해 보존 — 합산 카드에서 지점명 라벨용
@@ -967,7 +974,7 @@ export default function BillingPage() {
         <div className="rounded-xl border border-border bg-bg-card p-4">
           <p className="text-xs text-text-muted mb-1">{summary.totalUnpaid < 0 ? "당월 과입금" : "당월 미수금"}</p>
           <p className={`text-xl font-bold ${summary.totalUnpaid > 0 ? "text-red-400" : summary.totalUnpaid < 0 ? "text-blue-400" : "text-text-primary"}`}>
-            {summary.totalUnpaid > 0 ? "+" : ""}{formatNumber(summary.totalUnpaid)}원
+            {formatBalance(summary.totalUnpaid)}
           </p>
         </div>
         <div className="rounded-xl border border-border bg-bg-card p-4">
@@ -977,11 +984,11 @@ export default function BillingPage() {
               <>
                 <p className="text-xs text-text-muted mb-1">{total < 0 ? "누계 과입금" : "누계 미수금"}</p>
                 <p className={`text-xl font-bold ${total > 0 ? "text-orange-400" : total < 0 ? "text-blue-400" : "text-text-primary"}`}>
-                  {total > 0 ? "+" : ""}{formatNumber(total)}원
+                  {formatBalance(total)}
                 </p>
                 {summary.totalPrevUnpaid !== 0 && (
                   <p className="text-[10px] text-text-muted mt-0.5">
-                    이전 월 {summary.totalPrevUnpaid > 0 ? "+" : ""}{formatNumber(summary.totalPrevUnpaid)}원
+                    이전 월 {formatBalance(summary.totalPrevUnpaid)}
                   </p>
                 )}
               </>
@@ -1233,7 +1240,7 @@ export default function BillingPage() {
                           <div className="flex justify-between text-xs font-bold">
                             <span className="text-text-muted">{unpaid < 0 ? "과입금" : "미수금"}</span>
                             <span className={unpaid < 0 ? "text-blue-400" : "text-red-400"}>
-                              {unpaid > 0 ? "+" : ""}{formatNumber(unpaid)}원
+                              {formatBalance(unpaid)}
                             </span>
                           </div>
                         )}
@@ -1244,7 +1251,7 @@ export default function BillingPage() {
                             <div className="flex justify-between text-xs font-bold mt-0.5 pt-0.5 border-t border-border/50">
                               <span className="text-text-muted">{totalUnpaid < 0 ? "누계 과입금" : "누계 미수금"}</span>
                               <span className={totalUnpaid < 0 ? "text-blue-400" : "text-orange-400"}>
-                                {totalUnpaid > 0 ? "+" : ""}{formatNumber(totalUnpaid)}원
+                                {formatBalance(totalUnpaid)}
                               </span>
                             </div>
                           ) : null;
@@ -1259,7 +1266,7 @@ export default function BillingPage() {
                             <div className="flex justify-between text-xs font-bold">
                               <span className="text-text-muted">{prevUnpaid < 0 ? "이전 월 과입금" : "이전 월 미수금"}</span>
                               <span className={prevUnpaid < 0 ? "text-blue-400" : "text-orange-400"}>
-                                {prevUnpaid > 0 ? "+" : ""}{formatNumber(prevUnpaid)}원
+                                {formatBalance(prevUnpaid)}
                               </span>
                             </div>
                           ) : null;
@@ -1581,7 +1588,7 @@ export default function BillingPage() {
                   <p className="text-sm text-text-secondary">
                     {u < 0 ? "과입금" : "미수금"}{" "}
                     <span className={`font-bold ${u < 0 ? "text-blue-400" : "text-red-400"}`}>
-                      {u > 0 ? "+" : ""}{formatNumber(u)}원
+                      {formatBalance(u)}
                     </span>
                   </p>
                 );
@@ -1598,7 +1605,7 @@ export default function BillingPage() {
                     <div className="flex items-center gap-1.5">
                       <AlertTriangle size={14} className="shrink-0" />
                       <span>이전 월 {prev < 0 ? "과입금" : "미수금"}{" "}
-                        <span className="font-bold">{prev > 0 ? "+" : ""}{formatNumber(prev)}원</span>
+                        <span className="font-bold">{formatBalance(prev)}</span>
                         이 남아있습니다.</span>
                       {hasUnpaid && !splittingPayment && (
                         <button
@@ -1722,7 +1729,7 @@ export default function BillingPage() {
                               {mKey}{isCurrentMonth ? " (당월)" : ""}
                             </span>
                             <span className="text-[10px] text-text-muted">
-                              잔액 {monthOutstanding > 0 ? "+" : ""}{formatNumber(monthOutstanding)}원
+                              잔액 {formatBalance(monthOutstanding)}
                               {monthAllocated > 0 && (
                                 <span className="text-primary"> · 충당 {formatNumber(monthAllocated)}원</span>
                               )}
@@ -1746,7 +1753,7 @@ export default function BillingPage() {
                                     )}
                                     <span className={`text-[10px] font-medium shrink-0 ${b.outstanding > 0 ? "text-red-400" : b.outstanding < 0 ? "text-blue-400" : "text-text-muted"}`}>
                                       {b.outstanding > 0 ? "미수 " : b.outstanding < 0 ? "과입금 " : "정산 "}
-                                      {b.outstanding > 0 ? "+" : ""}{formatNumber(b.outstanding)}원
+                                      {formatBalance(b.outstanding)}
                                     </span>
                                   </div>
                                   {b.isStatement && typeof b.paid === "number" && typeof b.totalAmount === "number" && b.paid > 0 && (
@@ -1756,7 +1763,7 @@ export default function BillingPage() {
                                   )}
                                   {allocated > 0 && (
                                     <p className="text-[9px] text-text-muted mt-0.5">
-                                      충당 후 잔여 {remainingAfter > 0 ? "+" : ""}{formatNumber(remainingAfter)}원
+                                      충당 후 잔여 {formatBalance(remainingAfter)}
                                     </p>
                                   )}
                                 </div>
