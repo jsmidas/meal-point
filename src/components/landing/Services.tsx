@@ -16,7 +16,7 @@ const services = [
     desc: "식단표 작성·영양분석·발주 관리까지.\n1주일 무료 체험으로 먼저 사용해 보세요.",
     status: "체험 가능",
     statusColor: "bg-emerald-500/15 text-emerald-400",
-    href: "#contact",
+    href: "/trial",
     cta: "1주일 무료 체험",
   },
   {
@@ -25,8 +25,8 @@ const services = [
     desc: "3인치 전용 프린터로 누구나 간편하게.\n빠르고 정확한 식권 발행 시스템.",
     status: "운영중",
     statusColor: "bg-emerald-500/15 text-emerald-400",
-    href: "#contact",
-    cta: "도입 문의",
+    href: "#ticketing",
+    cta: "자세히 보기",
   },
   {
     icon: PiggyBank,

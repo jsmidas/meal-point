@@ -24,6 +24,7 @@ import {
   CreditCard,
   Settings,
   Users,
+  KeyRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -46,6 +47,7 @@ const navItems = [
   { href: "/admin/pnl", label: "손익 현황", icon: TrendingUp },
   { href: "/admin/popups", label: "팝업 관리", icon: Bell },
   { href: "/admin/pages", label: "상세페이지", icon: FileEdit },
+  { href: "/admin/trial", label: "체험 관리", icon: KeyRound },
   { href: "/admin/settings", label: "회사 설정", icon: Settings },
 ];
 

@@ -3,46 +3,24 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Ticket, Printer, Zap, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-type Category = "all" | "inner" | "outer" | "heater" | "film" | "set";
-
-interface ProductItem {
+interface TicketProduct {
   id: string;
   name: string;
   image: string;
-  category: Category;
-  badge: string;
   href?: string;
 }
 
-const categories: { key: Category; label: string }[] = [
-  { key: "all", label: "전체" },
-  { key: "inner", label: "내피" },
-  { key: "outer", label: "외피" },
-  { key: "heater", label: "발열제" },
-  { key: "set", label: "세트" },
+const highlights = [
+  { icon: Printer, title: "3인치 전용 프린터", desc: "현장 발권에 최적화된\n전용 감열 프린터 기반" },
+  { icon: Zap, title: "빠르고 간편한 발권", desc: "누구나 몇 번의 터치로\n즉시 식권 발행" },
+  { icon: ShieldCheck, title: "정확한 식수 관리", desc: "발행 내역이 그대로 기록되어\n식수 정산까지 한 번에" },
 ];
 
-const badgeMap: Record<string, string> = {
-  inner: "내피",
-  outer: "외피",
-  heater: "발열제",
-  film: "필름",
-  set: "세트",
-};
-
-const badgeColors: Record<string, string> = {
-  내피: "bg-primary/20 text-primary",
-  외피: "bg-accent/20 text-accent",
-  발열제: "bg-red-500/20 text-red-400",
-  필름: "bg-emerald-500/20 text-emerald-400",
-  세트: "bg-emerald-500/20 text-emerald-400",
-};
-
-export default function Products() {
-  const [active, setActive] = useState<Category>("all");
-  const [products, setProducts] = useState<ProductItem[]>([]);
+export default function Ticketing() {
+  const [products, setProducts] = useState<TicketProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,31 +28,24 @@ export default function Products() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const db = createClient() as any;
 
-      // 활성 상품 + 발행된 상세페이지 조회
       const [{ data: prods }, { data: pages }] = await Promise.all([
-        db.from("products").select("id, name, category, image_url").eq("is_active", true).neq("category", "ticket_printer").order("name"),
+        db.from("products").select("id, name, image_url").eq("is_active", true).eq("category", "ticket_printer").order("name"),
         db.from("product_pages").select("product_id, hero_images").eq("is_published", true),
       ]);
 
-      // 발행된 상세페이지 매핑
       const publishedMap = new Map<string, string[]>();
       for (const pg of pages || []) {
         publishedMap.set(pg.product_id, pg.hero_images || []);
       }
 
-      const items: ProductItem[] = (prods || []).map((p: { id: string; name: string; category: string; image_url: string | null }) => {
-        const badge = badgeMap[p.category] || p.category;
+      const items: TicketProduct[] = (prods || []).map((p: { id: string; name: string; image_url: string | null }) => {
         const published = publishedMap.has(p.id);
-        // 이미지 우선순위: 상세페이지 히어로 → 상품 이미지
         const heroImages = publishedMap.get(p.id);
         const image = (heroImages && heroImages.length > 0 ? heroImages[0] : null) || p.image_url || "/images/placeholder.jpg";
-
         return {
           id: p.id,
           name: p.name,
           image,
-          category: p.category as Category,
-          badge,
           href: published ? `/products/${p.id}` : undefined,
         };
       });
@@ -85,49 +56,54 @@ export default function Products() {
     load();
   }, []);
 
-  const filtered =
-    active === "all" ? products : products.filter((p) => p.category === active);
-
   return (
-    <section id="products" className="py-24">
+    <section id="ticketing" className="py-24 bg-bg-dark/40">
       <div className="max-w-6xl mx-auto px-6">
+        {/* 헤더 */}
         <div className="text-center mb-12">
           <p className="text-sm tracking-widest text-primary font-medium mb-3 uppercase">
-            PRODUCTS
+            TICKETING
           </p>
           <h2 className="text-3xl md:text-4xl font-bold text-text-primary mb-4">
-            제품 <span className="text-gradient">쇼케이스</span>
+            <span className="text-gradient">식권발행기</span>
           </h2>
-          <p className="text-text-secondary">
-            다양한 급식 용기 제품을 확인하세요.
+          <p className="text-text-secondary max-w-xl mx-auto">
+            3인치 전용 프린터로 누구나 간편하게. 현장에서 빠르고 정확하게 식권을 발행하세요.
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 mb-10">
-          {categories.map((cat) => (
-            <button
-              key={cat.key}
-              onClick={() => setActive(cat.key)}
-              className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
-                active === cat.key
-                  ? "bg-primary text-bg-dark"
-                  : "bg-bg-card text-text-secondary hover:bg-bg-card-hover"
-              }`}
-            >
-              {cat.label}
-            </button>
+        {/* 특장점 */}
+        <div className="grid sm:grid-cols-3 gap-6 mb-16">
+          {highlights.map((h) => (
+            <div key={h.title} className="rounded-2xl border border-border bg-bg-card p-7 text-center">
+              <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
+                <h.icon className="text-primary" size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-text-primary mb-2">{h.title}</h3>
+              <p className="text-sm text-text-secondary whitespace-pre-line leading-relaxed">{h.desc}</p>
+            </div>
           ))}
         </div>
 
-        {/* Grid */}
+        {/* 제품 진열 */}
         {loading ? (
           <div className="text-center py-12 text-text-muted">로딩 중...</div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-12">
+            <Ticket size={40} className="mx-auto text-text-muted mb-4" />
+            <p className="text-text-secondary mb-6">식권발행기 도입을 원하시면 문의해 주세요.</p>
+            <a
+              href="#contact"
+              className="inline-flex items-center px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+            >
+              도입 문의하기
+            </a>
+          </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((product) => {
+            {products.map((product) => {
               const Card = (
-                <div className="group rounded-2xl border border-border bg-bg-card overflow-hidden hover:border-border-light hover:bg-bg-card-hover transition-all">
+                <div className="group rounded-2xl border border-border bg-bg-card overflow-hidden hover:border-border-light hover:bg-bg-card-hover transition-all h-full">
                   <div className="relative aspect-[4/3] overflow-hidden bg-bg-dark">
                     {product.image.startsWith("http") ? (
                       <img
@@ -146,16 +122,10 @@ export default function Products() {
                     )}
                   </div>
                   <div className="p-5">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium mb-3 ${
-                        badgeColors[product.badge] || "bg-bg-card text-text-muted"
-                      }`}
-                    >
-                      {product.badge}
+                    <span className="inline-block px-3 py-1 rounded-full text-xs font-medium mb-3 bg-accent/20 text-accent">
+                      식권발행기
                     </span>
-                    <h4 className="text-lg font-semibold text-text-primary mb-1">
-                      {product.name}
-                    </h4>
+                    <h4 className="text-lg font-semibold text-text-primary mb-1">{product.name}</h4>
                     <p className="text-sm text-text-muted mb-3">가격문의</p>
                     <span className="inline-flex items-center text-sm font-medium text-primary">
                       {product.href ? "상세보기" : "문의하기"}

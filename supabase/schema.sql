@@ -47,7 +47,7 @@ CREATE TABLE companies (
 CREATE TABLE products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  category TEXT NOT NULL, -- 'inner', 'outer', 'heater', 'film', 'set'
+  category TEXT NOT NULL, -- 'inner', 'outer', 'heater', 'film', 'set', 'ticket_printer'
   unit TEXT NOT NULL DEFAULT 'EA', -- EA, BOX, SET 등
   cost_price INTEGER NOT NULL DEFAULT 0, -- 원가 (원)
   selling_price INTEGER NOT NULL DEFAULT 0, -- 판매가 (원)

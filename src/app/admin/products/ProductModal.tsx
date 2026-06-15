@@ -17,6 +17,7 @@ const categories = [
   { value: "heater", label: "발열제" },
   { value: "film", label: "필름" },
   { value: "set", label: "세트" },
+  { value: "ticket_printer", label: "식권발행기" },
 ];
 
 const units = ["EA", "BOX", "SET", "PACK", "ROLL"];

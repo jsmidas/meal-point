@@ -28,6 +28,8 @@ const ALLOWED_TABLES = new Set([
   "sale_checks",
   "popups",
   "payment_requests",
+  "meal_guest_accounts",
+  "meal_trial_grants",
 ]);
 
 type Action = "insert" | "update" | "delete" | "upsert";
