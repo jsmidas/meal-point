@@ -1,125 +1,142 @@
 # 소셜 로그인 설정 가이드
 
-## 1. Supabase 프로젝트 설정
+> **이 문서는 현재 구현 기준입니다.**
+> 소셜 로그인은 Supabase Auth Provider가 **아니라**, 앱이 직접 OAuth를 처리하는
+> 자체 라우트(`/api/auth/{provider}`)로 구현돼 있습니다.
+> - 카카오/구글/네이버 키는 **Supabase 대시보드가 아니라 `.env.local`(및 Vercel 환경변수)** 에 넣습니다.
+> - Supabase는 **회원 DB(`members` 테이블)** 로만 쓰입니다. 세션은 자체 쿠키(`mp_admin_token`)입니다.
+> - 현재 **운영에서 실제 사용 중인 건 카카오뿐**입니다. 구글·네이버 라우트는 구현돼 있으나 선택사항입니다.
 
-### 1-1. Supabase 프로젝트 생성 (이미 있으면 스킵)
-1. https://supabase.com/dashboard 접속
-2. "New Project" 클릭
-3. 프로젝트 이름: `mealpoint`
-4. 비밀번호 설정 후 생성
+관련 코드:
+- 카카오: [`src/app/api/auth/kakao/route.ts`](../src/app/api/auth/kakao/route.ts)
+- 구글: [`src/app/api/auth/google/route.ts`](../src/app/api/auth/google/route.ts)
+- 네이버: [`src/app/api/auth/naver/route.ts`](../src/app/api/auth/naver/route.ts)
+- 회원 조회/생성·세션 발급: [`src/lib/auth/social.ts`](../src/lib/auth/social.ts)
 
-### 1-2. API 키 복사
-1. Settings > API 메뉴
-2. 아래 두 값을 `.env.local` 파일에 입력:
+---
+
+## 0. 동작 흐름 (공통)
+
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
+[/trial 등] → "카카오로 로그인" 클릭
+   → GET /api/auth/kakao?next=/trial
+   → state 쿠키 발급 후 카카오 인증 페이지로 리다이렉트
+   → 사용자가 카카오에서 로그인/동의
+   → 카카오가 redirect_uri 로 복귀: /api/auth/kakao?action=callback&code=...&state=...
+   → 서버가 code 로 토큰 발급 → 프로필 조회
+   → members 테이블에서 findOrCreateMember (provider, provider_id 기준)
+   → 자체 세션 쿠키(mp_admin_token) 발급 → next 경로로 복귀
 ```
 
-### 1-3. Site URL 설정
-1. Authentication > URL Configuration
-2. Site URL: `http://localhost:3000` (개발) / 배포 후 실제 도메인으로 변경
-3. Redirect URLs에 추가:
-   - `http://localhost:3000/auth/callback`
-   - `https://your-domain.com/auth/callback` (배포 후)
+- **Redirect URI 형식**(모든 provider 공통): `{사이트주소}/api/auth/{provider}?action=callback`
+- 콜백 주소의 `{사이트주소}`는 `NEXTAUTH_URL` 환경변수 → 없으면 요청 도메인 순으로 결정됩니다.
+  운영에서는 프리뷰 배포 도메인으로 콜백이 새지 않도록 **`NEXTAUTH_URL`을 운영 도메인으로 고정**하는 것을 권장합니다.
 
 ---
 
-## 2. 카카오 로그인 설정
+## 1. 카카오 로그인 설정 (현재 사용 중)
 
-### 2-1. 카카오 개발자 앱 등록
-1. https://developers.kakao.com 접속 → 로그인
-2. "내 애플리케이션" → "애플리케이션 추가하기"
-3. 앱 이름: `밀포인트`
+### 1-1. 개발자 앱 준비
+1. https://developers.kakao.com → 로그인 → 내 애플리케이션
+2. 앱이 없으면 "애플리케이션 추가하기"로 생성 (예: `밀포인트`)
+   - 카카오톡 채널을 운영 중이면 **같은 카카오 비즈니스 계정**으로 만들면 관리가 편합니다.
 
-### 2-2. 카카오 앱 키 확인
-1. 앱 선택 → "앱 키" 메뉴
-2. **REST API 키** 복사 (= Client ID)
+### 1-2. REST API 키 = `KAKAO_CLIENT_ID`
+1. 앱 설정 → **플랫폼 키** → **REST API 키**
+2. 로그인 전용으로 만든 키(예: "밀포인트 웹")의 REST API 키 값을 사용합니다.
+   - 새 콘솔은 키마다 리다이렉트 URI·시크릿을 따로 관리합니다.
+     **`KAKAO_CLIENT_ID`와 `KAKAO_CLIENT_SECRET`은 반드시 같은 키의 짝**이어야 합니다.
 
-### 2-3. 카카오 로그인 활성화
-1. "제품 설정" → "카카오 로그인" → 활성화 ON
-2. "Redirect URI" 추가:
-   - `https://xxxxxxxx.supabase.co/auth/v1/callback`
-   - (xxxxxxxx = Supabase 프로젝트 ID)
+### 1-3. Client Secret = `KAKAO_CLIENT_SECRET`
+1. 해당 키의 **클라이언트 시크릿** → "카카오 로그인" 코드 발급(없으면 생성)
+2. **활성화 ON** (비활성 상태면 토큰 발급이 실패)
+3. ⚠️ "비즈니스 인증" 코드가 아니라 **"카카오 로그인" 코드**를 써야 합니다.
 
-### 2-4. 동의 항목 설정
-1. "제품 설정" → "카카오 로그인" → "동의항목"
-2. 최소 필요 항목:
-   - 닉네임: 필수
-   - 프로필 사진: 선택
-   - 카카오계정(이메일): 필수 (비즈앱 전환 필요할 수 있음)
+### 1-4. 카카오 로그인 활성화 + Redirect URI 등록
+1. 제품 설정 → 카카오 로그인 → **활성화 ON**
+2. **로그인 리다이렉트 URI**에 아래 2개 등록:
+   ```
+   https://meal-point-ochre.vercel.app/api/auth/kakao?action=callback
+   http://localhost:3000/api/auth/kakao?action=callback
+   ```
 
-### 2-5. 카카오 Client Secret 발급
-1. "제품 설정" → "카카오 로그인" → "보안" 메뉴
-2. Client Secret 코드 발급 → 활성화 상태: 사용함
-
-### 2-6. Supabase에 카카오 연동
-1. Supabase Dashboard → Authentication → Providers
-2. "Kakao" 찾아서 Enable
-3. 입력:
-   - Client ID: REST API 키
-   - Client Secret: 위에서 발급한 Secret
+### 1-5. 동의항목
+- 닉네임: 필수 아님이어도 됨(없으면 "카카오 사용자"로 대체)
+- 이메일: 선택 (이메일 동의를 받으려면 **비즈앱 전환**이 필요할 수 있음)
 
 ---
 
-## 3. 네이버 로그인 설정
+## 2. (선택) 구글 로그인 설정
 
-### 3-1. 네이버 개발자 앱 등록
-1. https://developers.naver.com 접속 → 로그인
-2. Application → 애플리케이션 등록
-3. 앱 이름: `밀포인트`
-4. 사용 API: "네이버 로그인" 선택
-5. 제공 정보: 이름, 이메일, 프로필 사진
+쓰려면 Google Cloud Console에서 OAuth 클라이언트를 만들고 아래를 등록합니다.
+- 승인된 리디렉션 URI:
+  ```
+  https://meal-point-ochre.vercel.app/api/auth/google?action=callback
+  http://localhost:3000/api/auth/google?action=callback
+  ```
+- 환경변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 
-### 3-2. 환경 설정
-1. 서비스 URL: `http://localhost:3000` (개발용)
-2. Callback URL:
-   - `https://xxxxxxxx.supabase.co/auth/v1/callback`
+## 3. (선택) 네이버 로그인 설정
 
-### 3-3. Client ID / Secret 확인
-1. 애플리케이션 정보에서 Client ID, Client Secret 복사
-
-### 3-4. Supabase에 네이버 연동 (커스텀 OIDC)
-1. Supabase Dashboard → Authentication → Providers
-2. 방법 A: "Custom OIDC" 사용 (Supabase에서 네이버 공식 지원 없음)
-   - Provider name: `naver`
-   - Issuer URL: 직접 설정 필요
-   - Client ID / Secret 입력
-3. 방법 B: Supabase Edge Function으로 직접 OAuth 처리 (더 안정적)
-
-> **참고**: 네이버는 표준 OIDC를 완벽 지원하지 않아서, 카카오보다 연동이 복잡합니다.
-> 카카오 먼저 연동 후 네이버를 추가하는 것을 권장합니다.
+https://developers.naver.com → 애플리케이션 등록 → "네이버 로그인" API 사용.
+- Callback URL:
+  ```
+  https://meal-point-ochre.vercel.app/api/auth/naver?action=callback
+  http://localhost:3000/api/auth/naver?action=callback
+  ```
+- 환경변수: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
 
 ---
 
-## 4. 설정 완료 후 알려줄 값
+## 4. 환경변수 정리
 
-코드 구현을 위해 아래 값들을 준비해주세요:
-
-| 항목 | 값 |
-|------|---|
-| Supabase URL | `https://xxxxxxxx.supabase.co` |
-| Supabase Anon Key | `eyJhbGciOi...` |
-| 카카오 REST API 키 | |
-| 카카오 Client Secret | |
-| 네이버 Client ID | |
-| 네이버 Client Secret | |
-
-`.env.local` 파일에 넣을 내용:
+### 로컬 — `.env.local`
 ```env
+# 회원 DB (Supabase는 OAuth가 아니라 DB로만 사용)
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
-```
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
 
-> 카카오/네이버 키는 Supabase 대시보드에서 설정하므로 .env.local에는 넣지 않아도 됩니다.
+# 사이트 주소 / OAuth 콜백 도메인 고정
+NEXT_PUBLIC_SITE_URL=https://meal-point-ochre.vercel.app
+NEXTAUTH_URL=https://meal-point-ochre.vercel.app   # 로컬에서 localhost 테스트만 한다면 생략 가능(요청 도메인 사용)
+
+# 카카오 로그인 (필수)
+KAKAO_CLIENT_ID=...          # "밀포인트 웹" REST API 키
+KAKAO_CLIENT_SECRET=...      # 같은 키의 "카카오 로그인" 클라이언트 시크릿
+
+# 구글/네이버 (선택)
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
+# NAVER_CLIENT_ID=
+# NAVER_CLIENT_SECRET=
+```
+> `.env.local`은 `.gitignore`에 걸려 커밋되지 않습니다. 양식은 [`.env.local.example`](../.env.local.example) 참고.
+
+### 운영 — Vercel
+Settings → Environment Variables 에 같은 이름으로 등록 후 **Redeploy**.
+- `NEXTAUTH_URL`은 **운영 도메인으로 고정**(프리뷰 도메인 콜백 mismatch 방지).
+- `NEXT_PUBLIC_` 접두사 변수는 브라우저에 노출됨(의도된 동작 — 시크릿 금지).
 
 ---
 
-## 5. 설정 완료 후 코드 구현 범위
+## 5. 점검 체크리스트
 
-위 설정이 끝나면 아래 코드를 자동 생성합니다:
-- `/login` 페이지 (소셜 로그인 버튼 UI)
-- `/auth/callback` 라우트 (OAuth 콜백 처리)
-- 미들웨어 (`/admin` 경로 보호)
-- 사이드바 로그아웃 버튼
-- 사용자 프로필 표시
+- [ ] 카카오: REST API 키 / Client Secret이 **같은 키의 짝**인가
+- [ ] 카카오: Client Secret **활성화 ON** 인가
+- [ ] Redirect URI에 운영·로컬 주소 **2개** 모두 등록됐는가 (`?action=callback` 포함)
+- [ ] Vercel에 `KAKAO_CLIENT_ID/SECRET`, `NEXTAUTH_URL`, `NEXT_PUBLIC_SITE_URL` 등록 후 **Redeploy** 했는가
+- [ ] `/trial`에서 로그인 버튼 클릭 시 KOE006 없이 카카오 인증 화면이 뜨는가
+  - 뜨면 redirect_uri·키 연결 정상. 로그인 완료 시 `members`에 회원 자동 생성.
+
+---
+
+## 부록. 체험 사용권 관련 환경변수
+
+소셜 로그인과 함께 쓰이는 식단관리 체험(`/trial`) 관련 값:
+- `NEXT_PUBLIC_MEAL_PLAN_TRIAL_URL` — 외부 체험 사이트 주소(미설정 시 `/trial`에서 "문의하기"로 대체)
+- `CRON_SECRET` — 체험 사용권 자동 만료 Cron 인증(Vercel Cron이 `Authorization: Bearer`로 전송).
+  Vercel에 이 변수를 등록하면 Cron 호출 시 자동으로 헤더에 실립니다. 스케줄은 [`vercel.json`](../vercel.json) 참고.
+- `MEAL_PLAN_RESET_WEBHOOK_URL` (선택) — 만료 시 외부 프로그램 게스트 데이터 초기화 웹훅
+</content>
+</invoke>
