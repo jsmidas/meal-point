@@ -88,11 +88,14 @@ export default function BillingPage() {
     companyName?: string; // 발행 지점명 (합산 그룹에서 어느 지점 명세서인지)
   };
   type PrevUnpaidDetail = {
-    billingId: string;
+    billingId: string; // 가정산(청구 미생성)은 `est:<primary>|<month>` 센티넬
     billingMonth: string;
     outstanding: number; // billing 전체 미결 (청구단위 입금 포함)
     statements: StatementUnpaid[]; // outstanding > 0 인 명세서만
     unclassified: number; // 청구단위 입금으로 인해 어느 명세서에 갚았는지 모르는 금액 (양수=미결 중 미분류)
+    estimated?: boolean; // 세금계산서/청구 미발행 → 명세서 기준 가정산 미수 (입금 시 청구로 승격)
+    estSupply?: number; // 가정산 공급가 합계 (승격 시 billing.total_supply)
+    estTotal?: number; // 가정산 합계(세액 포함) (승격 시 billing.total_amount)
   };
   const [prevUnpaidDetailMap, setPrevUnpaidDetailMap] = useState<Record<string, PrevUnpaidDetail[]>>({});
   // 요약/배지용 합계 맵 (상세에서 파생)
@@ -165,7 +168,7 @@ export default function BillingPage() {
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
       db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }),
-      db.from("statements").select("id, company_id, statement_number, statement_date, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }),
+      db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }),
     ]);
 
     // ── 사업자번호 그룹 인덱스 ──
@@ -236,15 +239,38 @@ export default function BillingPage() {
     }
     // 2) 각 명세서를 청구별로 그룹핑 (statement_id 태깅된 입금만 우선 차감)
     //    - 자기 (company_id, month) 청구가 있으면 거기에(레거시 지점 자체 청구)
-    //    - 없으면 그룹의 그 달 청구로 (지점 명세서 → 대표 합산 청구)
+    //    - 그룹의 그 달 청구가 있으면 거기에 (지점 명세서 → 대표 합산 청구)
+    //    - 청구 자체가 없으면(세금계산서 미발행) 가정산 미수 stub을 만들어 이월 (지점 합산 포함)
     type StmtRow = { id: string; statement_number: string; statement_date: string; total_amount: number; taggedPaid: number; companyName?: string };
     const stmtsByBillingId: Record<string, StmtRow[]> = {};
-    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; total_amount: number; companies?: { id: string; name: string } | null }>) {
+    const estDetails: DetailWithRaw[] = []; // 가정산 stub (청구 미생성). 명세서 순회 후 금액 확정.
+    const estSupplyById: Record<string, number> = {}; // 가정산 stub billingId → 공급가 합계
+    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; supply_amount: number; total_amount: number; companies?: { id: string; name: string } | null }>) {
       const stMonth = s.statement_date.slice(0, 7);
+      const primary = toPrimary(s.company_id);
+      const gmKey = `${primary}|${stMonth}`;
       const exact = billingByExactKey[`${s.company_id}|${stMonth}`];
-      const groupList = detailsByGroupMonth[`${toPrimary(s.company_id)}|${stMonth}`] || [];
-      const detail = exact || groupList[0];
-      if (!detail) continue;
+      let detail = exact || (detailsByGroupMonth[gmKey] || [])[0];
+      if (!detail) {
+        // 청구·세금계산서 미발행 → 가정산 미수 stub (그룹+월 단위, 지점 명세서 합산)
+        const estId = `est:${gmKey}`;
+        detail = {
+          billingId: estId,
+          billingMonth: stMonth,
+          outstanding: 0, // 아래 3.5)에서 확정
+          statements: [],
+          unclassified: 0,
+          paidAmount: 0, // 청구 미생성 → 청구단위 입금 없음
+          totalAmount: 0, // 아래 3.5)에서 확정
+          estimated: true,
+        };
+        (detailsByGroupMonth[gmKey] ||= []).push(detail);
+        allDetails.push(detail);
+        (prevDetail[primary] ||= []).push(detail);
+        estDetails.push(detail);
+        estSupplyById[estId] = 0;
+      }
+      if (detail.estimated) estSupplyById[detail.billingId] += s.supply_amount || 0;
       const taggedPaid = paidByStmt[s.id] || 0;
       if (!stmtsByBillingId[detail.billingId]) stmtsByBillingId[detail.billingId] = [];
       stmtsByBillingId[detail.billingId].push({
@@ -255,6 +281,17 @@ export default function BillingPage() {
         taggedPaid,
         companyName: s.companies?.name,
       });
+    }
+    // 3.5) 가정산 stub 금액 확정 — 세액=공급가 합계×10% 반올림 (실제 청구/세금계산서 생성 규칙과 동일)
+    for (const d of estDetails) {
+      const supply = estSupplyById[d.billingId] || 0;
+      const total = supply + Math.round(supply * 0.1);
+      const tagged = (stmtsByBillingId[d.billingId] || []).reduce((s, x) => s + x.taggedPaid, 0);
+      d.estSupply = supply;
+      d.estTotal = total;
+      d.totalAmount = total;
+      d.paidAmount = tagged;
+      d.outstanding = total - tagged;
     }
     // 3) 청구단위 입금(statement_id=NULL)은 명세서 날짜순으로 FIFO 가상 분배
     //    — payments 테이블 자체는 건드리지 않고, 표시 계산만 정리
@@ -525,6 +562,7 @@ export default function BillingPage() {
     setPaySubmitting(true);
     const groupId = allocPlan.entries.length > 1 ? crypto.randomUUID() : null;
     const affectedBillingIds: string[] = [];
+    const estPromoted: Record<string, string> = {}; // 가정산 센티넬 → 승격된 실제 billingId (중복 생성 방지)
 
     // 분할 모드: 기존 입금 row를 삭제 (반제 처리). 분배 합계 = 입금액 보장됨.
     if (splittingPayment) {
@@ -535,6 +573,32 @@ export default function BillingPage() {
     // 충당 대상별 insert
     for (const entry of allocPlan.entries) {
       let billingId = entry.billingId;
+
+      // 가정산 미수(청구 미생성)에 충당 → 해당 월 청구를 생성해 승격 (그룹당 1회)
+      if (billingId && billingId.startsWith("est:")) {
+        const sentinel = billingId;
+        if (estPromoted[sentinel]) {
+          billingId = estPromoted[sentinel];
+        } else {
+          const det = (prevUnpaidDetailMap[payModalRow.id] || []).find((d) => d.billingId === sentinel);
+          const estMonth = det?.billingMonth || entry.billingMonth || month;
+          const supply = det?.estSupply ?? 0;
+          const tax = Math.round(supply * 0.1);
+          const total = det?.estTotal ?? supply + tax;
+          const { data: estBillingData } = await dbInsert("billings", {
+            billing_number: generateBillingNumber(estMonth),
+            company_id: payModalRow.id,
+            billing_month: estMonth,
+            total_supply: supply,
+            total_tax: tax,
+            total_amount: total,
+          });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const estBilling = (Array.isArray(estBillingData) ? estBillingData[0] : estBillingData) as any;
+          billingId = estBilling?.id as string;
+          estPromoted[sentinel] = billingId;
+        }
+      }
 
       // 당월 청구가 없으면 자동 생성
       if (!billingId) {
@@ -724,7 +788,7 @@ export default function BillingPage() {
   function buildAllocationPlan(): {
     valid: boolean;
     error?: string;
-    entries: Array<{ billingId: string | null; statementId: string | null; amount: number }>;
+    entries: Array<{ billingId: string | null; statementId: string | null; amount: number; billingMonth?: string }>;
   } {
     // 분배 패널 미사용: 전액 당월 청구단위에 (기존 동작)
     // 단, 분할 모드는 항상 분배 패널 기반이어야 함 (단일 entry로 빠지면 분할 의미가 없어짐)
@@ -742,10 +806,10 @@ export default function BillingPage() {
         entries: [],
       };
     }
-    const entries: Array<{ billingId: string | null; statementId: string | null; amount: number }> = [];
+    const entries: Array<{ billingId: string | null; statementId: string | null; amount: number; billingMonth?: string }> = [];
     for (const b of allocBuckets) {
       const amt = payAllocations[b.key] || 0;
-      if (amt > 0) entries.push({ billingId: b.billingId, statementId: b.statementId, amount: amt });
+      if (amt > 0) entries.push({ billingId: b.billingId, statementId: b.statementId, amount: amt, billingMonth: b.billingMonth });
     }
     if (entries.length === 0) {
       return { valid: false, error: "충당할 대상이 없습니다.", entries: [] };
