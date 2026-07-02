@@ -220,7 +220,8 @@ export default function BillingPage() {
     const allDetails: DetailWithRaw[] = [];
     for (const b of prevBillRes.data || []) {
       const u = b.total_amount - b.paid_amount;
-      if (u === 0) continue;
+      // 완납(u===0)이어도 매핑 인덱스에는 등록해야 함 — 제외하면 그 월 명세서가
+      // "청구 없음"으로 오인되어 가정산 미수 stub으로 부활한다 (outstanding 0은 합계에 무해)
       const primary = toPrimary(b.company_id);
       const detail: DetailWithRaw = {
         billingId: b.id,
