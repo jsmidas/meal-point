@@ -35,6 +35,7 @@ const cautions = [
 
 export default function TrialPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [authError, setAuthError] = useState(false);
 
   // 체험 사이트로 자동 진입 (u/p 파라미터 = 원클릭 자동 로그인).
   // TRIAL_URL 미설정이면 폴백으로 계정 카드를 보여준다.
@@ -48,6 +49,11 @@ export default function TrialPage() {
   }
 
   useEffect(() => {
+    // 카카오 콜백 오류로 복귀한 경우 안내 (?error=...)
+    if (new URLSearchParams(window.location.search).get("error")) {
+      setAuthError(true);
+      window.history.replaceState(null, "", "/trial");
+    }
     // 카카오 인증이 끝나 있으면 배정~시스템 진입까지 사람 손 없이 이어진다:
     // 인증됨+사용권 있음 → 즉시 이동 / 인증됨+미발급 → 자동 배정 후 이동
     fetch("/api/trial")
@@ -116,6 +122,11 @@ export default function TrialPage() {
 
           {state.kind === "guest" && (
             <div className="text-center py-4">
+              {authError && (
+                <p className="text-red-400 text-sm mb-4">
+                  인증 처리에 실패했습니다. 다시 시도해 주세요.
+                </p>
+              )}
               <p className="text-text-secondary mb-6">
                 무료 체험을 시작하려면 카카오 인증이 필요합니다.<br />
                 인증 후 체험 계정이 자동으로 배정됩니다.

@@ -18,9 +18,15 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const storedState = request.cookies.get("kakao_oauth_state")?.value;
+    // 오류 시 복귀 경로: 시작한 페이지(/trial 등)로 되돌린다.
+    // /login 으로 보내면 이미 관리자로 로그인된 사용자는 미들웨어가 /admin 으로
+    // 튕겨 "관리자 화면이 자꾸 나타나는" 혼란이 생긴다.
+    const errBase = safeNext(request.cookies.get("oauth_next")?.value);
+    const errTo = (err: string) =>
+      NextResponse.redirect(new URL(`${errBase}?error=${err}`, request.url));
 
     if (!code || !state || state !== storedState) {
-      return NextResponse.redirect(new URL("/login?error=invalid_state", request.url));
+      return errTo("invalid_state");
     }
 
     try {
@@ -42,7 +48,7 @@ export async function GET(request: NextRequest) {
       const tokenData = await tokenRes.json();
 
       if (tokenData.error) {
-        return NextResponse.redirect(new URL("/login?error=token_failed", request.url));
+        return errTo("token_failed");
       }
 
       // 사용자 정보 조회
@@ -64,7 +70,7 @@ export async function GET(request: NextRequest) {
       });
 
       if (!member) {
-        return NextResponse.redirect(new URL("/login?error=inactive", request.url));
+        return errTo("inactive");
       }
 
       const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
@@ -73,7 +79,7 @@ export async function GET(request: NextRequest) {
       response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
       return response;
     } catch {
-      return NextResponse.redirect(new URL("/login?error=kakao_failed", request.url));
+      return errTo("kakao_failed");
     }
   }
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const COOKIE_NAME = "mp_admin_token";
 
@@ -9,7 +9,11 @@ export async function findOrCreateMember(profile: {
   name: string;
   email?: string | null;
 }) {
-  const supabase = await createServerSupabase();
+  // service_role 필수: members 는 RLS 로 anon INSERT 가 막혀 있어(schema-v21)
+  // anon 클라이언트로는 신규 회원 등록이 조용히 실패한다 — 카카오 첫 로그인이
+  // error=inactive 로 튕기던 원인. 이 모듈은 서버 전용(auth 라우트)이라 안전.
+  const supabase = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase.from("members") as any;
 
   // 기존 회원 찾기
