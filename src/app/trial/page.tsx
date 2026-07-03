@@ -28,9 +28,10 @@ function formatDate(iso: string): string {
 }
 
 const cautions = [
-  "체험 계정은 여러 방문자가 함께 사용하는 환경입니다. 실제 운영 데이터나 민감한 개인정보는 입력하지 마세요.",
-  "체험 데이터는 사용권 만료(발급 후 7일) 시 자동으로 초기화됩니다.",
-  "기능 둘러보기 용도이며, 일부 기능은 제한될 수 있습니다.",
+  "체험 환경은 여러 방문자가 함께 사용하는 하나의 시스템입니다. 다른 체험자가 입력한 데이터가 보이거나 수정될 수 있으니, 실제 운영 데이터나 개인정보(직원·거래처 연락처 등)는 입력하지 마세요.",
+  "발주서·지시서 등 모든 문서는 체험용입니다. 실제 협력업체로 전송되지 않습니다.",
+  "체험 계정은 발급 후 7일간 유효하며, 체험 데이터는 주기적으로 초기 상태로 복원됩니다. 작성한 내용은 보관되지 않습니다.",
+  "기능 둘러보기 용도이며 일부 기능(백업·시스템 설정 등 관리자 기능)은 제한됩니다.",
 ];
 
 export default function TrialPage() {
@@ -148,12 +149,13 @@ export default function TrialPage() {
               </div>
               {TRIAL_URL ? (
                 <a
-                  href={TRIAL_URL}
+                  /* u/p 파라미터 = 체험 사이트 원클릭 자동 로그인 (login.html 이 읽어 즉시 로그인 후 주소에서 제거) */
+                  href={`${TRIAL_URL}?u=${encodeURIComponent(state.account.login_id)}&p=${encodeURIComponent(state.account.login_pw)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
                 >
-                  식단관리 프로그램 바로가기 <ExternalLink size={16} />
+                  체험 시작하기 — 클릭 한 번으로 자동 로그인 <ExternalLink size={16} />
                 </a>
               ) : (
                 <a
