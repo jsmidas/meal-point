@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ClipboardList,
-  KeyRound,
   Clock,
   ExternalLink,
   AlertCircle,
@@ -18,8 +17,8 @@ type Account = { login_id: string; login_pw: string };
 type State =
   | { kind: "loading" }
   | { kind: "guest" }
-  | { kind: "eligible" }
-  | { kind: "active"; account: Account; expiresAt: string }
+  | { kind: "entering" } // 인증 완료 → 배정·시스템 진입 자동 진행 중
+  | { kind: "active"; account: Account; expiresAt: string } // TRIAL_URL 미설정 폴백
   | { kind: "full" };
 
 function formatDate(iso: string): string {
@@ -36,21 +35,38 @@ const cautions = [
 
 export default function TrialPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
-  const [starting, setStarting] = useState(false);
+
+  // 체험 사이트로 자동 진입 (u/p 파라미터 = 원클릭 자동 로그인).
+  // TRIAL_URL 미설정이면 폴백으로 계정 카드를 보여준다.
+  function enterTrial(account: Account, expiresAt: string): boolean {
+    if (!TRIAL_URL) {
+      setState({ kind: "active", account, expiresAt });
+      return false;
+    }
+    window.location.href = `${TRIAL_URL}?u=${encodeURIComponent(account.login_id)}&p=${encodeURIComponent(account.login_pw)}`;
+    return true;
+  }
 
   useEffect(() => {
+    // 카카오 인증이 끝나 있으면 배정~시스템 진입까지 사람 손 없이 이어진다:
+    // 인증됨+사용권 있음 → 즉시 이동 / 인증됨+미발급 → 자동 배정 후 이동
     fetch("/api/trial")
       .then((r) => r.json())
       .then((d) => {
         if (!d.authenticated) setState({ kind: "guest" });
-        else if (d.status === "active") setState({ kind: "active", account: d.account, expiresAt: d.expiresAt });
-        else setState({ kind: "eligible" });
+        else if (d.status === "active") {
+          if (!enterTrial(d.account, d.expiresAt)) return;
+          setState({ kind: "entering" });
+        } else {
+          setState({ kind: "entering" });
+          void startTrial();
+        }
       })
       .catch(() => setState({ kind: "guest" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function startTrial() {
-    setStarting(true);
     try {
       const res = await fetch("/api/trial", { method: "POST" });
       const d = await res.json();
@@ -59,9 +75,12 @@ export default function TrialPage() {
         return;
       }
       if (d.status === "full") setState({ kind: "full" });
-      else if (d.status === "active") setState({ kind: "active", account: d.account, expiresAt: d.expiresAt });
-    } finally {
-      setStarting(false);
+      else if (d.status === "active") {
+        if (!enterTrial(d.account, d.expiresAt)) return;
+        setState({ kind: "entering" });
+      }
+    } catch {
+      setState({ kind: "guest" });
     }
   }
 
@@ -114,20 +133,11 @@ export default function TrialPage() {
             </div>
           )}
 
-          {state.kind === "eligible" && (
-            <div className="text-center py-4">
-              <p className="text-text-secondary mb-6">
-                인증이 완료되었습니다. 아래 버튼을 누르면 체험 계정이 배정되고 1주일간 사용할 수 있습니다.
-              </p>
-              <button
-                type="button"
-                onClick={startTrial}
-                disabled={starting}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
-              >
-                {starting ? <Loader2 className="animate-spin" size={18} /> : <KeyRound size={18} />}
-                {starting ? "계정 배정 중..." : "체험 시작하기"}
-              </button>
+          {state.kind === "entering" && (
+            <div className="text-center py-8">
+              <Loader2 className="animate-spin mx-auto mb-4 text-primary" size={28} />
+              <p className="text-text-primary font-semibold mb-1">인증 완료 — 체험 계정을 배정하고 있습니다</p>
+              <p className="text-text-secondary text-sm">잠시 후 식단관리 시스템으로 자동 이동합니다...</p>
             </div>
           )}
 
