@@ -72,6 +72,35 @@ export default function Ticketing() {
           </p>
         </div>
 
+        {/* 대표 이미지: 실제 발권 프로그램이 올라간 구성 */}
+        <div className="mb-16 rounded-2xl border border-border bg-bg-card overflow-hidden lg:flex lg:items-center">
+          <Link href="/ticketing" className="block lg:w-3/5 group">
+            <Image
+              src="/images/ticket/machine.png"
+              alt="식권발행기 구성 — 터치 모니터와 3인치 전용 프린터"
+              width={1262}
+              height={918}
+              sizes="(max-width: 1024px) 100vw, 640px"
+              className="w-full h-auto group-hover:scale-[1.01] transition-transform duration-500"
+            />
+          </Link>
+          <div className="p-8 lg:p-10 lg:w-2/5">
+            <h3 className="text-xl font-bold text-text-primary mb-3">
+              터치 모니터 + 전용 프린터, 이 구성이 전부입니다
+            </h3>
+            <p className="text-text-secondary leading-relaxed mb-6">
+              화면 속이 실제 발권 프로그램입니다. 사원번호 입력, 끼니 선택,
+              발권까지 터치 몇 번 — 발행 내역은 그대로 정산 자료가 됩니다.
+            </p>
+            <Link
+              href="/ticketing"
+              className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+            >
+              화면으로 미리보기 →
+            </Link>
+          </div>
+        </div>
+
         {/* 특장점 */}
         <div className="grid sm:grid-cols-3 gap-6 mb-16">
           {highlights.map((h) => (

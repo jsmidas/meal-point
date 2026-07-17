@@ -34,8 +34,8 @@ const services = [
     desc: "3인치 전용 프린터로 누구나 간편하게.\n빠르고 정확한 식권 발행 시스템.",
     status: "운영중",
     statusColor: "bg-emerald-500/15 text-emerald-400",
-    href: "#ticketing",
-    cta: "자세히 보기",
+    href: "/ticketing",
+    cta: "화면으로 미리보기",
   },
   {
     icon: PiggyBank,
