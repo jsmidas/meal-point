@@ -113,8 +113,9 @@ export default function TicketingPage() {
             <span className="text-gradient">화면으로 미리 보기</span>
           </h1>
           <p className="text-text-secondary max-w-2xl mx-auto leading-relaxed">
-            터치 모니터와 3인치 전용 프린터만 있으면 준비 끝. 현장에서 식권을
-            발행하고, 발행 내역은 그대로 식수 집계와 정산 자료가 됩니다.
+            현장은 터치 모니터와 3인치 전용 프린터면 준비 끝. 발행 내역은 웹
+            관리자 화면으로 모여 여러 사업장 현황부터 정산 리포트까지 한 곳에서
+            관리됩니다.
           </p>
         </div>
 

@@ -86,11 +86,13 @@ export default function Ticketing() {
           </Link>
           <div className="p-8 lg:p-10 lg:w-2/5">
             <h3 className="text-xl font-bold text-text-primary mb-3">
-              터치 모니터 + 전용 프린터, 이 구성이 전부입니다
+              현장은 터치 모니터 + 전용 프린터, 관리는 웹에서
             </h3>
             <p className="text-text-secondary leading-relaxed mb-6">
               화면 속이 실제 발권 프로그램입니다. 사원번호 입력, 끼니 선택,
-              발권까지 터치 몇 번 — 발행 내역은 그대로 정산 자료가 됩니다.
+              발권까지 터치 몇 번 — 발행 내역은 <strong className="text-text-primary">웹 관리자 화면</strong>으로
+              실시간 집계되어 여러 사업장 현황과 정산 리포트까지 한 곳에서
+              관리됩니다.
             </p>
             <Link
               href="/ticketing"
