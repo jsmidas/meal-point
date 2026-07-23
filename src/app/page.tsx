@@ -1,9 +1,8 @@
 import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
-import Services from "@/components/landing/Services";
 import WhySection from "@/components/landing/WhySection";
 import Products from "@/components/landing/Products";
-import Ticketing from "@/components/landing/Ticketing";
+import Solutions from "@/components/landing/Solutions";
 import HeatingDemo from "@/components/landing/HeatingDemo";
 import OrderProcess from "@/components/landing/OrderProcess";
 import Contact from "@/components/landing/Contact";
@@ -19,11 +18,10 @@ export default function Home() {
       <div className="relative z-10">
         <Header />
         <Hero />
-        <Services />
-        <WhySection />
         <Products />
-        <Ticketing />
         <HeatingDemo />
+        <Solutions />
+        <WhySection />
         <OrderProcess />
         <Contact />
         <Footer />

@@ -1,47 +1,24 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { productGroups, categoryLabels, type GroupKey } from "@/lib/categories";
+import ProductCard, { type ProductCardItem } from "@/components/ProductCard";
 
-type Category = "all" | "inner" | "outer" | "heater" | "film" | "set";
-
-interface ProductItem {
-  id: string;
-  name: string;
-  image: string;
-  category: Category;
-  badge: string;
-  href?: string;
+interface ProductItem extends ProductCardItem {
+  category: string;
 }
 
-const categories: { key: Category; label: string }[] = [
-  { key: "all", label: "전체" },
-  { key: "inner", label: "내피" },
-  { key: "outer", label: "외피" },
-  { key: "heater", label: "발열제" },
-  { key: "set", label: "세트" },
-];
+// 랜딩 쇼케이스에는 용기 관련 그룹만 노출 (식권발행기는 솔루션 섹션에서 소개)
+const showcaseGroups = productGroups.filter((g) => g.key !== "ticketing");
 
-const badgeMap: Record<string, string> = {
-  inner: "내피",
-  outer: "외피",
-  heater: "발열제",
-  film: "필름",
-  set: "세트",
-};
-
-const badgeColors: Record<string, string> = {
-  내피: "bg-primary/20 text-primary",
-  외피: "bg-accent/20 text-accent",
-  발열제: "bg-red-500/20 text-red-400",
-  필름: "bg-emerald-500/20 text-emerald-400",
-  세트: "bg-emerald-500/20 text-emerald-400",
-};
+const PAGE_SIZE = 12;
 
 export default function Products() {
-  const [active, setActive] = useState<Category>("all");
+  const [activeGroup, setActiveGroup] = useState<GroupKey>("heating");
+  const [activeCat, setActiveCat] = useState<string>("all");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,7 +40,6 @@ export default function Products() {
       }
 
       const items: ProductItem[] = (prods || []).map((p: { id: string; name: string; category: string; image_url: string | null }) => {
-        const badge = badgeMap[p.category] || p.category;
         const published = publishedMap.has(p.id);
         // 이미지 우선순위: 상세페이지 히어로 → 상품 이미지
         const heroImages = publishedMap.get(p.id);
@@ -73,8 +49,8 @@ export default function Products() {
           id: p.id,
           name: p.name,
           image,
-          category: p.category as Category,
-          badge,
+          category: p.category,
+          badge: categoryLabels[p.category] || p.category,
           href: published ? `/products/${p.id}` : undefined,
         };
       });
@@ -85,8 +61,22 @@ export default function Products() {
     load();
   }, []);
 
+  const group = showcaseGroups.find((g) => g.key === activeGroup)!;
+  const inGroup = products.filter((p) => group.categories.includes(p.category));
   const filtered =
-    active === "all" ? products : products.filter((p) => p.category === active);
+    activeCat === "all" ? inGroup : inGroup.filter((p) => p.category === activeCat);
+  const visible = filtered.slice(0, visibleCount);
+
+  function selectGroup(key: GroupKey) {
+    setActiveGroup(key);
+    setActiveCat("all");
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function selectCat(cat: string) {
+    setActiveCat(cat);
+    setVisibleCount(PAGE_SIZE);
+  }
 
   return (
     <section id="products" className="py-24">
@@ -103,81 +93,99 @@ export default function Products() {
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 mb-10">
-          {categories.map((cat) => (
+        {/* 대분류 그룹 탭 */}
+        <div className="flex flex-wrap justify-center gap-3 mb-6">
+          {showcaseGroups.map((g) => (
             <button
-              key={cat.key}
-              onClick={() => setActive(cat.key)}
-              className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
-                active === cat.key
-                  ? "bg-primary text-bg-dark"
-                  : "bg-bg-card text-text-secondary hover:bg-bg-card-hover"
+              key={g.key}
+              onClick={() => selectGroup(g.key)}
+              className={`px-6 py-3 rounded-xl text-sm font-semibold transition-all border ${
+                activeGroup === g.key
+                  ? "bg-primary text-bg-dark border-primary"
+                  : "bg-bg-card text-text-secondary border-border hover:bg-bg-card-hover hover:border-border-light"
               }`}
             >
-              {cat.label}
+              {g.label}
             </button>
           ))}
         </div>
 
+        {/* 그룹 내 세부 필터 */}
+        {group.categories.length > 1 ? (
+          <div className="flex flex-wrap justify-center gap-2 mb-10">
+            <button
+              onClick={() => selectCat("all")}
+              className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+                activeCat === "all"
+                  ? "bg-primary text-bg-dark"
+                  : "bg-bg-card text-text-secondary hover:bg-bg-card-hover"
+              }`}
+            >
+              전체
+            </button>
+            {group.categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => selectCat(cat)}
+                className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+                  activeCat === cat
+                    ? "bg-primary text-bg-dark"
+                    : "bg-bg-card text-text-secondary hover:bg-bg-card-hover"
+                }`}
+              >
+                {categoryLabels[cat] || cat}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mb-4" />
+        )}
+
         {/* Grid */}
         {loading ? (
           <div className="text-center py-12 text-text-muted">로딩 중...</div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((product) => {
-              const Card = (
-                <div className="group rounded-2xl border border-border bg-bg-card overflow-hidden hover:border-border-light hover:bg-bg-card-hover transition-all">
-                  <div className="relative aspect-[4/3] overflow-hidden bg-bg-dark">
-                    {product.image.startsWith("http") ? (
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    ) : (
-                      <Image
-                        src={product.image}
-                        alt={product.name}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      />
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium mb-3 ${
-                        badgeColors[product.badge] || "bg-bg-card text-text-muted"
-                      }`}
-                    >
-                      {product.badge}
-                    </span>
-                    <h4 className="text-lg font-semibold text-text-primary mb-1">
-                      {product.name}
-                    </h4>
-                    <p className="text-sm text-text-muted mb-3">가격문의</p>
-                    <span className="inline-flex items-center text-sm font-medium text-primary">
-                      {product.href ? "상세보기" : "문의하기"}
-                    </span>
-                  </div>
-                </div>
-              );
-
-              if (product.href) {
-                return (
-                  <Link key={product.id} href={product.href}>
-                    {Card}
-                  </Link>
-                );
-              }
-              return (
-                <a key={product.id} href="#contact">
-                  {Card}
-                </a>
-              );
-            })}
+        ) : products.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-text-secondary mb-6">
+              제품 목록을 불러오지 못했습니다. 잠시 후 다시 시도하시거나 문의해 주세요.
+            </p>
+            <a
+              href="#contact"
+              className="inline-flex items-center px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+            >
+              문의하기
+            </a>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-text-muted">
+            해당 분류의 제품을 준비 중입니다. 곧 만나보실 수 있어요.
+          </div>
+        ) : (
+          <>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {visible.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+
+            {/* 더보기 · 전체 제품 */}
+            <div className="mt-10 flex flex-wrap justify-center gap-3">
+              {filtered.length > visibleCount && (
+                <button
+                  onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                  className="inline-flex items-center px-8 py-3 rounded-full border border-border text-text-primary font-semibold text-sm hover:bg-bg-card-hover hover:border-border-light transition-all"
+                >
+                  제품 더보기 ({visibleCount}/{filtered.length})
+                </button>
+              )}
+              <Link
+                href="/products"
+                className="inline-flex items-center px-8 py-3 rounded-full bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+              >
+                전체 제품 검색·보기 →
+              </Link>
+            </div>
+          </>
         )}
       </div>
     </section>

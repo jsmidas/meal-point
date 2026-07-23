@@ -12,21 +12,21 @@ export default function Hero() {
           Meal Total Solution · 급식포털
         </p>
         <h1 className="text-4xl md:text-6xl font-black text-text-primary leading-tight mb-6">
-          급식 현장의 모든 것,
+          발열도시락·급식용기,
           <br />
-          <span className="text-gradient">한 곳에서</span>
+          <span className="text-gradient">도매가로 한 번에</span>
         </h1>
         <p className="text-lg text-text-secondary mb-10 leading-relaxed">
-          발열도시락·급식용기 도소매부터 식단관리 프로그램, 식권발행기까지.
+          내피·외피·발열제·필름부터 세트 구성까지 낱개부터 대량으로 공급합니다.
           <br className="hidden md:block" />
-          원가절감과 원활한 운영을 밀포인트가 함께합니다.
+          식단관리 프로그램·식권발행기로 운영까지 밀포인트가 함께합니다.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a
-            href="#services"
+            href="#products"
             className="inline-flex items-center justify-center h-12 px-8 rounded-full bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors"
           >
-            서비스 보기
+            제품 보기
           </a>
           <a
             href="#contact"

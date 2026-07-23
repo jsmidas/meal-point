@@ -13,6 +13,7 @@ type PriceMode = "sell" | "cost";
 const CATEGORY_LABELS: Record<string, string> = {
   inner: "내피", outer: "외피", "내피": "내피", "외피": "외피",
   heater: "발열제", film: "필름", set: "세트",
+  lunchbox: "도시락 용기", ticket_printer: "식권발행기",
 };
 
 export default function PricesPage() {

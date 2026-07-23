@@ -26,7 +26,7 @@ export default function HeatingDemo() {
           {/* Image */}
           <div className="relative aspect-square max-w-md mx-auto lg:mx-0 rounded-2xl overflow-hidden">
             <Image
-              src="/images/발열제와 물120ml.jpg"
+              src="/images/heating-demo.jpg"
               alt="발열도시락 물 붓는 시연"
               fill
               className="object-contain"

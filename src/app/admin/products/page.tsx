@@ -14,6 +14,7 @@ const categoryLabels: Record<string, string> = {
   heater: "발열제",
   film: "필름",
   set: "세트",
+  lunchbox: "도시락 용기",
   ticket_printer: "식권발행기",
 };
 
@@ -23,6 +24,7 @@ const categoryColors: Record<string, string> = {
   heater: "bg-red-400/10 text-red-400",
   film: "bg-emerald-400/10 text-emerald-400",
   set: "bg-blue-400/10 text-blue-400",
+  lunchbox: "bg-sky-400/10 text-sky-400",
   ticket_printer: "bg-accent/10 text-accent",
 };
 

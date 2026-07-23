@@ -229,10 +229,10 @@ export default function TicketingPage() {
               도입 문의하기 →
             </Link>
             <Link
-              href="/#ticketing"
+              href="/#solutions"
               className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl border border-border text-text-primary font-semibold hover:bg-bg-card-hover transition-colors"
             >
-              제품 보러가기
+              다른 솔루션 보기
             </Link>
           </div>
         </div>
