@@ -21,6 +21,7 @@ interface Solution {
   badges: { label: string; color: string }[];
   title: string;
   desc: string;
+  priceNote?: string;
   features: Feature[];
   image: string;
   imageAlt: string;
@@ -55,6 +56,7 @@ const solutions: Solution[] = [
     badges: [{ label: "운영중", color: "bg-emerald-500/15 text-emerald-400" }],
     title: "식권발행기",
     desc: "현장은 터치 모니터 + 3인치 전용 프린터, 관리는 웹에서. 발행 내역이 실시간 집계되어 여러 사업장 현황과 정산 리포트까지 한 곳에서 관리됩니다.",
+    priceNote: "매월 3만원으로 식권 프로그램을 이용하세요. (키보드용일 경우)",
     features: [
       { icon: Printer, label: "3인치 전용 프린터" },
       { icon: Zap, label: "터치 몇 번에 발권" },
@@ -125,6 +127,12 @@ export default function Solutions() {
                 <p className="text-sm text-text-secondary leading-relaxed mb-5">
                   {s.desc}
                 </p>
+
+                {s.priceNote && (
+                  <p className="mb-5 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary">
+                    {s.priceNote}
+                  </p>
+                )}
 
                 <div className="flex flex-wrap gap-2 mb-7">
                   {s.features.map((f) => (
