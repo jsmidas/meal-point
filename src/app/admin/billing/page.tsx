@@ -1764,7 +1764,7 @@ export default function BillingPage() {
                   <label className="block text-sm text-text-secondary mb-1">입금일</label>
                   <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)}
                     aria-label="입금일"
-                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary" />
+                    className="w-full px-2 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">입금방법</label>
