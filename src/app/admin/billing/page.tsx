@@ -142,6 +142,81 @@ export default function BillingPage() {
   const [billingTax, setBillingTax] = useState(0);
   const [billingNotes, setBillingNotes] = useState("");
 
+  // ── 입금 처리 내역 (월과 무관한 전체 타임라인 — "어디까지 입금 처리를 했나" 확인용) ──
+  // 분할 입금(payment_group_id 공유)은 원래 입금 1건으로 합쳐 표시한다.
+  type PaymentHistoryRow = {
+    key: string;
+    paymentDate: string;
+    createdAt: string;
+    amount: number;
+    depositor: string;
+    bank: string;
+    companyNames: string[];
+    billingMonths: string[];
+    method: string | null;
+    notes: string | null;
+  };
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryRow[]>([]);
+  const [historyDays, setHistoryDays] = useState(30); // 30 | 90 | 0(전체)
+  const [lastPaymentDate, setLastPaymentDate] = useState<string | null>(null);
+
+  const PAY_METHOD_LABELS: Record<string, string> = {
+    bank_transfer: "계좌이체", cash: "현금", card: "카드",
+  };
+
+  async function loadPaymentHistory(days: number) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    let q = db
+      .from("payments")
+      .select("id, amount, payment_date, payment_method, notes, depositor_name, bank_name, payment_group_id, created_at, billings(billing_month, companies(name))")
+      .order("payment_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (days > 0) {
+      const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      q = q.gte("payment_date", since);
+    }
+    const [{ data: rows }, { data: lastRow }] = await Promise.all([
+      q,
+      db.from("payments").select("payment_date").order("payment_date", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    setLastPaymentDate(lastRow?.payment_date || null);
+
+    const map = new Map<string, PaymentHistoryRow>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of (rows || []) as any[]) {
+      const key = p.payment_group_id || p.id;
+      const cName = p.billings?.companies?.name || "-";
+      const bMonth = p.billings?.billing_month || "-";
+      const ex = map.get(key);
+      if (ex) {
+        ex.amount += p.amount;
+        if (!ex.companyNames.includes(cName)) ex.companyNames.push(cName);
+        if (!ex.billingMonths.includes(bMonth)) ex.billingMonths.push(bMonth);
+      } else {
+        map.set(key, {
+          key,
+          paymentDate: p.payment_date,
+          createdAt: p.created_at,
+          amount: p.amount,
+          depositor: p.depositor_name || "",
+          bank: p.bank_name || "",
+          companyNames: [cName],
+          billingMonths: [bMonth],
+          method: p.payment_method,
+          notes: p.notes,
+        });
+      }
+    }
+    setPaymentHistory([...map.values()]);
+  }
+
+  useEffect(() => {
+    loadPaymentHistory(historyDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyDays]);
+
   function changeMonth(delta: number) {
     const [y, m] = month.split("-").map(Number);
     const d = new Date(y, m - 1 + delta, 1);
@@ -155,6 +230,7 @@ export default function BillingPage() {
 
   async function fetchData() {
     setLoading(true);
+    void loadPaymentHistory(historyDays); // 입금 등록/수정/삭제 후 내역도 함께 갱신
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const [y, m] = month.split("-").map(Number);
@@ -1504,6 +1580,102 @@ export default function BillingPage() {
           })}
         </div>
       )}
+
+      {/* ── 입금 처리 내역 — 어디까지 입금 처리를 했는지 한눈에 ── */}
+      <div className="mt-10 rounded-2xl border border-border bg-bg-card overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-border bg-bg-dark/40">
+          <div className="flex items-center gap-2">
+            <CreditCard size={16} className="text-primary" />
+            <h2 className="text-sm font-bold text-text-primary">입금 처리 내역</h2>
+            <span className="text-xs text-text-muted">전체 거래처 · 월과 무관</span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* 마지막 처리일 + 이후 경과 현황 */}
+            {lastPaymentDate ? (() => {
+              const daysSince = Math.floor((Date.now() - new Date(lastPaymentDate + "T00:00:00").getTime()) / 86400000);
+              const tone = daysSince <= 3 ? "text-emerald-400" : daysSince <= 7 ? "text-yellow-400" : "text-red-400";
+              return (
+                <span className="text-xs text-text-secondary">
+                  마지막 입금 처리일 <span className="font-semibold text-text-primary">{lastPaymentDate}</span>
+                  <span className={`ml-2 font-semibold ${tone}`}>
+                    {daysSince <= 0 ? "오늘 처리함" : `이후 ${daysSince}일간 처리 없음`}
+                  </span>
+                </span>
+              );
+            })() : (
+              <span className="text-xs text-text-muted">입금 처리 기록이 없습니다</span>
+            )}
+            <div className="inline-flex items-center rounded-lg border border-border bg-bg-card p-0.5">
+              {[{ v: 30, label: "최근 30일" }, { v: 90, label: "최근 90일" }, { v: 0, label: "전체" }].map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  onClick={() => setHistoryDays(o.v)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                    historyDays === o.v ? "bg-primary text-bg-dark" : "text-text-muted hover:text-text-primary"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {paymentHistory.length === 0 ? (
+          <p className="px-5 py-8 text-center text-text-muted text-sm">기간 내 입금 처리 내역이 없습니다.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-text-muted border-b border-border bg-bg-dark/20">
+                    <th className="px-5 py-2.5 font-medium whitespace-nowrap">입금일</th>
+                    <th className="px-5 py-2.5 font-medium">입금자</th>
+                    <th className="px-5 py-2.5 font-medium whitespace-nowrap">은행</th>
+                    <th className="px-5 py-2.5 font-medium text-right whitespace-nowrap">금액</th>
+                    <th className="px-5 py-2.5 font-medium">거래처</th>
+                    <th className="px-5 py-2.5 font-medium whitespace-nowrap">방법</th>
+                    <th className="px-5 py-2.5 font-medium whitespace-nowrap">청구월</th>
+                    <th className="px-5 py-2.5 font-medium">메모</th>
+                    <th className="px-5 py-2.5 font-medium whitespace-nowrap">등록일</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentHistory.map((p) => (
+                    <tr key={p.key} className="border-b border-border/50 last:border-0 hover:bg-bg-card-hover/30">
+                      <td className="px-5 py-2.5 text-text-primary font-medium whitespace-nowrap">{p.paymentDate}</td>
+                      <td className="px-5 py-2.5 text-text-primary">{p.depositor || "-"}</td>
+                      <td className="px-5 py-2.5 text-text-muted text-xs whitespace-nowrap">{p.bank || "-"}</td>
+                      <td className="px-5 py-2.5 text-right font-mono font-semibold text-text-primary whitespace-nowrap">
+                        {formatNumber(p.amount)}원
+                      </td>
+                      <td className="px-5 py-2.5 text-text-secondary">{p.companyNames.join(", ")}</td>
+                      <td className="px-5 py-2.5 text-text-muted text-xs whitespace-nowrap">
+                        {p.method ? (PAY_METHOD_LABELS[p.method] || p.method) : "-"}
+                      </td>
+                      <td className="px-5 py-2.5 text-text-muted text-xs whitespace-nowrap">
+                        {p.billingMonths.filter((m) => m !== "-").join(", ") || "-"}
+                        {p.billingMonths.length > 1 && (
+                          <span className="ml-1 inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold">분배</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-2.5 text-text-muted text-xs max-w-[200px] truncate" title={p.notes || ""}>{p.notes || ""}</td>
+                      <td className="px-5 py-2.5 text-text-muted text-xs whitespace-nowrap">{(p.createdAt || "").slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-border bg-bg-dark/20 text-xs text-text-secondary flex items-center justify-between flex-wrap gap-2">
+              <span>{historyDays === 0 ? "전체(최근 500건)" : `최근 ${historyDays}일`} · {paymentHistory.length}건</span>
+              <span>
+                합계 <span className="font-mono font-semibold text-text-primary">{formatNumber(paymentHistory.reduce((s, p) => s + p.amount, 0))}원</span>
+              </span>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 세금계산서 발행 모달 */}
       {taxModal && (
