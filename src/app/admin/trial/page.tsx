@@ -31,6 +31,17 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// 발급 건의 표시 상태: 체험 중(active·만료 전) / 만료 / 회수
+function grantState(g: Grant): "active" | "expired" | "revoked" {
+  if (g.status === "revoked") return "revoked";
+  if (g.status === "active" && new Date(g.expires_at).getTime() > Date.now()) return "active";
+  return "expired";
+}
+
+function daysLeft(iso: string): number {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
 export default function TrialAdminPage() {
   const [accounts, setAccounts] = useState<GuestAccount[]>([]);
   const [grants, setGrants] = useState<Grant[]>([]);
@@ -100,6 +111,7 @@ export default function TrialAdminPage() {
 
   const availableCount = accounts.filter((a) => a.is_active && a.status === "available").length;
   const assignedCount = accounts.filter((a) => a.status === "assigned").length;
+  const activeGrantCount = grants.filter((g) => grantState(g) === "active").length;
 
   return (
     <div>
@@ -110,7 +122,7 @@ export default function TrialAdminPage() {
       </div>
 
       {/* 요약 */}
-      <div className="grid grid-cols-3 gap-3 mb-8">
+      <div className="grid grid-cols-4 gap-3 mb-8">
         <div className="rounded-xl border border-border bg-bg-card p-4">
           <p className="text-xs text-text-muted mb-1">전체 계정</p>
           <p className="text-xl font-bold text-text-primary">{accounts.length}개</p>
@@ -122,6 +134,10 @@ export default function TrialAdminPage() {
         <div className="rounded-xl border border-border bg-bg-card p-4">
           <p className="text-xs text-text-muted mb-1">배정 중</p>
           <p className="text-xl font-bold text-yellow-400">{assignedCount}개</p>
+        </div>
+        <div className="rounded-xl border border-border bg-bg-card p-4">
+          <p className="text-xs text-text-muted mb-1">체험 중</p>
+          <p className="text-xl font-bold text-primary">{activeGrantCount}명</p>
         </div>
       </div>
 
@@ -222,13 +238,14 @@ export default function TrialAdminPage() {
             )}
           </div>
 
-          {/* 현재 배정 현황 */}
+          {/* 발급 현황 — 만료·회수 이력 포함 (접속 여부와 무관하게 발급된 아이디·기한이 모두 보임) */}
           <div className="rounded-2xl border border-border bg-bg-card overflow-hidden">
             <div className="px-5 py-3 border-b border-border bg-bg-dark/40 text-sm font-semibold text-text-primary flex items-center gap-2">
-              <Users size={15} /> 현재 체험 중 ({grants.length}명)
+              <Users size={15} /> 체험 발급 현황
+              <span className="text-xs text-text-muted font-normal">체험 중 {activeGrantCount}명 · 전체 {grants.length}건</span>
             </div>
             {grants.length === 0 ? (
-              <p className="px-5 py-8 text-center text-text-muted text-sm">진행 중인 체험이 없습니다.</p>
+              <p className="px-5 py-8 text-center text-text-muted text-sm">발급된 체험이 없습니다.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -237,30 +254,47 @@ export default function TrialAdminPage() {
                     <th className="px-5 py-2.5 font-medium">배정 계정</th>
                     <th className="px-5 py-2.5 font-medium">시작</th>
                     <th className="px-5 py-2.5 font-medium">만료</th>
+                    <th className="px-5 py-2.5 font-medium">상태</th>
                     <th className="px-5 py-2.5 font-medium text-right">관리</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {grants.map((g) => (
-                    <tr key={g.id} className="border-b border-border/50 last:border-0">
-                      <td className="px-5 py-3 text-text-primary">
-                        {g.members?.name || "(알 수 없음)"}
-                        {g.members?.email && <span className="text-xs text-text-muted ml-1">{g.members.email}</span>}
-                      </td>
-                      <td className="px-5 py-3 font-mono text-text-secondary">{g.meal_guest_accounts?.login_id || "-"}</td>
-                      <td className="px-5 py-3 text-text-muted">{formatDate(g.granted_at)}</td>
-                      <td className="px-5 py-3 text-text-secondary">{formatDate(g.expires_at)}</td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => revokeGrant(g)}
-                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-red-400 hover:border-red-400/40 transition-colors"
-                        >
-                          <RotateCcw size={13} /> 회수
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {grants.map((g) => {
+                    const state = grantState(g);
+                    return (
+                      <tr key={g.id} className={`border-b border-border/50 last:border-0 ${state !== "active" ? "opacity-60" : ""}`}>
+                        <td className="px-5 py-3 text-text-primary">
+                          {g.members?.name || "(알 수 없음)"}
+                          {g.members?.email && <span className="text-xs text-text-muted ml-1">{g.members.email}</span>}
+                        </td>
+                        <td className="px-5 py-3 font-mono text-text-secondary">{g.meal_guest_accounts?.login_id || "-"}</td>
+                        <td className="px-5 py-3 text-text-muted">{formatDate(g.granted_at)}</td>
+                        <td className="px-5 py-3 text-text-secondary">{formatDate(g.expires_at)}</td>
+                        <td className="px-5 py-3">
+                          {state === "active" ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">
+                              체험 중 · D-{daysLeft(g.expires_at)}
+                            </span>
+                          ) : state === "revoked" ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">회수됨</span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-text-muted/15 text-text-muted">만료</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {state === "active" && (
+                            <button
+                              type="button"
+                              onClick={() => revokeGrant(g)}
+                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-red-400 hover:border-red-400/40 transition-colors"
+                            >
+                              <RotateCcw size={13} /> 회수
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

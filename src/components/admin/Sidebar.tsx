@@ -91,16 +91,16 @@ export default function Sidebar() {
           key={item.href}
           href={item.href}
           onClick={() => setOpen(false)}
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
             isActive(item.href)
               ? "bg-primary/10 text-primary"
               : "text-text-secondary hover:bg-bg-card-hover hover:text-text-primary"
           }`}
         >
-          <item.icon size={20} />
+          <item.icon size={16} />
           <span className="flex-1">{item.label}</span>
           {item.href === "/admin/orders" && pendingPortalCount > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-bg-dark text-xs font-bold">
+            <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[18px] px-1 rounded-full bg-primary text-bg-dark text-[11px] font-bold">
               {pendingPortalCount}
             </span>
           )}
@@ -128,9 +128,9 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 min-h-screen border-r border-border bg-bg-dark p-4">
-        <div className="flex items-center gap-2 px-4 py-3 mb-6">
+      {/* Desktop Sidebar — 컴팩트 간격 + 화면 고정(sticky) + 넘치면 메뉴 영역만 스크롤 */}
+      <aside className="hidden lg:flex flex-col w-56 h-screen sticky top-0 border-r border-border bg-bg-dark p-3">
+        <div className="flex items-center gap-2 px-3 py-2 mb-2">
           <Link href="/" className="text-lg font-bold text-text-primary">
             밀포인트
           </Link>
@@ -138,26 +138,23 @@ export default function Sidebar() {
             관리자
           </span>
         </div>
-        <nav className="space-y-1 flex-1">
+        <nav className="space-y-0.5 flex-1 min-h-0 overflow-y-auto">
           <Nav />
         </nav>
-        <div className="border-t border-border pt-4 mt-4 space-y-1">
-          <div className="px-4 py-2 text-xs text-text-muted truncate">
-            admin
-          </div>
+        <div className="border-t border-border pt-2 mt-2 space-y-0.5">
           <Link
             href="/"
-            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] text-text-muted hover:text-text-primary transition-colors"
           >
-            <Home size={20} />
+            <Home size={16} />
             홈페이지로 돌아가기
           </Link>
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-400 hover:bg-red-400/10 transition-colors"
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] text-red-400 hover:bg-red-400/10 transition-colors"
           >
-            <LogOut size={20} />
+            <LogOut size={16} />
             로그아웃
           </button>
         </div>

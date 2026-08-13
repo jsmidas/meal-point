@@ -49,7 +49,8 @@ export default function PricesPage() {
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("products").select("*").eq("is_active", true).order("category").order("name"),
       db.from("company_prices").select("*"),
-      db.from("company_price_history").select("*").order("effective_from", { ascending: false }),
+      // created_at 2차 정렬: 같은 적용일로 재저장해도 항상 최신 저장분이 먼저 오도록
+      db.from("company_price_history").select("*").order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
     ]);
     setCompanies(cRes.data || []);
     setProducts(pRes.data || []);
@@ -66,6 +67,15 @@ export default function PricesPage() {
     setDirty({});
     setSaved(false);
   }, [mode]);
+
+  // 저장하지 않은 수정이 있으면 새로고침/창닫기 시 경고 (수정만 하고 저장을 안 눌러
+  // "변경했는데 반영 안 됨"으로 이어지는 실수 방지)
+  useEffect(() => {
+    if (Object.keys(dirty).length === 0) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   // 모드별 거래처 (sell=판매처/customer, cost=매입처/supplier, both는 양쪽 모두)
   const filteredCompanies = useMemo(() => {
@@ -87,7 +97,7 @@ export default function PricesPage() {
         map[`${cp.company_id}_${cp.product_id}`] = cp.custom_price;
       }
     } else {
-      // history는 effective_from desc 정렬되어 있음 → 첫 등장이 최신
+      // history는 effective_from desc, created_at desc 정렬되어 있음 → 첫 등장이 최신
       const seen = new Set<string>();
       for (const h of history) {
         if (h.price_type !== "cost") continue;
@@ -95,6 +105,7 @@ export default function PricesPage() {
         const k = `${h.company_id}_${h.product_id}`;
         if (seen.has(k)) continue;
         seen.add(k);
+        if (h.price === 0) continue; // 0원 = 기본가 복귀 마커 → 거래처별 단가 없음으로 취급
         map[k] = h.price;
       }
     }
@@ -149,7 +160,7 @@ export default function PricesPage() {
     }
     setSaving(true);
 
-    let hasError = false;
+    const errors: string[] = [];
 
     for (const k of keys) {
       const sepIdx = k.indexOf("_");
@@ -157,19 +168,24 @@ export default function PricesPage() {
       const productId = k.substring(sepIdx + 1);
       const newPrice = dirty[k];
 
-      // 1) history insert (가격 > 0 일 때만 신규 이력 기록)
-      if (newPrice > 0) {
+      // 빈값(0)으로 지운 셀: 기존 거래처별 단가가 있었다면 '기본가 복귀'(0원) 이력을 남긴다.
+      // 이 마커가 없으면 (특히 매입가 모드에서) 저장해도 이전 값이 그대로 되살아난다.
+      const isClear = newPrice === 0;
+      const hadCustom = `${companyId}_${productId}` in priceMap;
+
+      // 1) history insert — 신규 단가 또는 기본가 복귀 마커
+      if (newPrice > 0 || (isClear && hadCustom)) {
         const { error: hErr } = await dbInsert("company_price_history", {
           company_id: companyId,
           product_id: productId,
           price_type: mode,
           price: newPrice,
           effective_from: effectiveFrom,
-          notes: null,
+          notes: isClear ? "기본가 복귀" : null,
         });
         if (hErr) {
           console.error("이력 저장 실패:", hErr, { companyId, productId, newPrice });
-          hasError = true;
+          errors.push(hErr);
         }
       }
 
@@ -184,14 +200,14 @@ export default function PricesPage() {
           });
           if (error) {
             console.error("단가 저장 실패:", error);
-            hasError = true;
+            errors.push(error);
           }
         }
       }
     }
 
-    if (hasError) {
-      alert("일부 단가 저장에 실패했습니다. 콘솔을 확인해주세요.");
+    if (errors.length > 0) {
+      alert(`일부 단가 저장에 실패했습니다 (${errors.length}건):\n${errors[0]}`);
     }
 
     await load();
@@ -447,8 +463,9 @@ export default function PricesPage() {
                               value={displayVal}
                               placeholder={String(basePrice)}
                               onChange={(e) => handlePriceChange(company.id, p.id, e.target.value)}
+                              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                               aria-label={`${company.name} - ${p.name} ${modeLabel}`}
-                              className={`w-full px-1.5 py-1.5 text-center text-xs rounded border focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors ${
+                              className={`w-full px-1.5 py-1.5 text-center text-xs rounded border focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                                 isDirty
                                   ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-300 font-bold"
                                   : hasCustom
@@ -514,7 +531,7 @@ export default function PricesPage() {
                           {idx === 0 && <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold">현재 적용</span>}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-medium text-text-primary">
-                          {formatNumber(h.price)}원
+                          {h.price === 0 ? <span className="text-text-muted">기본가 복귀</span> : `${formatNumber(h.price)}원`}
                         </td>
                         <td className="px-4 py-2.5 text-text-muted text-xs">
                           {h.created_at ? h.created_at.slice(0, 10) : "-"}
@@ -614,7 +631,7 @@ export default function PricesPage() {
                           <td className="px-4 py-2 text-text-primary">{cName}</td>
                           <td className="px-4 py-2 text-text-primary">{pName}</td>
                           <td className="px-4 py-2 text-right font-mono font-medium text-text-primary whitespace-nowrap">
-                            {formatNumber(h.price)}원
+                            {h.price === 0 ? <span className="text-text-muted">기본가 복귀</span> : `${formatNumber(h.price)}원`}
                           </td>
                           <td className="px-4 py-2 text-text-muted text-xs whitespace-nowrap">
                             {h.created_at ? h.created_at.slice(0, 10) : "-"}
