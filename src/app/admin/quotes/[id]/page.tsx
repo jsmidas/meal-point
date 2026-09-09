@@ -23,6 +23,15 @@ const SEND_METHODS: Record<string, string> = {
   fax: "팩스",
 };
 
+/** 규격("300EA/박스")에서 박스당 수량을 읽어 개별(EA) 단가를 계산. 파싱 불가 시 null */
+function getEaPrice(item: { specification: string | null; unit_price: number }): number | null {
+  const m = item.specification?.match(/(\d[\d,]*)\s*EA/i);
+  if (!m) return null;
+  const qty = parseInt(m[1].replace(/,/g, ""), 10);
+  if (!qty || qty <= 0) return null;
+  return Math.round(item.unit_price / qty);
+}
+
 export default function QuoteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -325,6 +334,7 @@ export default function QuoteDetailPage() {
                 <th className="px-3 py-2.5 text-left text-xs">규격</th>
                 <th className="px-3 py-2.5 text-center text-xs w-16">단위</th>
                 <th className="px-3 py-2.5 text-right text-xs w-16">수량</th>
+                <th className="px-3 py-2.5 text-right text-xs w-20">개별단가</th>
                 <th className="px-3 py-2.5 text-right text-xs w-24">단가</th>
                 <th className="px-3 py-2.5 text-right text-xs w-28">금액</th>
               </tr>
@@ -337,17 +347,18 @@ export default function QuoteDetailPage() {
                   <td className="px-3 py-2 text-gray-500 border-b border-gray-100">{item.specification || ""}</td>
                   <td className="px-3 py-2 text-center text-gray-500 border-b border-gray-100">{item.unit}</td>
                   <td className="px-3 py-2 text-right border-b border-gray-100">{formatNumber(item.quantity)}</td>
+                  <td className="px-3 py-2 text-right text-gray-500 border-b border-gray-100">{(() => { const ea = getEaPrice(item); return ea !== null ? formatNumber(ea) : "—"; })()}</td>
                   <td className="px-3 py-2 text-right text-gray-600 border-b border-gray-100">{formatNumber(item.unit_price)}</td>
                   <td className="px-3 py-2 text-right font-bold border-b border-gray-100">{formatNumber(item.amount)}</td>
                 </tr>
               ))}
               {quote.quote_items.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-300">품목이 없습니다</td></tr>
+                <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-300">품목이 없습니다</td></tr>
               )}
             </tbody>
             <tfoot>
               <tr className="bg-blue-700 text-white font-bold">
-                <td colSpan={6} className="px-3 py-2.5 text-right text-sm">합 계</td>
+                <td colSpan={7} className="px-3 py-2.5 text-right text-sm">합 계</td>
                 <td className="px-3 py-2.5 text-right text-sm">{formatNumber(quote.total_amount)}원</td>
               </tr>
             </tfoot>
