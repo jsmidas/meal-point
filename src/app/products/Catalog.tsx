@@ -26,7 +26,7 @@ export default function Catalog() {
       const db = createClient() as any;
 
       const [{ data: prods }, { data: pages }] = await Promise.all([
-        // is_published 컬럼(v34) 미적용 상태에서도 동작하도록 select("*") 후 클라이언트에서 비게시 제외
+        // is_published 컬럼(v34) 미적용 상태에서도 동작하도록 select("*") 후 클라이언트에서 미게시 제외
         db.from("products").select("*").eq("is_active", true).order("name"),
         db.from("product_pages").select("product_id, hero_images").eq("is_published", true),
       ]);

@@ -64,7 +64,7 @@ export default function ProductDetailPage() {
         .eq("is_published", true)
         .maybeSingle();
 
-      // 홈페이지 비게시 상품은 직접 URL 접근도 차단
+      // 홈페이지 미게시 상품은 직접 URL 접근도 차단
       setProduct(prod && prod.is_published !== false ? prod : null);
       setPage(pg || null);
       setLoading(false);

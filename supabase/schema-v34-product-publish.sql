@@ -9,5 +9,5 @@ ALTER TABLE products
 
 COMMENT ON COLUMN products.is_published IS '홈페이지 게시 여부 (false면 판매는 하되 홈페이지에 노출하지 않음)';
 
--- (선택) 특정 상품을 바로 비게시로 전환하려면 예시처럼 실행
+-- (선택) 특정 상품을 바로 미게시로 전환하려면 예시처럼 실행
 -- UPDATE products SET is_published = false WHERE name = '다함 2도 인쇄필름';

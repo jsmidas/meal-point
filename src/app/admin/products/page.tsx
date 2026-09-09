@@ -222,7 +222,7 @@ export default function ProductsPage() {
                     </span>
                     {(product.is_published ?? true) === false && (
                       <span className="ml-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-bg-card text-text-muted border border-border">
-                        비게시
+                        미게시
                       </span>
                     )}
                   </td>
@@ -236,7 +236,7 @@ export default function ProductsPage() {
                             ? "text-emerald-400 hover:text-emerald-300"
                             : "text-text-muted hover:text-text-secondary"
                         }`}
-                        title={(product.is_published ?? true) ? "홈페이지 게시 중 — 클릭하면 숨김" : "홈페이지 비게시 — 클릭하면 게시"}
+                        title={(product.is_published ?? true) ? "홈페이지 게시 중 — 클릭하면 숨김" : "홈페이지 미게시 — 클릭하면 게시"}
                         aria-label="홈페이지 게시 토글"
                       >
                         {(product.is_published ?? true) ? <Globe size={16} /> : <EyeOff size={16} />}
