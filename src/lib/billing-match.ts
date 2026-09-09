@@ -72,7 +72,7 @@ export function matchSalesToStatements(
     const salesSum = sales.reduce((s, l) => s + l.amount, 0);
     const stmtSum = stmtAmounts.reduce((s, a) => s + a, 0);
     const diff = salesSum - stmtSum;
-    const productName = sales[0]?.product_name ?? "(품목)";
+    const productName = sales[0]?.product_name ?? statementItems.find((it) => normalize(it.product_name) === key)?.product_name ?? "(품목)";
 
     itemDiffs.push({
       product_name: productName,
@@ -126,6 +126,46 @@ export function matchSalesToStatements(
         if (line.id) matchedRows.set(line.id, "amount_mismatch");
       }
     }
+  }
+
+  // ── 2차: 상품명 변경 보정 ──
+  // 명세서 항목의 product_name은 발행 시점 스냅샷이라, 이후 상품명이 바뀌면
+  // (예: "8찬 바디" → "8찬 내피 v1") 이름 기준 매칭이 전부 실패한다.
+  // 출고 쪽에 없는 이름의 명세서 금액(고아 항목)과 누락 추정 출고 행을 금액으로 짝지어 보정한다.
+  const orphanStmt: { key: string; amount: number }[] = [];
+  for (const key of allKeys) {
+    if ((salesByItem.get(key) ?? []).length > 0) continue;
+    for (const amount of stmtByItem.get(key) ?? []) orphanStmt.push({ key, amount });
+  }
+  if (orphanStmt.length > 0 && missingLines.length > 0) {
+    const transfer = new Map<string, number>(); // key → 명세서 금액 가감
+    const stillMissing: SalesLineForMatch[] = [];
+    for (const line of missingLines) {
+      const idx = line.amount > 0 ? orphanStmt.findIndex((o) => o.amount === line.amount) : -1;
+      if (idx < 0) {
+        stillMissing.push(line);
+        continue;
+      }
+      const [orphan] = orphanStmt.splice(idx, 1);
+      if (line.id) matchedRows.set(line.id, "included");
+      const salesKey = normalize(line.product_name);
+      transfer.set(salesKey, (transfer.get(salesKey) ?? 0) + line.amount);
+      transfer.set(orphan.key, (transfer.get(orphan.key) ?? 0) - line.amount);
+    }
+    missingLines.length = 0;
+    missingLines.push(...stillMissing);
+    for (const d of itemDiffs) {
+      const delta = transfer.get(normalize(d.product_name));
+      if (!delta) continue;
+      d.statementAmount += delta;
+      d.diff = d.salesAmount - d.statementAmount;
+      d.status = d.diff === 0 ? "match" : d.diff > 0 ? "sales_more" : "statement_more";
+    }
+  }
+  // 이름만 남고 금액이 0이 된 고아 항목은 목록에서 제거
+  for (let i = itemDiffs.length - 1; i >= 0; i--) {
+    const d = itemDiffs[i];
+    if (d.salesAmount === 0 && d.statementAmount === 0 && !salesByItem.has(normalize(d.product_name))) itemDiffs.splice(i, 1);
   }
 
   const totalSalesAmount = itemDiffs.reduce((s, d) => s + d.salesAmount, 0);
