@@ -143,6 +143,12 @@ export default function SalesPage() {
 
   useEffect(() => {
     fetchData();
+    // 대시보드 바로가기(/admin/sales?new=1) 진입 시 판매 등록 모달 자동 오픈
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("new") === "1") {
+      resetForm();
+      setShowModal(true);
+      window.history.replaceState(null, "", "/admin/sales");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
