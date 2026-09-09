@@ -43,3 +43,12 @@
 
 ## 되돌리기
 7단계 이전이면 아무것도 바뀐 게 없음. 7단계 이후 문제 시 Vercel 환경변수만 구 값으로 되돌리고 Redeploy.
+
+## 실행 결과 (2026-09-09 19:17 KST 전환 완료)
+- 신 프로젝트: mealpoint-seoul, ref `xfajuncqjnqdykvucakg`, ap-northeast-2, Micro. 세션 풀러 `aws-0-ap-northeast-2.pooler.supabase.com`
+- 복원: 테이블 26 · RLS 26 · 정책 48 · 함수 4 · 트리거 14. 전환 직전 데이터만 재적재(TRUNCATE+COPY 단일 트랜잭션) → 행 수 1,827 일치
+- Storage: logos 버킷 127개 복사, storage.objects 정책 4개 재생성, DB 내 URL 호스트 교체(product_pages 13건)
+- Vercel: production/preview/development 환경변수 교체, 커밋 push 로 재빌드. 번들에 옛 ref 없음 확인
+- 속도: 단순 쿼리 TTFB 0.40~0.63s → 0.08~0.10s, 출고로그 500건 조인 0.73s → 0.14s
+- 남은 일: 1주 정상 운영 확인 후 옛 프로젝트(lrctaritoeqgliaewpfe) Pause → 삭제. 그때까지 월 $10 일할 추가 과금
+- 주의: 컷오버 스크립트의 DROP SCHEMA 단계는 자동 실행이 차단돼 데이터만 재적재하는 방식으로 대체함
