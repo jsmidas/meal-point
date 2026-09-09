@@ -1,6 +1,7 @@
 -- 이관 후 DB에 저장된 Storage URL 의 프로젝트 호스트 교체
--- 신 프로젝트 SQL Editor 에서 실행. OLD_REF / NEW_REF 를 실제 값으로 바꿀 것.
---   OLD: lrctaritoeqgliaewpfe   NEW: (신 프로젝트 ref)
+-- 신 프로젝트에서 실행. NEW_REF 를 실제 값으로 치환할 것 (cutover.sh 가 sed 로 치환).
+--   OLD: lrctaritoeqgliaewpfe   NEW: NEW_REF
+-- 컬럼 타입: hero_image/feature_image text, hero_images/feature_images text[], detail_images/gallery_images jsonb
 DO $$
 DECLARE
   old_host TEXT := 'https://lrctaritoeqgliaewpfe.supabase.co';
@@ -15,15 +16,17 @@ BEGIN
   UPDATE product_pages SET
     hero_image     = replace(hero_image, old_host, new_host),
     feature_image  = replace(feature_image, old_host, new_host),
-    hero_images    = coalesce((SELECT array_agg(replace(x, old_host, new_host)) FROM unnest(hero_images) x), '{}'),
-    feature_images = coalesce((SELECT array_agg(replace(x, old_host, new_host)) FROM unnest(feature_images) x), '{}'),
-    detail_images  = coalesce((SELECT array_agg(replace(x, old_host, new_host)) FROM unnest(detail_images) x), '{}'),
-    gallery_images = coalesce((SELECT array_agg(replace(x, old_host, new_host)) FROM unnest(gallery_images) x), '{}');
+    hero_images    = replace(hero_images::text, old_host, new_host)::text[],
+    feature_images = replace(feature_images::text, old_host, new_host)::text[],
+    detail_images  = replace(detail_images::text, old_host, new_host)::jsonb,
+    gallery_images = replace(gallery_images::text, old_host, new_host)::jsonb;
 END $$;
 
--- 검증: 옛 호스트가 남아 있으면 0 이 아니어야 함
-SELECT 'company_info' t, count(*) FROM company_info WHERE logo_image_url LIKE '%lrctaritoeqgliaewpfe%' OR stamp_image_url LIKE '%lrctaritoeqgliaewpfe%'
+-- 검증: 옛 호스트가 남아 있으면 count 가 0 이 아님
+SELECT 'company_info' AS t, count(*) FROM company_info WHERE logo_image_url LIKE '%lrctaritoeqgliaewpfe%' OR stamp_image_url LIKE '%lrctaritoeqgliaewpfe%'
 UNION ALL SELECT 'products', count(*) FROM products WHERE image_url LIKE '%lrctaritoeqgliaewpfe%'
 UNION ALL SELECT 'companies', count(*) FROM companies WHERE biz_cert_image_url LIKE '%lrctaritoeqgliaewpfe%'
 UNION ALL SELECT 'popups', count(*) FROM popups WHERE image_url LIKE '%lrctaritoeqgliaewpfe%'
-UNION ALL SELECT 'product_pages', count(*) FROM product_pages WHERE array_to_string(hero_images || feature_images || detail_images || gallery_images, ',') LIKE '%lrctaritoeqgliaewpfe%';
+UNION ALL SELECT 'product_pages', count(*) FROM product_pages
+  WHERE coalesce(hero_image,'') || coalesce(feature_image,'') || hero_images::text || feature_images::text || detail_images::text || gallery_images::text LIKE '%lrctaritoeqgliaewpfe%'
+UNION ALL SELECT 'product_pages_new_host', count(*) FROM product_pages WHERE hero_images::text LIKE '%NEW_REF%';

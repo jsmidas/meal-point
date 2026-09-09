@@ -50,3 +50,9 @@ supabase/.temp/
 
 # playwright mcp 페이지 스냅샷 (일회성 산출물)
 .playwright-mcp/
+*.yml
+reset-*.png
+supabase-signin.png
+
+# DB 덤프 (운영 데이터, 절대 커밋 금지)
+/dump/
