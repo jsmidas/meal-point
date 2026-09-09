@@ -29,7 +29,8 @@ export default function Products() {
 
       // 활성 상품 + 발행된 상세페이지 조회
       const [{ data: prods }, { data: pages }] = await Promise.all([
-        db.from("products").select("id, name, category, image_url").eq("is_active", true).neq("category", "ticket_printer").order("name"),
+        // is_published 컬럼(v34) 미적용 상태에서도 동작하도록 select("*") 후 클라이언트에서 비게시 제외
+        db.from("products").select("*").eq("is_active", true).neq("category", "ticket_printer").order("name"),
         db.from("product_pages").select("product_id, hero_images").eq("is_published", true),
       ]);
 
@@ -39,7 +40,9 @@ export default function Products() {
         publishedMap.set(pg.product_id, pg.hero_images || []);
       }
 
-      const items: ProductItem[] = (prods || []).map((p: { id: string; name: string; category: string; image_url: string | null }) => {
+      const items: ProductItem[] = (prods || [])
+        .filter((p: { is_published?: boolean | null }) => p.is_published !== false)
+        .map((p: { id: string; name: string; category: string; image_url: string | null }) => {
         const published = publishedMap.has(p.id);
         // 이미지 우선순위: 상세페이지 히어로 → 상품 이미지
         const heroImages = publishedMap.get(p.id);

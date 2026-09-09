@@ -26,7 +26,8 @@ export default function Catalog() {
       const db = createClient() as any;
 
       const [{ data: prods }, { data: pages }] = await Promise.all([
-        db.from("products").select("id, name, category, image_url").eq("is_active", true).order("name"),
+        // is_published 컬럼(v34) 미적용 상태에서도 동작하도록 select("*") 후 클라이언트에서 비게시 제외
+        db.from("products").select("*").eq("is_active", true).order("name"),
         db.from("product_pages").select("product_id, hero_images").eq("is_published", true),
       ]);
 
@@ -35,7 +36,9 @@ export default function Catalog() {
         publishedMap.set(pg.product_id, pg.hero_images || []);
       }
 
-      const items: CatalogItem[] = (prods || []).map((p: { id: string; name: string; category: string; image_url: string | null }) => {
+      const items: CatalogItem[] = (prods || [])
+        .filter((p: { is_published?: boolean | null }) => p.is_published !== false)
+        .map((p: { id: string; name: string; category: string; image_url: string | null }) => {
         const published = publishedMap.has(p.id);
         const heroImages = publishedMap.get(p.id);
         const image = (heroImages && heroImages.length > 0 ? heroImages[0] : null) || p.image_url || "/images/placeholder.jpg";

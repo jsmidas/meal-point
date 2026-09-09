@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { dbDelete } from "@/lib/db";
+import { dbDelete, dbUpdate } from "@/lib/db";
 import type { Product } from "@/lib/supabase/types";
-import { Plus, Search, Edit2, Trash2, Package, FileImage } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Package, FileImage, Globe, EyeOff } from "lucide-react";
 import ProductModal from "./ProductModal";
 import Link from "next/link";
 
@@ -52,6 +52,17 @@ export default function ProductsPage() {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** 홈페이지 게시 여부 토글 — 판매(is_active)와 별개로 랜딩·카탈로그 노출만 제어 */
+  async function togglePublished(product: Product) {
+    const next = !(product.is_published ?? true);
+    setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, is_published: next } : p)));
+    const res = await dbUpdate("products", { is_published: next }, { id: product.id });
+    if (res.error) {
+      alert(`게시 상태 변경 실패: ${res.error}`);
+      fetchProducts();
+    }
+  }
 
   async function handleDelete(id: string) {
     if (!confirm("정말 삭제하시겠습니까?")) return;
@@ -209,9 +220,27 @@ export default function ProductsPage() {
                     >
                       {product.is_active ? "판매중" : "중단"}
                     </span>
+                    {(product.is_published ?? true) === false && (
+                      <span className="ml-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-bg-card text-text-muted border border-border">
+                        비게시
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => togglePublished(product)}
+                        className={`p-2 rounded-lg hover:bg-bg-card transition-colors ${
+                          (product.is_published ?? true)
+                            ? "text-emerald-400 hover:text-emerald-300"
+                            : "text-text-muted hover:text-text-secondary"
+                        }`}
+                        title={(product.is_published ?? true) ? "홈페이지 게시 중 — 클릭하면 숨김" : "홈페이지 비게시 — 클릭하면 게시"}
+                        aria-label="홈페이지 게시 토글"
+                      >
+                        {(product.is_published ?? true) ? <Globe size={16} /> : <EyeOff size={16} />}
+                      </button>
                       <Link
                         href={`/admin/pages/${product.id}`}
                         className="p-2 rounded-lg hover:bg-bg-card text-text-muted hover:text-accent transition-colors"

@@ -32,6 +32,7 @@ const emptyForm = {
   selling_price: 0,
   description: "",
   is_active: true,
+  is_published: true,
 };
 
 export default function ProductModal({ product, onClose, onSaved }: Props) {
@@ -47,6 +48,7 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
           selling_price: product.selling_price,
           description: product.description || "",
           is_active: product.is_active,
+          is_published: product.is_published ?? true,
         }
       : emptyForm,
   );
@@ -254,6 +256,17 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
               />
               <label htmlFor="is_active" className="text-sm text-text-secondary">
                 판매중
+              </label>
+              <input
+                type="checkbox"
+                id="is_published"
+                name="is_published"
+                checked={form.is_published}
+                onChange={handleChange}
+                className="accent-primary ml-3"
+              />
+              <label htmlFor="is_published" className="text-sm text-text-secondary">
+                홈페이지 게시
               </label>
             </div>
             <div className="flex gap-3">
