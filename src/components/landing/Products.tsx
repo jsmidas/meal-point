@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { productGroups, categoryLabels, type GroupKey } from "@/lib/categories";
 import ProductCard, { type ProductCardItem } from "@/components/ProductCard";
+import { useCompanyPricing } from "@/lib/use-company-pricing";
 
 interface ProductItem extends ProductCardItem {
   category: string;
@@ -21,6 +22,7 @@ export default function Products() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const pricing = useCompanyPricing();
 
   useEffect(() => {
     async function load() {
@@ -94,6 +96,11 @@ export default function Products() {
           <p className="text-text-secondary">
             다양한 급식 용기 제품을 확인하세요.
           </p>
+          {pricing.isApprovedCompany && (
+            <p className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-medium">
+              ✓ {pricing.auth.company_name} 승인 업체 단가가 표시됩니다 (부가세 별도)
+            </p>
+          )}
         </div>
 
         {/* 대분류 그룹 탭 */}
@@ -167,7 +174,7 @@ export default function Products() {
           <>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {visible.map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard key={product.id} product={product} price={pricing.prices[product.id] ?? null} />
               ))}
             </div>
 

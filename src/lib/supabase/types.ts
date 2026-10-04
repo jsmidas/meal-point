@@ -707,6 +707,12 @@ export type Database = {
           is_active: boolean;
           company_id: string | null;
           role: string;
+          approval_status: string; // none | pending | approved | rejected
+          biz_number: string | null;
+          biz_cert_path: string | null;
+          approval_requested_at: string | null;
+          approved_at: string | null;
+          reject_reason: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -722,6 +728,12 @@ export type Database = {
           is_active?: boolean;
           company_id?: string | null;
           role?: string;
+          approval_status?: string;
+          biz_number?: string | null;
+          biz_cert_path?: string | null;
+          approval_requested_at?: string | null;
+          approved_at?: string | null;
+          reject_reason?: string | null;
         };
         Update: {
           login_id?: string | null;
@@ -735,6 +747,12 @@ export type Database = {
           is_active?: boolean;
           company_id?: string | null;
           role?: string;
+          approval_status?: string;
+          biz_number?: string | null;
+          biz_cert_path?: string | null;
+          approval_requested_at?: string | null;
+          approved_at?: string | null;
+          reject_reason?: string | null;
         };
       };
       company_price_history: {

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Menu, X, LogOut } from "lucide-react";
+import { Menu, X, LogOut, BadgeCheck, Clock } from "lucide-react";
+import { isAdminRole } from "@/lib/auth/roles";
 
 const navLinks = [
   { href: "#products", label: "제품" },
@@ -17,9 +18,13 @@ export default function Header() {
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [auth, setAuth] = useState<{ authenticated: boolean; role?: string; name?: string }>({
-    authenticated: false,
-  });
+  const [auth, setAuth] = useState<{
+    authenticated: boolean;
+    role?: string;
+    name?: string | null;
+    company_name?: string | null;
+    approval_status?: string;
+  }>({ authenticated: false });
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,7 +61,36 @@ export default function Header() {
     router.push("/");
   }
 
-  const displayName = auth.role === "admin" ? "관리자" : auth.name || "회원";
+  const displayName = isAdminRole(auth.role) ? "관리자" : auth.name || "회원";
+  const isApprovedCompany = auth.authenticated && auth.role === "company" && !!auth.company_name;
+  const isPending = auth.authenticated && auth.role === "member" && auth.approval_status === "pending";
+  const canRequest = auth.authenticated && auth.role === "member" && !isPending;
+
+  /** 승인 업체 배지 + 업체명 / 승인 대기 / 승인 요청 링크 */
+  const statusBadge = (compact = false) => {
+    if (isApprovedCompany) {
+      return (
+        <span className={`inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 text-emerald-400 font-semibold ${compact ? "px-2.5 py-1 text-xs" : "px-3 py-1 text-xs"}`} title="관리자 승인을 받은 업체입니다">
+          <BadgeCheck size={14} /> 승인 업체 · {auth.company_name}
+        </span>
+      );
+    }
+    if (isPending) {
+      return (
+        <Link href="/account" className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/10 text-amber-400 text-xs font-semibold" title="관리자 승인 대기 중">
+          <Clock size={14} /> 승인 대기
+        </Link>
+      );
+    }
+    if (canRequest) {
+      return (
+        <Link href="/account" className="inline-flex items-center px-3 py-1 rounded-full border border-primary/40 text-primary text-xs font-semibold hover:bg-primary/10 transition-colors">
+          업체 승인 요청
+        </Link>
+      );
+    }
+    return null;
+  };
   // 거래처(발주 계정)로 로그인돼 있으면 주문 전용 페이지로, 아니면 로그인(→ 메인) 거쳐 진입
   const orderHref =
     auth.authenticated && auth.role === "company" ? "/portal/order/new" : "/login";
@@ -125,7 +159,7 @@ export default function Header() {
           </Link>
           {auth.authenticated ? (
             <div className="flex items-center gap-3">
-              {auth.role === "admin" && (
+              {isAdminRole(auth.role) && (
                 <Link
                   href="/admin"
                   className="text-sm text-primary hover:underline"
@@ -133,9 +167,10 @@ export default function Header() {
                   관리자
                 </Link>
               )}
-              <span className="text-sm text-text-primary font-medium">
+              {statusBadge()}
+              <Link href={isAdminRole(auth.role) ? "/admin" : "/account"} className="text-sm text-text-primary font-medium hover:text-primary transition-colors">
                 {displayName}님
-              </span>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="text-text-muted hover:text-red-400 transition-colors"
@@ -145,12 +180,20 @@ export default function Header() {
               </button>
             </div>
           ) : (
-            <Link
-              href="/login"
-              className="text-sm px-4 py-2 rounded-full border border-border text-text-secondary hover:text-primary hover:border-primary transition-colors"
-            >
-              로그인
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="text-sm px-4 py-2 rounded-full border border-border text-text-secondary hover:text-primary hover:border-primary transition-colors"
+              >
+                로그인
+              </Link>
+              <Link
+                href="/register"
+                className="text-sm px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+              >
+                회원가입
+              </Link>
+            </div>
           )}
         </nav>
 
@@ -186,7 +229,7 @@ export default function Header() {
           </Link>
           {auth.authenticated ? (
             <>
-              {auth.role === "admin" && (
+              {isAdminRole(auth.role) && (
                 <Link
                   href="/admin"
                   className="block py-3 text-primary"
@@ -195,10 +238,17 @@ export default function Header() {
                   관리자 페이지
                 </Link>
               )}
+              <div className="py-2" onClick={() => setMobileOpen(false)}>
+                {statusBadge(true)}
+              </div>
               <div className="flex items-center justify-between py-3">
-                <span className="text-text-primary font-medium">
+                <Link
+                  href={isAdminRole(auth.role) ? "/admin" : "/account"}
+                  className="text-text-primary font-medium"
+                  onClick={() => setMobileOpen(false)}
+                >
                   {displayName}님
-                </span>
+                </Link>
                 <button
                   onClick={() => {
                     setMobileOpen(false);
@@ -217,6 +267,15 @@ export default function Header() {
               onClick={() => setMobileOpen(false)}
             >
               로그인
+            </Link>
+          )}
+          {!auth.authenticated && (
+            <Link
+              href="/register"
+              className="block py-3 text-primary hover:underline"
+              onClick={() => setMobileOpen(false)}
+            >
+              회원가입 (업체 승인 요청)
             </Link>
           )}
         </nav>

@@ -56,8 +56,9 @@ export default function Sidebar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pendingPortalCount, setPendingPortalCount] = useState(0);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
-  // 미처리 포털 발주(승인 대기) 수 — 주문 관리 메뉴 알림 배지
+  // 미처리 포털 발주(승인 대기) 수 — 주문 관리 메뉴 알림 배지 / 가입 승인 대기 수 — 발주 계정 배지
   useEffect(() => {
     const supabase = createClient();
     async function loadPending() {
@@ -67,6 +68,11 @@ export default function Sidebar() {
         .eq("source", "portal")
         .eq("status", "pending");
       setPendingPortalCount(count || 0);
+      try {
+        const res = await fetch("/api/admin/accounts?pending=1");
+        const data = await res.json();
+        if (data.ok) setPendingApprovalCount((data.members as { approval_status: string }[]).filter((m) => m.approval_status === "pending").length);
+      } catch { /* 무시 */ }
     }
     loadPending();
     // 경로 이동 시(승인/반려 후) 다시 집계
@@ -102,6 +108,11 @@ export default function Sidebar() {
           {item.href === "/admin/orders" && pendingPortalCount > 0 && (
             <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[18px] px-1 rounded-full bg-primary text-bg-dark text-[11px] font-bold">
               {pendingPortalCount}
+            </span>
+          )}
+          {item.href === "/admin/accounts" && pendingApprovalCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[18px] px-1 rounded-full bg-primary text-bg-dark text-[11px] font-bold" title="가입 승인 대기">
+              {pendingApprovalCount}
             </span>
           )}
         </Link>

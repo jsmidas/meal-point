@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { productGroups, categoryLabels, type GroupKey } from "@/lib/categories";
 import ProductCard, { type ProductCardItem } from "@/components/ProductCard";
+import { useCompanyPricing } from "@/lib/use-company-pricing";
 
 interface CatalogItem extends ProductCardItem {
   category: string;
@@ -19,6 +20,7 @@ export default function Catalog() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [products, setProducts] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const pricing = useCompanyPricing();
 
   useEffect(() => {
     async function load() {
@@ -183,10 +185,15 @@ export default function Catalog() {
         <>
           <p className="text-sm text-text-muted mb-5">
             총 <span className="text-text-primary font-semibold">{filtered.length}</span>개 제품
+            {pricing.isApprovedCompany && (
+              <span className="ml-3 inline-flex items-center px-3 py-1 rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-medium">
+                ✓ {pricing.auth.company_name} 승인 업체 단가 표시 중
+              </span>
+            )}
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {visible.map((product) => (
-              <ProductCard key={product.id} product={product} contactHref="/#contact" />
+              <ProductCard key={product.id} product={product} contactHref="/#contact" price={pricing.prices[product.id] ?? null} />
             ))}
           </div>
 

@@ -29,6 +29,22 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // /account — 로그인한 회원(업체 승인 요청·내 정보). 관리자 계정은 대상이 아니므로 관리자 화면으로
+  if (path === "/account") {
+    if (!session) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.search = "?next=/account";
+      return NextResponse.redirect(url);
+    }
+    if (isAdminRole(session.role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
   // /login, /register — 이미 로그인된 상태면 역할별 진입 경로로
   if (path === "/login" || path === "/register") {
     if (session) {
@@ -50,5 +66,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/portal/:path*", "/login", "/register"],
+  matcher: ["/admin/:path*", "/portal/:path*", "/account", "/login", "/register"],
 };

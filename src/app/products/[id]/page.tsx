@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, ProductPage, KeyPoint, SpecItem, ProcessStep, FigmaEmbed } from "@/lib/supabase/types";
 import Link from "next/link";
+import { useCompanyPricing } from "@/lib/use-company-pricing";
 import {
   ArrowLeft,
   Shield,
@@ -46,6 +47,7 @@ export default function ProductDetailPage() {
   const [page, setPage] = useState<ProductPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [galleryIdx, setGalleryIdx] = useState(0);
+  const pricing = useCompanyPricing();
 
   useEffect(() => {
     async function fetchData() {
@@ -109,6 +111,8 @@ export default function ProductDetailPage() {
     );
   }
 
+  const companyPrice: number | null = pricing.prices[product.id] ?? null;
+  const boxQty = product.box_quantity ?? 1;
   const keyPoints = (page.key_points || []) as KeyPoint[];
   const specs = (page.specs || []) as SpecItem[];
   const processSteps = (page.process_steps || []) as ProcessStep[];
@@ -150,25 +154,65 @@ export default function ProductDetailPage() {
           </div>
         )}
         {/* Price (히어로 바로 아래) */}
-        {product.selling_price > 0 && (
+        {(product.selling_price > 0 || companyPrice != null) && (
           <div className="py-10 px-6 border-t border-border">
             <div className="max-w-6xl mx-auto">
-              <div className="inline-flex flex-wrap items-end gap-6 px-8 py-6 rounded-2xl border border-border bg-bg-card">
-                <div>
-                  <p className="text-xs text-text-muted mb-1">EA 단가 <span className="text-amber-400">(부가세 별도)</span></p>
-                  <p className="text-3xl font-black text-text-primary">
-                    {product.selling_price.toLocaleString()}<span className="text-lg font-medium text-text-secondary ml-1">원</span>
-                  </p>
-                </div>
-                {(product.box_quantity ?? 1) > 1 && (
-                  <div className="border-l border-border pl-6">
-                    <p className="text-xs text-text-muted mb-1">박스 단가 <span className="text-text-muted">({product.box_quantity}EA/박스)</span></p>
-                    <p className="text-2xl font-bold text-primary">
-                      {(product.selling_price * product.box_quantity).toLocaleString()}<span className="text-sm font-medium text-text-secondary ml-1">원</span>
-                    </p>
-                  </div>
+              <div className={`inline-flex flex-wrap items-end gap-6 px-8 py-6 rounded-2xl border bg-bg-card ${companyPrice != null ? "border-emerald-400/40" : "border-border"}`}>
+                {companyPrice != null ? (
+                  <>
+                    <div>
+                      <p className="text-xs text-emerald-400 mb-1">
+                        ✓ {pricing.auth.company_name || "승인 업체"} 단가 <span className="text-amber-400">(부가세 별도)</span>
+                      </p>
+                      <p className="text-3xl font-black text-primary">
+                        {companyPrice.toLocaleString()}<span className="text-lg font-medium text-text-secondary ml-1">원</span>
+                        <span className="text-sm font-medium text-text-muted ml-2">/ EA</span>
+                      </p>
+                    </div>
+                    {boxQty > 1 && (
+                      <div className="border-l border-border pl-6">
+                        <p className="text-xs text-text-muted mb-1">박스 단가 <span className="text-text-muted">({boxQty}EA/박스)</span></p>
+                        <p className="text-2xl font-bold text-text-primary">
+                          {(companyPrice * boxQty).toLocaleString()}<span className="text-sm font-medium text-text-secondary ml-1">원</span>
+                        </p>
+                      </div>
+                    )}
+                    {product.selling_price > 0 && product.selling_price !== companyPrice && (
+                      <p className="text-[11px] text-text-muted">기본 단가 {product.selling_price.toLocaleString()}원</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-xs text-text-muted mb-1">EA 단가 <span className="text-amber-400">(부가세 별도)</span></p>
+                      <p className="text-3xl font-black text-text-primary">
+                        {product.selling_price.toLocaleString()}<span className="text-lg font-medium text-text-secondary ml-1">원</span>
+                      </p>
+                    </div>
+                    {boxQty > 1 && (
+                      <div className="border-l border-border pl-6">
+                        <p className="text-xs text-text-muted mb-1">박스 단가 <span className="text-text-muted">({boxQty}EA/박스)</span></p>
+                        <p className="text-2xl font-bold text-primary">
+                          {(product.selling_price * boxQty).toLocaleString()}<span className="text-sm font-medium text-text-secondary ml-1">원</span>
+                        </p>
+                      </div>
+                    )}
+                    {!pricing.loading && !pricing.auth.authenticated && (
+                      <Link href="/register" className="text-[11px] text-primary hover:underline">
+                        ※ 회원가입 후 승인되면 업체 단가가 표시됩니다 →
+                      </Link>
+                    )}
+                    {!pricing.loading && pricing.auth.authenticated && pricing.auth.role === "member" && pricing.auth.approval_status === "pending" && (
+                      <p className="text-[11px] text-amber-400">※ 업체 승인 대기 중입니다. 승인되면 업체 단가가 표시됩니다.</p>
+                    )}
+                    {!pricing.loading && pricing.auth.authenticated && pricing.auth.role === "member" && pricing.auth.approval_status !== "pending" && (
+                      <Link href="/account" className="text-[11px] text-primary hover:underline">
+                        ※ 사업자등록증을 올리고 업체 승인을 요청하면 업체 단가가 표시됩니다 →
+                      </Link>
+                    )}
+                    {pricing.loading && <p className="text-[11px] text-text-muted">※ 거래처별 단가는 별도 협의</p>}
+                  </>
                 )}
-                <p className="text-[11px] text-text-muted">※ 거래처별 단가는 별도 협의</p>
               </div>
             </div>
           </div>

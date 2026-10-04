@@ -13,9 +13,12 @@ export interface ProductCardItem {
 export default function ProductCard({
   product,
   contactHref = "#contact",
+  price,
 }: {
   product: ProductCardItem;
   contactHref?: string;
+  /** 승인된 업체에만 전달되는 적용 단가(EA, 부가세 별도) */
+  price?: number | null;
 }) {
   const Card = (
     <div className="group rounded-2xl border border-border bg-bg-card overflow-hidden hover:border-border-light hover:bg-bg-card-hover transition-all h-full">
@@ -47,7 +50,14 @@ export default function ProductCard({
         <h4 className="text-lg font-semibold text-text-primary mb-1">
           {product.name}
         </h4>
-        <p className="text-sm text-text-muted mb-3">가격문의</p>
+        {price != null ? (
+          <p className="mb-3">
+            <span className="text-lg font-bold text-primary">{price.toLocaleString()}원</span>
+            <span className="text-xs text-text-muted ml-1.5">EA · 업체 단가 · VAT 별도</span>
+          </p>
+        ) : (
+          <p className="text-sm text-text-muted mb-3">가격문의</p>
+        )}
         <span className="inline-flex items-center text-sm font-medium text-primary">
           {product.href ? "상세보기" : "문의하기"}
         </span>

@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const members = db.from("members") as any;
   const { data: member } = await members
-    .select("id, login_id, name, is_active, role, company_id, password_hash")
+    .select("id, login_id, name, is_active, role, company_id, password_hash, companies(name)")
     .eq("login_id", id)
     .maybeSingle();
 
@@ -149,20 +149,61 @@ export async function POST(request: NextRequest) {
   }
 
   clearFails(key);
-  const role: SessionRole = member.role === "company" ? "company" : "member";
-  const token = await signSession({ role, id: member.id, name: member.name, company_id: member.company_id || null });
-  const response = NextResponse.json({ ok: true, role, name: member.name });
+  const role: SessionRole = member.role === "company" && member.company_id ? "company" : "member";
+  const companyName: string | null = member.companies?.name ?? null;
+  const token = await signSession({ role, id: member.id, name: member.name, company_id: member.company_id || null, company_name: companyName });
+  const response = NextResponse.json({ ok: true, role, name: member.name, company_name: companyName });
   setSessionCookie(response, token);
   return response;
 }
 
+/**
+ * 현재 로그인 상태.
+ * 회원/발주 계정은 DB 의 최신 상태(승인 여부·연결 거래처)를 반영하고, 바뀌었으면 세션 쿠키를 다시 발급한다.
+ * → 관리자가 승인하면 회원이 다시 로그인하지 않아도 다음 요청부터 업체 단가가 보인다.
+ */
 export async function GET(request: NextRequest) {
   const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!session) return NextResponse.json({ authenticated: false });
-  return NextResponse.json({
-    authenticated: true,
-    role: session.role,
-    name: session.name || null,
-    company_id: session.company_id || null,
-  });
+
+  const base = { authenticated: true, role: session.role, name: session.name || null, company_id: session.company_id || null, company_name: session.company_name || null };
+  if (!session.id || (session.role !== "member" && session.role !== "company")) {
+    return NextResponse.json(base);
+  }
+
+  try {
+    const db = createAdminClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: m, error } = await (db.from("members") as any)
+      .select("id, name, is_active, role, company_id, approval_status, biz_cert_path, company_name, companies(name)")
+      .eq("id", session.id)
+      .maybeSingle();
+    if (error || !m) return NextResponse.json(base); // 마이그레이션 미적용 등 — 세션 정보로 응답
+
+    if (!m.is_active) {
+      const res = NextResponse.json({ authenticated: false });
+      res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
+      return res;
+    }
+    const role: SessionRole = m.role === "company" && m.company_id ? "company" : "member";
+    const companyName: string | null = m.companies?.name ?? null;
+    const res = NextResponse.json({
+      authenticated: true,
+      role,
+      name: m.name,
+      company_id: m.company_id || null,
+      company_name: companyName,
+      member_company_name: m.company_name || null,
+      approval_status: m.approval_status || "none",
+      has_cert: !!m.biz_cert_path,
+    });
+    const changed = role !== session.role || (m.company_id || null) !== (session.company_id || null) || companyName !== (session.company_name || null) || m.name !== session.name;
+    if (changed) {
+      const token = await signSession({ role, id: m.id, name: m.name, company_id: m.company_id || null, company_name: companyName });
+      res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+    }
+    return res;
+  } catch {
+    return NextResponse.json(base);
+  }
 }

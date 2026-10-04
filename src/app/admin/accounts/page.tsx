@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company } from "@/lib/supabase/types";
 import {
+  FileText,
   KeyRound,
   Plus,
   Power,
   Search,
   Trash2,
+  UserCheck,
   Users,
 } from "lucide-react";
 
@@ -22,8 +24,27 @@ interface Account {
   companies: { name: string } | null;
 }
 
+interface PendingMember {
+  id: string;
+  login_id: string | null;
+  name: string;
+  company_name: string | null;
+  biz_number: string | null;
+  phone: string | null;
+  email: string | null;
+  approval_status: string;
+  biz_cert_path: string | null;
+  approval_requested_at: string | null;
+  reject_reason: string | null;
+  provider: string;
+}
+
+const NEW_COMPANY = "__new__";
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [pending, setPending] = useState<PendingMember[]>([]);
+  const [approveChoice, setApproveChoice] = useState<Record<string, string>>({});
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,10 +88,47 @@ export default function AccountsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadPending = useCallback(async () => {
+    const res = await fetch("/api/admin/accounts?pending=1");
+    const data = await res.json();
+    if (data.ok) setPending(data.members);
+  }, []);
+
   useEffect(() => {
     loadAccounts();
     loadCompanies();
-  }, [loadAccounts, loadCompanies]);
+    loadPending();
+  }, [loadAccounts, loadCompanies, loadPending]);
+
+  async function viewCert(m: PendingMember) {
+    const res = await fetch(`/api/admin/accounts?cert=${m.id}`);
+    const data = await res.json();
+    if (data.ok && data.url) window.open(data.url, "_blank", "noopener");
+    else setError(data.error || "사업자등록증을 열 수 없습니다.");
+  }
+
+  async function handleApprove(m: PendingMember) {
+    const choice = approveChoice[m.id] ?? NEW_COMPANY;
+    const target = choice === NEW_COMPANY ? `새 거래처 '${m.company_name}'을(를) 만들어` : `거래처 '${companies.find((c) => c.id === choice)?.name}'에`;
+    if (!confirm(`${m.company_name || m.name} 회원을 ${target} 연결하고 승인합니다.\n승인하면 이 회원은 상품마다 해당 거래처 단가를 보게 됩니다.`)) return;
+    const ok = await post(
+      choice === NEW_COMPANY ? { action: "approve", id: m.id, create_company: true } : { action: "approve", id: m.id, company_id: choice },
+    );
+    if (ok) {
+      loadPending();
+      loadAccounts();
+      if (choice === NEW_COMPANY) loadCompanies();
+    }
+  }
+
+  async function handleReject(m: PendingMember) {
+    const reason = prompt(`'${m.company_name || m.name}' 승인을 거절합니다. 사유(회원에게 표시됨, 생략 가능):`);
+    if (reason === null) return;
+    if (await post({ action: "reject", id: m.id, reason })) loadPending();
+  }
+
+  const pendingOnly = pending.filter((m) => m.approval_status === "pending");
+  const rejectedOnly = pending.filter((m) => m.approval_status === "rejected");
 
   async function post(body: Record<string, unknown>) {
     setBusy(true);
@@ -217,6 +275,91 @@ export default function AccountsPage() {
           </div>
         </div>
       )}
+
+      {/* 가입 승인 대기 */}
+      <div className="mb-8 rounded-2xl border border-amber-400/30 bg-bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <UserCheck size={16} className="text-amber-400" /> 가입 승인 대기
+            <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-full bg-amber-400 text-bg-dark text-[11px] font-bold">{pendingOnly.length}</span>
+          </h2>
+          <span className="text-xs text-text-muted">홈페이지에서 회원가입한 업체 — 사업자등록증 확인 후 거래처에 연결해 승인하세요.</span>
+        </div>
+        {pendingOnly.length === 0 && rejectedOnly.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-text-muted">승인 대기 중인 가입 요청이 없습니다.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">업체명</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">사업자번호</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">담당자 / 아이디</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">연락처</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">요청일</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">등록증</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">연결 거래처</th>
+                  <th className="text-right px-4 py-2.5 text-text-secondary font-medium">처리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...pendingOnly, ...rejectedOnly].map((m) => (
+                  <tr key={m.id} className={`border-b border-border ${m.approval_status === "rejected" ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-3 font-semibold text-text-primary">
+                      {m.company_name || <span className="text-text-muted font-normal">(미입력)</span>}
+                      {m.approval_status === "rejected" && <span className="ml-2 text-[11px] text-red-400">거절됨</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-text-secondary">{m.biz_number || "-"}</td>
+                    <td className="px-4 py-3 text-text-secondary">{m.name}<span className="text-text-muted"> / {m.login_id || m.provider}</span></td>
+                    <td className="px-4 py-3 text-text-secondary">{m.phone || "-"}{m.email && <span className="block text-xs text-text-muted">{m.email}</span>}</td>
+                    <td className="px-4 py-3 text-text-muted text-xs">{m.approval_requested_at ? new Date(m.approval_requested_at).toLocaleDateString("ko-KR") : "-"}</td>
+                    <td className="px-4 py-3">
+                      {m.biz_cert_path ? (
+                        <button onClick={() => viewCert(m)} className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <FileText size={14} /> 보기
+                        </button>
+                      ) : (
+                        <span className="text-xs text-red-400">미제출</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={approveChoice[m.id] ?? NEW_COMPANY}
+                        onChange={(e) => setApproveChoice({ ...approveChoice, [m.id]: e.target.value })}
+                        aria-label="연결할 거래처"
+                        className="px-3 py-1.5 rounded-lg border border-border bg-bg-dark text-text-primary text-sm focus:outline-none focus:border-primary max-w-[220px]"
+                      >
+                        <option value={NEW_COMPANY}>새 거래처로 등록 ({m.company_name || "업체명 없음"})</option>
+                        {sellableCompanies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => handleApprove(m)}
+                        disabled={busy}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500/90 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                      >
+                        승인
+                      </button>
+                      {m.approval_status !== "rejected" && (
+                        <button
+                          onClick={() => handleReject(m)}
+                          disabled={busy}
+                          className="ml-1.5 px-3 py-1.5 rounded-lg border border-red-400/40 text-red-400 text-xs font-semibold hover:bg-red-400/10 transition-colors disabled:opacity-50"
+                        >
+                          거절
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* 검색 */}
       <div className="relative mb-6">

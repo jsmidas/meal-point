@@ -16,6 +16,7 @@ export interface Session {
   id?: string | null;
   name?: string | null;
   company_id?: string | null;
+  company_name?: string | null;
   iat: number;
   exp: number;
 }
