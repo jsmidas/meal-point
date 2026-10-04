@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit *)",
+      "Bash(npx eslint *)",
+      "Bash(curl *)",
+      "Bash(git check-ignore *)",
+      "Bash(git grep *)",
+      "Bash(git rev-list *)",
+      "PowerShell(Get-NetTCPConnection *)"
+    ]
+  }
+}
