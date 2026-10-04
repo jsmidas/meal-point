@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>상세페이지 카드</title>
+<style>
+  /* 밀포인트 상세 카드 공통 스타일 — 기존 상세 이미지(짙은 녹색 바탕, 흰/노랑 글자)와 동일 톤 */
+  :root {
+    --bg: #29452f;
+    --bg-deep: #1f3624;
+    --yellow: #ecd97a;
+    --white: #ffffff;
+    --muted: #d6e0d8;
+    --red: #f08a7a;
+    --card-w: 1344px;
+    --card-h: 1719px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body { font-family: "Noto Sans KR", "Malgun Gothic", sans-serif; color: var(--white); word-break: keep-all; line-height: 1.35; }
+  .card {
+    width: var(--card-w); height: var(--card-h); position: relative; overflow: hidden;
+    background: var(--bg); display: none; flex-direction: column; align-items: center; text-align: center;
+    padding: 120px 96px 110px;
+  }
+  .card.active { display: flex; }
+  .watermark {
+    position: absolute; left: 50%; top: 70px; transform: translateX(-50%);
+    font-family: Georgia, "Noto Serif KR", serif; font-size: 300px; font-weight: 700; letter-spacing: -0.02em;
+    color: rgba(255,255,255,0.08); white-space: nowrap; pointer-events: none; line-height: 1;
+  }
+  .footer { position: absolute; left: 60px; right: 60px; bottom: 56px; display: flex; align-items: center; gap: 28px; }
+  .footer .line { flex: 1; height: 3px; background: var(--white); opacity: .85; }
+  .footer .brand { font-size: 34px; font-weight: 600; letter-spacing: .02em; }
+  .footer img { height: 48px; width: auto; }
+
+  .title { font-size: 92px; font-weight: 900; line-height: 1.22; color: var(--white); }
+  .title.sm { font-size: 78px; }
+  .title em { font-style: normal; color: var(--yellow); }
+  .lead { font-size: 40px; font-weight: 500; color: var(--muted); line-height: 1.6; margin-top: 36px; }
+  .badge {
+    display: inline-block; background: var(--yellow); color: var(--bg-deep); font-weight: 900; font-size: 44px;
+    padding: 18px 54px; border-radius: 999px; margin-top: 40px;
+  }
+  .photo { width: 100%; max-width: 980px; border-radius: 28px; overflow: hidden; margin: 56px auto 0; background: #fff; }
+  .photo img { width: 100%; height: auto; display: block; }
+  .photo.sq { max-width: 780px; }
+
+  .rows { width: 100%; margin-top: 70px; text-align: left; }
+  .row { display: flex; align-items: center; gap: 36px; padding: 44px 0; border-bottom: 2px solid rgba(255,255,255,.18); }
+  .row:last-child { border-bottom: 0; }
+  .icon { flex: none; width: 128px; height: 128px; border-radius: 50%; border: 4px solid var(--white); display: flex; align-items: center; justify-content: center; font-size: 62px; line-height: 1; }
+  .row h3 { font-size: 54px; font-weight: 900; color: var(--yellow); flex: none; width: 420px; line-height: 1.2; }
+  .row p { font-size: 36px; color: var(--white); line-height: 1.5; }
+
+  .stats { display: grid; grid-template-columns: 1fr; gap: 34px; width: 100%; margin-top: 70px; }
+  .stat { background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.2); border-radius: 32px; padding: 46px 40px; }
+  .stat .big { font-size: 110px; font-weight: 900; color: var(--yellow); line-height: 1; }
+  .stat .big small { font-size: 54px; font-weight: 700; margin-left: 10px; }
+  .stat h3 { font-size: 46px; font-weight: 800; margin-top: 18px; }
+  .stat p { font-size: 34px; color: var(--muted); margin-top: 10px; }
+
+  .steps { width: 100%; margin-top: 70px; display: flex; flex-direction: column; gap: 32px; text-align: left; }
+  .step { display: flex; align-items: center; gap: 36px; background: rgba(255,255,255,.07); border-radius: 32px; padding: 40px 44px; }
+  .num { flex: none; width: 110px; height: 110px; border-radius: 50%; background: var(--yellow); color: var(--bg-deep); font-size: 60px; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+  .step h3 { font-size: 50px; font-weight: 900; }
+  .step p { font-size: 34px; color: var(--muted); margin-top: 6px; }
+
+  .grid2 { width: 100%; margin-top: 70px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+  .tile { background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.2); border-radius: 32px; padding: 50px 30px; min-height: 380px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .tile .emo { font-size: 90px; line-height: 1; }
+  .tile h3 { font-size: 44px; font-weight: 900; color: var(--yellow); margin-top: 26px; line-height: 1.25; }
+  .tile p { font-size: 32px; color: var(--muted); margin-top: 14px; line-height: 1.45; }
+
+  .options { width: 100%; margin-top: 60px; display: flex; flex-direction: column; gap: 60px; }
+  .option { position: relative; border: 4px solid rgba(255,255,255,.35); border-radius: 36px; padding: 70px 40px 54px; }
+  .option.pro { border-color: var(--yellow); }
+  .option .tag { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); background: var(--white); color: var(--bg-deep); font-weight: 900; font-size: 34px; padding: 12px 40px; border-radius: 999px; white-space: nowrap; }
+  .option.pro .tag { background: var(--yellow); }
+  .option h3 { font-size: 62px; font-weight: 900; }
+  .option p { font-size: 36px; color: var(--muted); margin-top: 20px; line-height: 1.55; }
+
+  .warnbox { width: 100%; margin-top: 56px; border: 4px solid var(--red); border-radius: 36px; padding: 50px 44px; text-align: left; }
+  .warnbox img { display: block; width: 100%; max-width: 720px; margin: 0 auto 40px; border-radius: 16px; }
+  .warnbox li { list-style: none; font-size: 35px; line-height: 1.5; padding-left: 60px; position: relative; margin-bottom: 26px; }
+  .warnbox li::before { content: "!"; position: absolute; left: 0; top: 6px; width: 42px; height: 42px; border-radius: 50%; background: var(--red); color: var(--bg-deep); font-weight: 900; font-size: 30px; display: flex; align-items: center; justify-content: center; }
+  .warnbox li b { color: var(--red); }
+</style>
+</head>
+<body>
+<script>
+  // 렌더 스크립트가 아래 자리에 상품 데이터를 주입한다.
+  const DATA = /*__DATA__*/null;
+</script>
+<div id="root"></div>
+<script>
+  const d = DATA;
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const footer = `<div class="footer"><div class="line"></div><span class="brand">meal point</span></div>`;
+  const cards = [
+    // 1. 커버
+    `<div class="watermark">heating</div>
+     <div class="photo sq" style="margin-top:160px"><img src="${d.assets.cover}"></div>
+     <h1 class="title" style="margin-top:70px">${d.cover.title}</h1>
+     <p class="lead">${d.cover.lead}</p>
+     <div class="badge">${d.cover.badge}</div>${footer}`,
+    // 2. 소량 테스트
+    `<h1 class="title sm">"${d.boxQty}개 대량 구매가<br>부담스러우시다고요?"</h1>
+     <p class="lead">딱 <em style="color:var(--yellow);font-weight:900;font-style:normal">1팩(${d.packQty}개)</em>만 먼저 써보고 결정하세요!<br>품질에 대한 자신감으로<br>부담 없는 소량 구매 옵션을 열어두었습니다.</p>
+     <div class="photo" style="max-width:900px"><img src="${d.assets.pack}"></div>${footer}`,
+    // 3. 개별 포장 그만
+    `<h1 class="title sm">까고, 버리고, 돈 낭비하는<br><em>개별 포장은 이제 그만!</em></h1>
+     <p class="lead">바쁜 영업 시간,<br>언제까지 일일이 비닐을 까고 계실 건가요?</p>
+     <div class="rows">${d.solutions.map(s => `<div class="row"><div class="icon">${s.icon}</div><h3>${s.title}</h3><p>${s.desc}</p></div>`).join("")}</div>${footer}`,
+    // 4. 성능
+    `<h1 class="title sm">가격은 내렸지만,<br><em>성능은 타협하지 않았습니다.</em></h1>
+     <p class="lead">단 ${d.weight}의 가벼운 무게에서 뿜어져 나오는<br>압도적인 화력을 경험해 보세요.</p>
+     <div class="stats">${d.stats.map(s => `<div class="stat"><div class="big">${s.value}<small>${s.unit}</small></div><h3>${s.title}</h3><p>${s.desc}</p></div>`).join("")}</div>${footer}`,
+    // 5. 사용법
+    `<h1 class="title sm">물만 부으면 끝나는<br><em>따뜻한 만찬</em></h1>
+     <div class="steps">${d.steps.map((s, i) => `<div class="step"><div class="num">${i + 1}</div><div><h3>${s.title}</h3><p>${s.desc}</p></div></div>`).join("")}</div>
+     <div class="photo" style="max-width:470px;margin-top:40px"><img src="${d.assets.how}"></div>${footer}`,
+    // 6. 추천 대상
+    `<h1 class="title sm">이런 분들께<br><em>강력 추천합니다</em></h1>
+     <div class="grid2">${d.targets.map(t => `<div class="tile"><div class="emo">${t.icon}</div><h3>${t.title}</h3><p>${t.desc}</p></div>`).join("")}</div>${footer}`,
+    // 7. 구성 옵션
+    `<h1 class="title sm">필요에 맞게,<br><em>부담 없이 선택하세요!</em></h1>
+     <div class="options">
+       <div class="option"><span class="tag">입문자 추천</span><h3>옵션 1 : 1팩 (${d.packQty}개입)</h3><p>"우리 업장에 맞는지<br>딱 1팩만 먼저 테스트해 보세요!"<br>보관이 용이한 지퍼락 포장</p></div>
+       <div class="option pro"><span class="tag">전문가 추천</span><h3>옵션 2 : 1박스 (${d.boxQty}개입)</h3><p>"본격적인 비용 절감의 시작!"<br>대량 소비가 많은 업소를 위한<br>최적의 가성비 구성 (${d.packQty}개 × ${d.packs}팩)</p></div>
+     </div>${footer}`,
+    // 8. 안전
+    `<h1 class="title sm">안전한 사용을 위한<br><em>필독 사항</em></h1>
+     <div class="warnbox"><img src="${d.assets.safety}"><ul>${d.warnings.map(w => `<li><b>${w.k}:</b> ${w.t}</li>`).join("")}</ul></div>${footer}`,
+  ];
+  const idx = Math.max(0, Math.min(cards.length - 1, parseInt(location.hash.slice(1) || "0", 10)));
+  document.getElementById("root").innerHTML = cards.map((c, i) => `<section class="card${i === idx ? " active" : ""}" data-card="${i}">${c}</section>`).join("");
+  document.title = `card-${idx + 1}`;
+  window.CARD_COUNT = cards.length;
+</script>
+</body>
+</html>

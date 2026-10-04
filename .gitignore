@@ -56,3 +56,6 @@ supabase-signin.png
 
 # DB 덤프 (운영 데이터, 절대 커밋 금지)
 /dump/
+
+# 상세 카드 생성기 출력물
+scripts/detail-cards/out/
