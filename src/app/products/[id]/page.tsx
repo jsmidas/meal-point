@@ -127,7 +127,7 @@ export default function ProductDetailPage() {
   // 섹션 렌더 맵
   const renderSection: Record<string, () => React.ReactNode> = {
     hero: () => (
-      <section key="hero" className="relative pt-16">
+      <section key="hero" className="relative pt-28">
         {heroImages.length > 0 ? (
           <div className="relative h-[60vh] min-h-[400px]">
             <img src={heroImages[0]} alt={product.name} className="w-full h-full object-cover" />
@@ -357,13 +357,16 @@ export default function ProductDetailPage() {
     <div className="min-h-screen bg-bg-dark">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-bg-dark/80 backdrop-blur-md border-b border-border">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 h-28 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 text-text-muted hover:text-text-primary transition-colors">
             <ArrowLeft size={18} />
-            <span className="text-sm">돌아가기</span>
+            <span className="text-sm hidden sm:inline">돌아가기</span>
           </Link>
-          <Link href="/" className="text-lg font-bold text-text-primary">밀포인트</Link>
-          <div className="w-20" />
+          <Link href="/" className="flex items-center gap-2">
+            <img src="/images/logo-mark.png" alt="밀포인트" className="h-16 md:h-24 w-auto object-contain" />
+            <span className="text-xl md:text-2xl font-bold text-text-primary">밀포인트</span>
+          </Link>
+          <div className="w-6 sm:w-20" />
         </div>
       </nav>
 
