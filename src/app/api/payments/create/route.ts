@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdminSession } from "@/lib/auth/guard";
 
-const COOKIE_NAME = "mp_admin_token";
-
-/** 관리자 인증 확인 (api/db 와 동일 규칙) */
-function checkAdmin(request: NextRequest): boolean {
-  const raw = request.cookies.get(COOKIE_NAME)?.value;
-  if (!raw) return false;
-  try {
-    const parsed = JSON.parse(raw);
-    return (parsed.role || "member") === "admin";
-  } catch {
-    return raw === "mealpoint-admin-authenticated";
-  }
+/** 관리자 인증 확인 (서명된 세션 쿠키) */
+async function checkAdmin(request: NextRequest): Promise<boolean> {
+  return !!(await getAdminSession(request));
 }
 
 export async function POST(request: NextRequest) {
-  if (!checkAdmin(request)) {
+  if (!(await checkAdmin(request))) {
     return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 403 });
   }
 

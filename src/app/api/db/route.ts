@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireAdmin } from "@/lib/auth/guard";
 
-const COOKIE_NAME = "mp_admin_token";
+export const runtime = "nodejs";
 
 // 허용되는 테이블 목록 (화이트리스트)
 const ALLOWED_TABLES = new Set([
@@ -42,31 +42,10 @@ interface MutationRequest {
   options?: { onConflict?: string; returning?: boolean };
 }
 
-function isAdmin(cookieStore: ReturnType<Awaited<ReturnType<typeof cookies>>["getAll"] extends () => infer R ? never : never>): boolean {
-  // 간단하게 sync 처리
-  return true; // placeholder, 실제 로직은 아래에서
-}
-
 export async function POST(request: NextRequest) {
-  // 1. 관리자 인증 확인
-  const raw = request.cookies.get(COOKIE_NAME)?.value;
-  if (!raw) {
-    return NextResponse.json({ data: null, error: "인증이 필요합니다." }, { status: 401 });
-  }
-
-  let role = "";
-  try {
-    const parsed = JSON.parse(raw);
-    role = parsed.role || "member";
-  } catch {
-    if (raw === "mealpoint-admin-authenticated") {
-      role = "admin";
-    }
-  }
-
-  if (role !== "admin") {
-    return NextResponse.json({ data: null, error: "관리자 권한이 필요합니다." }, { status: 403 });
-  }
+  // 1. 관리자 인증 확인 (서명된 세션 쿠키)
+  const denied = await requireAdmin(request);
+  if (denied) return denied;
 
   // 2. 요청 파싱
   let body: MutationRequest;

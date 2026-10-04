@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(new URL("/login?error=inactive", request.url));
       }
 
-      const response = createAuthResponse(member, new URL("/", request.url).toString());
+      const response = await createAuthResponse(member, new URL("/", request.url).toString());
       response.cookies.set("google_oauth_state", "", { path: "/", maxAge: 0 });
       return response;
     } catch {

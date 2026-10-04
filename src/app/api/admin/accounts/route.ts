@@ -1,33 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireAdmin } from "@/lib/auth/guard";
+import { hashPassword } from "@/lib/auth/password";
 
-const COOKIE_NAME = "mp_admin_token";
+export const runtime = "nodejs";
 
-/** 발주 계정(role='company') 관리 — 관리자 전용. */
-
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + "mealpoint_salt_2024");
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** 쿠키로 관리자 여부 확인. 관리자가 아니면 401 응답을 반환(아니면 null). */
-async function requireAdmin(): Promise<NextResponse | null> {
-  const store = await cookies();
-  const raw = store.get(COOKIE_NAME)?.value;
-  if (raw) {
-    try {
-      if (JSON.parse(raw).role === "admin") return null;
-    } catch {
-      if (raw === "mealpoint-admin-authenticated") return null;
-    }
-  }
-  return NextResponse.json({ ok: false, error: "권한이 없습니다." }, { status: 401 });
-}
+/** 발주 계정(role='company') 관리 — 관리자 전용. 인증은 서명된 세션 쿠키(requireAdmin)로 확인. */
 
 // 발주 계정 목록 (거래처명 포함)
 export async function GET(request: NextRequest) {

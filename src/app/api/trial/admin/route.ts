@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdminSession } from "@/lib/auth/guard";
 
-const COOKIE_NAME = "mp_admin_token";
-
-function isAdmin(request: NextRequest): boolean {
-  const raw = request.cookies.get(COOKIE_NAME)?.value;
-  if (!raw) return false;
-  try {
-    return JSON.parse(raw).role === "admin";
-  } catch {
-    return raw === "mealpoint-admin-authenticated";
-  }
+async function isAdmin(request: NextRequest): Promise<boolean> {
+  return !!(await getAdminSession(request));
 }
 
 // 어드민 체험 관리용 조회 — 게스트 계정 PW가 포함되므로 service_role + admin 인증으로만 노출
 export async function GET(request: NextRequest) {
-  if (!isAdmin(request)) {
+  if (!(await isAdmin(request))) {
     return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 403 });
   }
 

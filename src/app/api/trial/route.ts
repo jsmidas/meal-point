@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-const COOKIE_NAME = "mp_admin_token";
+import { getSession } from "@/lib/auth/guard";
 const TRIAL_DAYS = 7;
 
-// 로그인 쿠키에서 회원 ID 추출 (카카오 등 소셜 로그인 시 { role, id, name })
-function getMemberId(req: NextRequest): string | null {
-  const raw = req.cookies.get(COOKIE_NAME)?.value;
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed.id || null;
-  } catch {
-    return null;
-  }
+// 서명된 세션 쿠키에서 회원 ID 추출 (카카오 등 소셜 로그인 시 { role, id, name })
+async function getMemberId(req: NextRequest): Promise<string | null> {
+  const s = await getSession(req);
+  return s?.id || null;
 }
 
 // 회원의 유효한(만료 전) 활성 사용권 + 배정 계정 조회
@@ -33,7 +26,7 @@ async function fetchActiveGrant(db: any, memberId: string, nowIso: string) {
 
 // GET — 현재 체험 상태 조회
 export async function GET(request: NextRequest) {
-  const memberId = getMemberId(request);
+  const memberId = await getMemberId(request);
   if (!memberId) {
     return NextResponse.json({ authenticated: false });
   }
@@ -53,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 // POST — 체험 사용권 발급 (계정 자동 배정)
 export async function POST(request: NextRequest) {
-  const memberId = getMemberId(request);
+  const memberId = await getMemberId(request);
   if (!memberId) {
     return NextResponse.json({ ok: false, error: "인증이 필요합니다." }, { status: 401 });
   }

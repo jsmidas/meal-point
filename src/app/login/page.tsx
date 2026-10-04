@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { homeForRole } from "@/lib/auth/roles";
 
 const STORAGE_KEY = "mp_saved_credentials";
 
@@ -55,7 +56,7 @@ export default function LoginPage() {
             : null;
         // 거래처(company)는 로그인 후 메인페이지로 — 거기서 "주문하기"로 포털 진입
         router.push(
-          safeNext ?? (data.role === "admin" ? "/admin" : "/"),
+          safeNext ?? homeForRole(data.role),
         );
       } else {
         setError(data.error || "로그인에 실패했습니다.");

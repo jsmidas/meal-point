@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-const COOKIE_NAME = "mp_admin_token";
+import { SESSION_COOKIE, signSession, sessionCookieOptions } from "@/lib/auth/session";
 
 export async function findOrCreateMember(profile: {
   provider: string;
@@ -42,21 +41,13 @@ export async function findOrCreateMember(profile: {
   return newMember;
 }
 
-export function createAuthResponse(
+export async function createAuthResponse(
   member: { id: string; name: string },
   redirectUrl: string
 ) {
   const response = NextResponse.redirect(redirectUrl);
-  response.cookies.set(
-    COOKIE_NAME,
-    JSON.stringify({ role: "member", id: member.id, name: member.name }),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    }
-  );
+  const token = await signSession({ role: "member", id: member.id, name: member.name });
+  response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+  response.cookies.set("mp_admin_token", "", { path: "/", maxAge: 0 });
   return response;
 }

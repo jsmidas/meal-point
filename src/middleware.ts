@@ -1,70 +1,52 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
+import { homeForRole, isAdminRole } from "@/lib/auth/roles";
 
-const COOKIE_NAME = "mp_admin_token";
-
-function getAuth(request: NextRequest): {
-  authenticated: boolean;
-  role: string;
-  companyId: string | null;
-} {
-  const raw = request.cookies.get(COOKIE_NAME)?.value;
-  if (!raw) return { authenticated: false, role: "", companyId: null };
-
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      authenticated: true,
-      role: parsed.role || "member",
-      companyId: parsed.company_id || null,
-    };
-  } catch {
-    // 기존 문자열 토큰 호환
-    if (raw === "mealpoint-admin-authenticated") {
-      return { authenticated: true, role: "admin", companyId: null };
-    }
-    return { authenticated: false, role: "", companyId: null };
-  }
-}
-
-/** 역할별 기본 진입 경로 */
-function homeForRole(role: string): string {
-  if (role === "admin") return "/admin";
-  // 거래처(company)는 메인페이지로 — 거기서 "주문하기"로 포털 진입
-  return "/";
-}
-
-export function middleware(request: NextRequest) {
-  const { authenticated, role, companyId } = getAuth(request);
+export async function middleware(request: NextRequest) {
+  const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
   const path = request.nextUrl.pathname;
 
-  // /admin 경로 — 관리자만 접근 가능
+  // /admin — 관리자(super_admin / admin)만
   if (path.startsWith("/admin")) {
-    if (!authenticated || role !== "admin") {
+    if (!session || !isAdminRole(session.role)) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      return NextResponse.redirect(url);
+      url.search = "";
+      const res = NextResponse.redirect(url);
+      // 위조·만료 쿠키는 정리
+      if (request.cookies.has(SESSION_COOKIE)) res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
+      return res;
     }
   }
 
-  // /portal 경로 — 거래처 발주 계정(company)만 접근 가능
+  // /portal — 거래처 발주 계정(company)만
   if (path.startsWith("/portal")) {
-    if (!authenticated || role !== "company" || !companyId) {
+    if (!session || session.role !== "company" || !session.company_id) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
+      url.search = "";
       return NextResponse.redirect(url);
     }
   }
 
-  // /login, /register — 로그인된 상태면 역할별 리다이렉트
+  // /login, /register — 이미 로그인된 상태면 역할별 진입 경로로
   if (path === "/login" || path === "/register") {
-    if (authenticated) {
+    if (session) {
       const url = request.nextUrl.clone();
-      url.pathname = homeForRole(role);
+      url.pathname = homeForRole(session.role);
+      url.search = "";
       return NextResponse.redirect(url);
     }
   }
 
-  return NextResponse.next();
+  const res = NextResponse.next();
+  if (path.startsWith("/admin") || path.startsWith("/portal")) {
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("X-Frame-Options", "DENY");
+    res.headers.set("X-Content-Type-Options", "nosniff");
+    res.headers.set("Referrer-Policy", "same-origin");
+  }
+  return res;
 }
 
 export const config = {

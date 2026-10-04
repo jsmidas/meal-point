@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       }
 
       const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
-      const response = createAuthResponse(member, new URL(nextPath, request.url).toString());
+      const response = await createAuthResponse(member, new URL(nextPath, request.url).toString());
       response.cookies.set("kakao_oauth_state", "", { path: "/", maxAge: 0 });
       response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
       return response;
