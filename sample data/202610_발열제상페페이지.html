@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>밀포인트 수입 발열제 30g 상세페이지</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    
+    <style>
+        :root {
+            --main-color: #5B6E41; /* Olive Green */
+            --sub-color: #333333; /* Charcoal Grey */
+            --bg-light: #F5F5F5; /* Light Silver */
+            --white: #FFFFFF;
+            --accent-color: #C8102E; /* Deep Red */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #e9e9e9; /* 외부 배경 */
+            color: var(--sub-color);
+            line-height: 1.6;
+            word-break: keep-all;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            background-color: var(--white);
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        section {
+            padding: 80px 40px;
+            text-align: center;
+        }
+
+        @media (max-width: 600px) {
+            section {
+                padding: 60px 20px;
+            }
+        }
+
+        .section-title {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--main-color);
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .section-subtitle {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--sub-color);
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+
+        .header {
+            background-color: var(--white);
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #eaeaea;
+        }
+
+        .hero {
+            background-color: var(--bg-light);
+            padding: 0; /* Full width image */
+            font-size: 0; /* Remove bottom gap */
+        }
+
+        .sec-intro {
+            background-color: var(--sub-color);
+            color: var(--white);
+            padding: 80px 20px;
+        }
+        .intro-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 24px;
+        }
+        .intro-accent {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: var(--white);
+            font-size: 36px;
+            font-weight: 900;
+            padding: 10px 24px;
+            border-radius: 50px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 12px rgba(200, 16, 46, 0.3);
+        }
+        .intro-text {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 40px;
+        }
+        .intro-subtext {
+            background-color: rgba(255,255,255,0.1);
+            padding: 24px;
+            border-radius: 12px;
+            font-size: 16px;
+            color: #dddddd;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .sec-solution {
+            background-color: var(--white);
+        }
+        .solution-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: left;
+        }
+        .solution-item {
+            background-color: var(--bg-light);
+            padding: 24px;
+            border-radius: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            border-left: 6px solid var(--main-color);
+        }
+        .solution-item .emoji {
+            font-size: 28px;
+            line-height: 1;
+        }
+        .solution-item h4 {
+            font-size: 20px;
+            color: var(--sub-color);
+            margin-bottom: 8px;
+        }
+        .solution-item p {
+            font-size: 16px;
+            color: #666;
+            margin: 0;
+        }
+
+        .sec-performance {
+            background-color: var(--bg-light);
+        }
+        .perf-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 40px;
+        }
+        .perf-card {
+            background: var(--white);
+            padding: 32px 20px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+        }
+        .perf-card h4 {
+            font-size: 18px;
+            color: var(--main-color);
+            margin-bottom: 10px;
+            font-weight: 800;
+        }
+        .perf-card p {
+            font-size: 15px;
+            color: #555;
+        }
+
+        .sec-how-target {
+            background-color: var(--white);
+        }
+        .how-steps {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 60px;
+            flex-wrap: wrap;
+        }
+        .step {
+            flex: 1;
+            min-width: 200px;
+            background: var(--bg-light);
+            padding: 30px 20px;
+            border-radius: 16px;
+            position: relative;
+        }
+        .step-num {
+            background: var(--main-color);
+            color: var(--white);
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        
+        .target-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            text-align: left;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        @media (max-width: 500px) {
+            .target-list { grid-template-columns: 1fr; }
+        }
+        .target-item {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #eee;
+        }
+        .target-item h5 {
+            font-size: 18px;
+            color: var(--main-color);
+            margin-bottom: 5px;
+        }
+        .target-item p {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .sec-options {
+            background-color: var(--bg-light);
+        }
+        .options-wrap {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .option-card {
+            flex: 1;
+            min-width: 280px;
+            background: var(--white);
+            border: 2px solid #ddd;
+            border-radius: 16px;
+            padding: 40px 20px 30px;
+            position: relative;
+        }
+        .option-badge {
+            position: absolute;
+            top: -16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--main-color);
+            color: var(--white);
+            padding: 6px 20px;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .option-card.pro .option-badge {
+            background: var(--sub-color);
+        }
+        .option-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--sub-color);
+            margin-bottom: 12px;
+        }
+
+        .sec-safety {
+            background-color: var(--white);
+        }
+        .warning-box {
+            border: 2px solid var(--accent-color);
+            border-radius: 16px;
+            padding: 30px;
+            background: #fffafa; /* Very light red tint */
+            margin-bottom: 40px;
+        }
+        .warning-box h3 {
+            color: var(--accent-color);
+            font-size: 22px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .warning-list {
+            list-style: none;
+            text-align: left;
+            max-width: 550px;
+            margin: 0 auto;
+        }
+        .warning-list li {
+            margin-bottom: 12px;
+            padding-left: 28px;
+            position: relative;
+            font-weight: 500;
+        }
+        .warning-list li::before {
+            content: '🚨';
+            position: absolute;
+            left: 0;
+            top: 2px;
+        }
+        
+        .spec-table {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            border-collapse: collapse;
+            background: var(--white);
+        }
+        .spec-table th, .spec-table td {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+        }
+        .spec-table th {
+            background-color: #f9f9f9;
+            width: 35%;
+            font-weight: 700;
+            color: var(--main-color);
+            border-top: 2px solid var(--sub-color);
+        }
+        .spec-table td {
+            border-top: 2px solid transparent;
+        }
+        .spec-table tr:first-child td {
+            border-top: 2px solid var(--sub-color);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header class="header">
+        <img src="대지 1@3x_2.png" alt="밀포인트 로고" style="width: 200px; margin: 0 auto; display: block;">
+    </header>
+
+    <section class="hero">
+        <img src="Gemini_Generated_Image_ye4v8qye4v8qye4v_3.png" alt="밀포인트 대용량 발열제" style="width: 100%; display: block; margin: 0 auto;">
+    </section>
+
+    <section class="sec-intro">
+        <div class="intro-title">발열제 단가, 아직도 비싸게 주고 계신가요?</div>
+        <div class="intro-accent">타사 발열제 대비 약 25% 비용 절감!</div>
+        <div class="intro-text">거품은 빼고 발열 성능은 그대로 담은 밀포인트 벌크형 발열제입니다.</div>
+        
+        <div class="intro-subtext">
+            <strong>"500개 대량 구매가 부담스러우시다고요?"</strong><br><br>
+            딱 1팩(50개)만 먼저 써보고 결정하세요!<br>
+            품질에 대한 자신감으로, 부담 없는 소량 구매 옵션을 열어두었습니다.
+        </div>
+    </section>
+
+    <section class="sec-solution">
+        <h2 class="section-title">까고, 버리고, 돈 낭비하는<br>개별 포장은 이제 그만!</h2>
+        <p class="section-subtitle">바쁜 영업 시간, 언제까지 일일이 비닐을 까고 계실 건가요?</p>
+        
+        <div class="solution-list">
+            <div class="solution-item">
+                <div class="emoji">💸</div>
+                <div>
+                    <h4>25% 더 저렴한 단가</h4>
+                    <p>불필요한 포장비를 없애 타사 대비 압도적인 단가 절감을 실현했습니다.</p>
+                </div>
+            </div>
+            <div class="solution-item">
+                <div class="emoji">⚡</div>
+                <div>
+                    <h4>작업 시간 반토막</h4>
+                    <p>지퍼락에서 필요한 만큼 훅 꺼내 쓰면 끝! 준비 시간이 획기적으로 줄어듭니다.</p>
+                </div>
+            </div>
+            <div class="solution-item">
+                <div class="emoji">♻️</div>
+                <div>
+                    <h4>쓰레기 스트레스 제로</h4>
+                    <p>산더미처럼 쌓이던 개별 비닐 쓰레기, 이제 안녕!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="sec-performance">
+        <h2 class="section-title">가격은 내렸지만,<br>성능은 타협하지 않았습니다.</h2>
+        <p class="section-subtitle">단 30g의 가벼운 무게에서 뿜어져 나오는 압도적인 화력을 경험해 보세요.</p>
+
+        <div class="perf-grid">
+            <div class="perf-card">
+                <h4>🔥 90℃ 이상의 펄펄 끓는 온도</h4>
+                <p>음식이 가장 맛있는 온도까지 순식간에 데워줍니다.</p>
+            </div>
+            <div class="perf-card">
+                <h4>⏱️ 20분간 지속되는 든든함</h4>
+                <p>식사가 끝날 때까지 온기를 꽉 잡아줍니다.</p>
+            </div>
+            <div class="perf-card">
+                <h4>🚀 스피드 발열</h4>
+                <p>찬물/미지근한 물 투입 시 10초~30초 이내 즉각 발열 시작!</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="sec-how-target">
+        <h2 class="section-title">물만 부으면 끝나는 따뜻한 만찬</h2>
+        <div class="how-steps">
+            <div class="step">
+                <div class="step-num">1</div>
+                <p>전용 용기 하단에<br><strong>발열제 넣기</strong></p>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <p>찬물/뜨거운 물을<br><strong>기준선까지 붓기</strong></p>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <p>용기를 닫고<br><strong>기다리기만 하면 완성!</strong></p>
+            </div>
+        </div>
+
+        <h2 class="section-title" style="margin-top: 60px;">이런 분들께 강력 추천합니다</h2>
+        <div class="target-list">
+            <div class="target-item">
+                <h5>🍽️ 식당 / 배달 / 케이터링</h5>
+                <p>원가 절감과 빠른 준비가 생명인 곳</p>
+            </div>
+            <div class="target-item">
+                <h5>🏗️ 공장 / 건설 현장</h5>
+                <p>야외 작업 중 따뜻한 식사가 필요한 현장</p>
+            </div>
+            <div class="target-item">
+                <h5>⛺ 동호회 / 단체 캠핑</h5>
+                <p>다수의 인원이 든든하게 먹어야 할 때</p>
+            </div>
+            <div class="target-item">
+                <h5>🏢 관공서 / 기관</h5>
+                <p>재난 대비 및 비상용 물품 대량 비축</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="sec-options">
+        <h2 class="section-title">필요에 맞게, 부담 없이 선택하세요!</h2>
+        <div class="options-wrap" style="margin-top: 40px;">
+            <div class="option-card">
+                <div class="option-badge">입문자 추천</div>
+                <div class="option-title">옵션 1 : 1팩 (50개입)</div>
+                <p>"우리 업장에 맞는지 딱 1팩만 먼저 테스트해 보세요!"<br><br>보관이 용이한 지퍼락 포장</p>
+            </div>
+            <div class="option-card pro">
+                <div class="option-badge">전문가 추천</div>
+                <div class="option-title">옵션 2 : 1박스 (500개입)</div>
+                <p>"본격적인 비용 절감의 시작!"<br><br>대량 소비가 많은 업소를 위한 최적의 가성비 구성</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="sec-safety">
+        <h2 class="section-title" style="margin-bottom: 30px;">안전한 사용을 위한 필독 사항</h2>
+        
+        <div class="warning-box">
+            <h3>⚠️ 안전 및 주의사항</h3>
+            <!-- Warning icons image re-used from hero for visual consistency of the warnings -->
+            <img src="Gemini_Generated_Image_ye4v8qye4v8qye4v_3.png" alt="주의사항 아이콘" style="width: 100%; max-width: 350px; display: block; margin: 0 auto 20px auto; border-radius: 8px; border: 1px solid #ddd;">
+            <ul class="warning-list">
+                <li><strong style="color: var(--accent-color);">화상 조심:</strong> 발열 중에는 90도 이상의 고온으로 올라갑니다. 맨손으로 만지지 마세요.</li>
+                <li><strong style="color: var(--accent-color);">화기 주의:</strong> 인화성 물질이나 화기 근처에 두지 마세요.</li>
+                <li><strong style="color: var(--accent-color);">습기 주의:</strong> 공기 중의 수분과 반응할 수 있으니 사용 후 반드시 '지퍼락을 꽉 닫아' 보관해 주세요.</li>
+                <li><strong style="color: var(--accent-color);">어린이 주의:</strong> 어린이의 손이 닿지 않는 곳에 안전하게 보관해 주세요.</li>
+            </ul>
+        </div>
+
+        <table class="spec-table">
+            <tbody>
+                <tr>
+                    <th>제품명</th>
+                    <td>수입 발열제 30g</td>
+                </tr>
+                <tr>
+                    <th>중량</th>
+                    <td>30g</td>
+                </tr>
+                <tr>
+                    <th>제조국</th>
+                    <td>중국</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+</div>
+
+</body>
+</html>
