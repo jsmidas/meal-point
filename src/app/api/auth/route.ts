@@ -100,7 +100,20 @@ export async function POST(request: NextRequest) {
   }
 
   // 1) 관리자 계정 (환경 변수)
-  for (const acc of adminAccounts()) {
+  const accounts = adminAccounts();
+  if (accounts.length === 0 || !process.env.SESSION_SECRET) {
+    // 운영 환경변수 누락 시 원인을 서버 로그에 분명히 남긴다 (2026-10-04 로그인 불가 사고 — Vercel 환경변수 빈 값/미반영)
+    console.error(
+      "[auth] 관리자 로그인 설정 누락: " +
+        `ADMIN_ID/ADMIN_PW=${process.env.ADMIN_ID && process.env.ADMIN_PW ? "OK" : "없음"}, ` +
+        `SUPER_ADMIN_ID/PW=${process.env.SUPER_ADMIN_ID && process.env.SUPER_ADMIN_PW ? "OK" : "없음"}, ` +
+        `SESSION_SECRET=${process.env.SESSION_SECRET ? "OK" : "없음"} — Vercel 환경변수 확인 후 재배포 필요`,
+    );
+    if (!process.env.SESSION_SECRET) {
+      return NextResponse.json({ ok: false, error: "서버 설정 오류입니다. 관리자에게 문의하세요." }, { status: 500 });
+    }
+  }
+  for (const acc of accounts) {
     const idMatch = await safeEqualString(id, acc.id);
     const pwMatch = await safeEqualString(password, acc.pw);
     if (idMatch && pwMatch) {
