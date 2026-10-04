@@ -96,11 +96,22 @@ export default function Products() {
           <p className="text-text-secondary">
             다양한 급식 용기 제품을 확인하세요.
           </p>
-          {pricing.isApprovedCompany && (
+          {pricing.isApprovedCompany ? (
             <p className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-medium">
               ✓ {pricing.auth.company_name} 승인 업체 단가가 표시됩니다 (부가세 별도)
             </p>
-          )}
+          ) : !pricing.loading && pricing.auth.authenticated && pricing.auth.approval_status === "pending" ? (
+            <p className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-400/10 text-amber-400 text-sm font-medium">
+              승인 대기 중 — 승인되면 상품마다 단가가 표시됩니다
+            </p>
+          ) : !pricing.loading ? (
+            <Link
+              href={pricing.auth.authenticated ? "/account" : "/register"}
+              className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/40 bg-primary/5 text-primary text-sm font-semibold hover:bg-primary/15 transition-colors"
+            >
+              회원가입 시 단가 확인 가능 →
+            </Link>
+          ) : null}
         </div>
 
         {/* 대분류 그룹 탭 */}
