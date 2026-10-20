@@ -25,6 +25,7 @@ import {
   Settings,
   Users,
   KeyRound,
+  History,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -48,6 +49,7 @@ const navItems = [
   { href: "/admin/popups", label: "팝업 관리", icon: Bell },
   { href: "/admin/pages", label: "상세페이지", icon: FileEdit },
   { href: "/admin/trial", label: "체험 관리", icon: KeyRound },
+  { href: "/admin/audit", label: "변경 이력", icon: History },
   { href: "/admin/settings", label: "회사 설정", icon: Settings },
 ];
 

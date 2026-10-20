@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth/guard";
+import { requireAdmin, getAdminSession } from "@/lib/auth/guard";
 import { hashPassword } from "@/lib/auth/password";
 import { bizCertSignedUrl } from "@/lib/auth/biz-cert";
+import { writeAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
-/** 발주 계정(role='company') 관리 — 관리자 전용. 인증은 서명된 세션 쿠키(requireAdmin)로 확인. */
+/**
+ * 발주 계정(role='company') · 회원 관리자(role='admin') 관리 — 관리자 전용.
+ * 인증은 서명된 세션 쿠키(requireAdmin)로 확인하고, 모든 변경은 audit_logs 에 남긴다.
+ */
+
+/** 이 화면에서 관리하는 계정 역할 */
+const MANAGED_ROLES = ["company", "admin"];
 
 // 발주 계정 목록 (거래처명 포함) / ?pending=1 승인 대기 회원 / ?cert=<id> 사업자등록증 서명 URL
 export async function GET(request: NextRequest) {
@@ -37,6 +44,17 @@ export async function GET(request: NextRequest) {
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, members: data || [] });
   }
+
+  // 회원 관리자 목록 (members.role='admin')
+  if (request.nextUrl.searchParams.get("admins")) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase.from("members") as any)
+      .select("id, login_id, name, is_active, company_id, role, created_at, companies(name)")
+      .eq("role", "admin")
+      .order("created_at", { ascending: true });
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, admins: data || [] });
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase.from("members") as any)
     .select("id, login_id, name, is_active, company_id, role, created_at, companies(name)")
@@ -52,14 +70,34 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const session = await getAdminSession(request);
+  if (!session) return NextResponse.json({ ok: false, error: "관리자 권한이 필요합니다." }, { status: 401 });
 
   const body = await request.json();
   const { action } = body;
   const supabase = createAdminClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase.from("members") as any;
+  /** 계정 변경 이력 기록 (비밀번호는 저장하지 않음) */
+  const audit = (act: string, recordId: string | null, after?: unknown, before?: unknown) =>
+    writeAudit(supabase, session, { action: act, table: "members", recordId, after, before }, request);
+
+  // ── 관리자 권한 지정/해제 (company ↔ admin) ──
+  if (action === "set_role") {
+    const { id, role } = body;
+    if (!id || !MANAGED_ROLES.includes(role)) {
+      return NextResponse.json({ ok: false, error: "id 와 role(admin|company)이 필요합니다." }, { status: 400 });
+    }
+    const { data: before } = await db.select("id, login_id, name, role, company_id").eq("id", id).maybeSingle();
+    if (!before) return NextResponse.json({ ok: false, error: "계정을 찾을 수 없습니다." }, { status: 404 });
+    if (role === "company" && !before.company_id) {
+      return NextResponse.json({ ok: false, error: "연결 거래처가 없어 발주 계정으로 되돌릴 수 없습니다." }, { status: 400 });
+    }
+    const { error } = await db.update({ role }).eq("id", id).in("role", MANAGED_ROLES);
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    await audit("set_role", id, { ...before, role }, before);
+    return NextResponse.json({ ok: true });
+  }
 
   // ── 계정 발급 ──
   if (action === "create") {
@@ -89,7 +127,7 @@ export async function POST(request: NextRequest) {
     }
 
     const password_hash = await hashPassword(password);
-    const { error } = await db.insert({
+    const { data: created, error } = await db.insert({
       login_id,
       password_hash,
       name,
@@ -97,10 +135,11 @@ export async function POST(request: NextRequest) {
       role: "company",
       provider: "local",
       is_active: true,
-    });
+    }).select("id, login_id, name, company_id, role").maybeSingle();
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    await audit("create", created?.id ?? null, created ?? { login_id, name, company_id, role: "company" });
     return NextResponse.json({ ok: true });
   }
 
@@ -114,10 +153,11 @@ export async function POST(request: NextRequest) {
       );
     }
     const password_hash = await hashPassword(password);
-    const { error } = await db.update({ password_hash }).eq("id", id).eq("role", "company");
+    const { error } = await db.update({ password_hash }).eq("id", id).in("role", MANAGED_ROLES);
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    await audit("reset_password", id);
     return NextResponse.json({ ok: true });
   }
 
@@ -130,10 +170,11 @@ export async function POST(request: NextRequest) {
     const { error } = await db
       .update({ is_active: !!is_active })
       .eq("id", id)
-      .eq("role", "company");
+      .in("role", MANAGED_ROLES);
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    await audit("toggle_active", id, { is_active: !!is_active });
     return NextResponse.json({ ok: true });
   }
 
@@ -153,6 +194,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    await audit("update", id, patch);
     return NextResponse.json({ ok: true });
   }
 
@@ -194,6 +236,7 @@ export async function POST(request: NextRequest) {
       .update({ role: "company", company_id: targetCompanyId, approval_status: "approved", approved_at: new Date().toISOString(), reject_reason: null })
       .eq("id", id);
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    await audit("approve", id, { role: "company", company_id: targetCompanyId, approval_status: "approved" }, m);
     return NextResponse.json({ ok: true, company_id: targetCompanyId });
   }
 
@@ -206,6 +249,7 @@ export async function POST(request: NextRequest) {
       .eq("id", id)
       .neq("role", "company");
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    await audit("reject", id, { approval_status: "rejected", reject_reason: reason || null });
     return NextResponse.json({ ok: true });
   }
 
@@ -215,10 +259,12 @@ export async function POST(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ ok: false, error: "id가 필요합니다." }, { status: 400 });
     }
-    const { error } = await db.delete().eq("id", id).eq("role", "company");
+    const { data: before } = await db.select("id, login_id, name, role, company_id").eq("id", id).maybeSingle();
+    const { error } = await db.delete().eq("id", id).in("role", MANAGED_ROLES);
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    await audit("delete", id, undefined, before);
     return NextResponse.json({ ok: true });
   }
 

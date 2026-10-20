@@ -9,10 +9,13 @@ import {
   Plus,
   Power,
   Search,
+  ShieldCheck,
+  ShieldOff,
   Trash2,
   UserCheck,
   Users,
 } from "lucide-react";
+import Link from "next/link";
 
 interface Account {
   id: string;
@@ -20,6 +23,7 @@ interface Account {
   name: string;
   is_active: boolean;
   company_id: string | null;
+  role?: string;
   created_at: string;
   companies: { name: string } | null;
 }
@@ -43,6 +47,7 @@ const NEW_COMPANY = "__new__";
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [admins, setAdmins] = useState<Account[]>([]);
   const [pending, setPending] = useState<PendingMember[]>([]);
   const [approveChoice, setApproveChoice] = useState<Record<string, string>>({});
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -72,10 +77,12 @@ export default function AccountsPage() {
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/admin/accounts");
+    const [res, adminRes] = await Promise.all([fetch("/api/admin/accounts"), fetch("/api/admin/accounts?admins=1")]);
     const data = await res.json();
+    const adminData = await adminRes.json();
     if (data.ok) setAccounts(data.accounts);
     else setError(data.error || "목록을 불러오지 못했습니다.");
+    if (adminData.ok) setAdmins(adminData.admins);
     setLoading(false);
   }, []);
 
@@ -178,6 +185,21 @@ export default function AccountsPage() {
   async function handleDelete(a: Account) {
     if (!confirm(`'${a.login_id}' 발주 계정을 삭제하시겠습니까?`)) return;
     if (await post({ action: "delete", id: a.id })) loadAccounts();
+  }
+
+  async function handleGrantAdmin(a: Account) {
+    if (
+      !confirm(
+        `'${a.login_id}' (${a.name}) 계정에 관리자 권한을 부여하시겠습니까?\n\n관리자 화면 전체(거래처·입고·판매·정산 등)에 접근할 수 있게 되고, 발주 포털 대신 관리자 화면으로 로그인됩니다.\n이 계정의 모든 변경은 '변경 이력'에 기록됩니다.`,
+      )
+    )
+      return;
+    if (await post({ action: "set_role", id: a.id, role: "admin" })) loadAccounts();
+  }
+
+  async function handleRevokeAdmin(a: Account) {
+    if (!confirm(`'${a.login_id}' (${a.name}) 계정의 관리자 권한을 해제하고 발주 계정으로 되돌리시겠습니까?`)) return;
+    if (await post({ action: "set_role", id: a.id, role: "company" })) loadAccounts();
   }
 
   const filtered = accounts.filter((a) => {
@@ -361,6 +383,64 @@ export default function AccountsPage() {
         )}
       </div>
 
+      {/* 회원 관리자 (members.role='admin') */}
+      <div className="mb-8 rounded-2xl border border-violet-400/30 bg-bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <ShieldCheck size={16} className="text-violet-400" /> 관리자 계정
+            <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-full bg-violet-400 text-bg-dark text-[11px] font-bold">{admins.length}</span>
+          </h2>
+          <span className="text-xs text-text-muted">
+            관리자 화면 전체에 접근하는 직원 계정. 누가 무엇을 바꿨는지는{" "}
+            <Link href="/admin/audit" className="text-primary hover:underline">변경 이력</Link>에서 확인합니다.
+          </span>
+        </div>
+        {admins.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-text-muted">회원 관리자 계정이 없습니다. 아래 발주 계정의 방패 버튼으로 관리자 권한을 줄 수 있습니다.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">아이디</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">이름</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">소속</th>
+                  <th className="text-left px-4 py-2.5 text-text-secondary font-medium">상태</th>
+                  <th className="text-right px-4 py-2.5 text-text-secondary font-medium">관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {admins.map((a) => (
+                  <tr key={a.id} className="border-b border-border hover:bg-bg-card-hover transition-colors">
+                    <td className="px-4 py-3 font-mono text-text-primary">{a.login_id}</td>
+                    <td className="px-4 py-3 text-text-secondary">{a.name}</td>
+                    <td className="px-4 py-3 text-text-secondary">{a.companies?.name || "-"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${a.is_active ? "bg-emerald-400/10 text-emerald-400" : "bg-red-400/10 text-red-400"}`}>
+                        {a.is_active ? "활성" : "비활성"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => handleToggle(a)} title={a.is_active ? "비활성화" : "활성화"} className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-bg-card transition-colors">
+                          <Power size={16} />
+                        </button>
+                        <button onClick={() => handleReset(a)} title="비밀번호 초기화" className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-bg-card transition-colors">
+                          <KeyRound size={16} />
+                        </button>
+                        <button onClick={() => handleRevokeAdmin(a)} title="관리자 권한 해제 (발주 계정으로)" className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-bg-card transition-colors">
+                          <ShieldOff size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* 검색 */}
       <div className="relative mb-6">
         <Search
@@ -447,6 +527,13 @@ export default function AccountsPage() {
                         className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-bg-card transition-colors"
                       >
                         <KeyRound size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleGrantAdmin(a)}
+                        title="관리자 권한 부여"
+                        className="p-2 rounded-lg text-text-muted hover:text-violet-400 hover:bg-bg-card transition-colors"
+                      >
+                        <ShieldCheck size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(a)}

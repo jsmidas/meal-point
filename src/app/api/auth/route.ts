@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { SESSION_COOKIE, signSession, sessionCookieOptions, verifySession } from "@/lib/auth/session";
 import { hashPassword, verifyPassword, safeEqualString } from "@/lib/auth/password";
 import type { SessionRole } from "@/lib/auth/roles";
+import { writeAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -118,9 +119,11 @@ export async function POST(request: NextRequest) {
     const pwMatch = await safeEqualString(password, acc.pw);
     if (idMatch && pwMatch) {
       clearFails(key);
-      const token = await signSession({ role: acc.role, name: acc.name });
+      const payload = { role: acc.role, name: acc.name, login: acc.id };
+      const token = await signSession(payload);
       const response = NextResponse.json({ ok: true, role: acc.role, name: acc.name });
       setSessionCookie(response, token);
+      void writeAudit(createAdminClient(), { ...payload, iat: 0, exp: 0 }, { action: "login", table: "auth" }, request);
       return response;
     }
   }
@@ -149,12 +152,22 @@ export async function POST(request: NextRequest) {
   }
 
   clearFails(key);
-  const role: SessionRole = member.role === "company" && member.company_id ? "company" : "member";
+  // members.role='admin' 인 회원(다함푸드 직원 등)은 관리자 세션을 받는다
+  const role: SessionRole = memberSessionRole(member);
   const companyName: string | null = member.companies?.name ?? null;
-  const token = await signSession({ role, id: member.id, name: member.name, company_id: member.company_id || null, company_name: companyName });
+  const payload = { role, id: member.id, login: member.login_id, name: member.name, company_id: member.company_id || null, company_name: companyName };
+  const token = await signSession(payload);
   const response = NextResponse.json({ ok: true, role, name: member.name, company_name: companyName });
   setSessionCookie(response, token);
+  void writeAudit(db, { ...payload, iat: 0, exp: 0 }, { action: "login", table: "auth", recordId: member.id }, request);
   return response;
+}
+
+/** members.role → 세션 역할 */
+function memberSessionRole(m: { role?: string | null; company_id?: string | null }): SessionRole {
+  if (m.role === "admin") return "admin";
+  if (m.role === "company" && m.company_id) return "company";
+  return "member";
 }
 
 /**
@@ -167,7 +180,25 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ authenticated: false });
 
   const base = { authenticated: true, role: session.role, name: session.name || null, company_id: session.company_id || null, company_name: session.company_name || null };
-  if (!session.id || (session.role !== "member" && session.role !== "company")) {
+  if (!session.id) return NextResponse.json(base); // 환경변수 관리자
+
+  // 회원 관리자(members.role='admin'): 비활성화·권한 회수가 즉시 반영되도록 DB 상태 확인
+  if (session.role === "admin") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: m } = await (createAdminClient().from("members") as any)
+        .select("is_active, role")
+        .eq("id", session.id)
+        .maybeSingle();
+      if (m && (!m.is_active || m.role !== "admin")) {
+        const res = NextResponse.json({ authenticated: false });
+        res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
+        return res;
+      }
+    } catch { /* 조회 실패 시 세션 정보로 응답 */ }
+    return NextResponse.json(base);
+  }
+  if (session.role !== "member" && session.role !== "company") {
     return NextResponse.json(base);
   }
 
@@ -185,7 +216,7 @@ export async function GET(request: NextRequest) {
       res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
-    const role: SessionRole = m.role === "company" && m.company_id ? "company" : "member";
+    const role: SessionRole = memberSessionRole(m);
     const companyName: string | null = m.companies?.name ?? null;
     const res = NextResponse.json({
       authenticated: true,
@@ -199,7 +230,7 @@ export async function GET(request: NextRequest) {
     });
     const changed = role !== session.role || (m.company_id || null) !== (session.company_id || null) || companyName !== (session.company_name || null) || m.name !== session.name;
     if (changed) {
-      const token = await signSession({ role, id: m.id, name: m.name, company_id: m.company_id || null, company_name: companyName });
+      const token = await signSession({ role, id: m.id, login: session.login || null, name: m.name, company_id: m.company_id || null, company_name: companyName });
       res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     }
     return res;

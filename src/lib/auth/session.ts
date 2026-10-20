@@ -14,6 +14,8 @@ export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7일
 export interface Session {
   role: SessionRole;
   id?: string | null;
+  /** 로그인 아이디 (변경 이력 기록용) */
+  login?: string | null;
   name?: string | null;
   company_id?: string | null;
   company_name?: string | null;

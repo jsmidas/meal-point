@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth/guard";
+import { getAdminSession } from "@/lib/auth/guard";
+import { writeAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -43,9 +44,11 @@ interface MutationRequest {
 }
 
 export async function POST(request: NextRequest) {
-  // 1. 관리자 인증 확인 (서명된 세션 쿠키)
-  const denied = await requireAdmin(request);
-  if (denied) return denied;
+  // 1. 관리자 인증 확인 (서명된 세션 쿠키) — 세션은 변경 이력(누가 바꿨는지) 기록에 쓴다
+  const session = await getAdminSession(request);
+  if (!session) {
+    return NextResponse.json({ ok: false, data: null, error: "관리자 권한이 필요합니다." }, { status: 401 });
+  }
 
   // 2. 요청 파싱
   let body: MutationRequest;
@@ -73,16 +76,26 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = admin.from(table);
 
+    // 변경 이력용: update/delete 는 바꾸기 전 행을 먼저 읽어 둔다
+    let before: unknown = null;
+    if (action === "update" || action === "delete") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pre: any = admin.from(table).select("*");
+      for (const f of filters) pre = pre.eq(f.column, f.value);
+      const { data: preRows } = await pre;
+      before = preRows ?? null;
+    }
+
     switch (action) {
       case "insert":
         query = query.insert(data);
         if (options.returning !== false) query = query.select();
         break;
       case "update":
-        query = query.update(data);
+        query = query.update(data).select();
         break;
       case "delete":
-        query = query.delete();
+        query = query.delete().select();
         break;
       case "upsert":
         query = query.upsert(data, options.onConflict ? { onConflict: options.onConflict } : undefined);
@@ -101,7 +114,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ data: null, error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ data: result, error: null });
+    // 변경 이력 기록 (실패해도 본 작업 결과에는 영향 없음)
+    const affected = Array.isArray(result) ? result : result ? [result] : [];
+    const after = action === "delete" ? null : affected.length > 0 ? affected : data ?? null;
+    await writeAudit(
+      admin,
+      session,
+      {
+        action,
+        table,
+        before,
+        after,
+        filters: filters.length > 0 ? filters : null,
+        rowCount: action === "delete" ? (Array.isArray(before) ? before.length : affected.length) : Math.max(affected.length, Array.isArray(data) ? data.length : data ? 1 : 0),
+      },
+      request,
+    );
+
+    // 기존 호출부 호환: update/delete 는 원래 data 를 돌려주지 않았으므로 null 유지
+    return NextResponse.json({ data: action === "update" || action === "delete" ? null : result, error: null });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "서버 오류";
     return NextResponse.json({ data: null, error: message }, { status: 500 });
