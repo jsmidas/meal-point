@@ -9,6 +9,7 @@ interface Account {
   name: string;
   is_active: boolean;
   company_id: string | null;
+  role?: string;
   created_at: string;
 }
 
@@ -186,6 +187,14 @@ export default function CompanyAccountsSection({ companyId }: Props) {
                 >
                   {a.is_active ? "활성" : "비활성"}
                 </span>
+                {a.role === "admin" && (
+                  <span
+                    className="ml-1.5 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-400/10 text-violet-400"
+                    title="관리자 권한 계정 — 발주 포털 대신 관리자 화면으로 로그인됩니다"
+                  >
+                    관리자
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button

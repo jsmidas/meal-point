@@ -58,9 +58,10 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase.from("members") as any)
     .select("id, login_id, name, is_active, company_id, role, created_at, companies(name)")
-    .eq("role", "company")
     .order("created_at", { ascending: false });
-  if (companyId) query = query.eq("company_id", companyId);
+  // 거래처별 조회(거래처 모달)는 그 거래처 소속 관리자 계정도 함께 보여준다. 전체 목록은 발주 계정만.
+  if (companyId) query = query.eq("company_id", companyId).in("role", MANAGED_ROLES);
+  else query = query.eq("role", "company");
 
   const { data, error } = await query;
   if (error) {
