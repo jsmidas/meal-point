@@ -28,6 +28,11 @@ import { useRouter } from "next/navigation";
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
 
+/** 자가소비(self) 여부. 자가소비는 목록에는 보이지만 매출 금액·명세서 대상에서 제외 */
+const isSelfUse = (log: SalesLog) => log.type === "self";
+/** 매출 금액 (자가소비는 0) */
+const saleAmount = (log: SalesLog) => (isSelfUse(log) ? 0 : log.quantity * (log.unit_price || 0));
+
 interface SaleItem {
   key: number;
   type: "product" | "manual";
@@ -120,7 +125,7 @@ export default function SalesPage() {
       db
         .from("inventory_logs")
         .select("*, companies(*), products(*)")
-        .eq("type", "out")
+        .in("type", ["out", "self"]) // 자가소비(self)도 표시하되 금액 집계·명세서 대상에서는 제외
         .order("log_date", { ascending: false })
         .limit(500),
       db.from("products").select("*").eq("is_active", true).order("name"),
@@ -166,21 +171,23 @@ export default function SalesPage() {
     });
   }, [logs, month]);
 
-  // 월 합계
+  // 월 합계 (판매만, 자가소비 제외)
   const monthTotal = useMemo(() => {
     let totalQty = 0;
     let totalAmount = 0;
     for (const log of monthLogs) {
+      if (isSelfUse(log)) continue;
       totalQty += log.quantity;
       totalAmount += log.quantity * (log.unit_price || 0);
     }
     return { totalQty, totalAmount };
   }, [monthLogs]);
 
-  // 거래처별 판매 집계
+  // 거래처별 판매 집계 (자가소비 제외)
   const customerSummary = useMemo(() => {
     const map = new Map<string, { name: string; qty: number; amount: number; count: number }>();
     for (const log of monthLogs) {
+      if (isSelfUse(log)) continue;
       const key = log.company_id || "__none__";
       const name = log.companies?.name || "(거래처 미지정)";
       const existing = map.get(key) || { name, qty: 0, amount: 0, count: 0 };
@@ -281,15 +288,15 @@ export default function SalesPage() {
     setEditingLogId(null);
   }
 
-  // 판매 기록을 자가소비로 전환 (재고는 이미 차감돼 있으므로 type 만 변경)
-  async function convertToSelfUse(log: SalesLog) {
-    if (
-      !confirm(
-        `이 판매 기록을 자가소비로 전환하시겠습니까?\n${log.products?.name || log.reason || ""} ${formatNumber(log.quantity)}개\n\n전환 후에는 매출·청구·거래명세서에서 빠지고 재고 수불 현황에서만 보입니다.`
-      )
-    )
-      return;
-    await dbUpdate("inventory_logs", { type: "self" }, { id: log.id });
+  // 판매 ↔ 자가소비 전환 (재고는 이미 차감돼 있으므로 type 만 변경)
+  async function toggleSelfUse(log: SalesLog) {
+    const toSelf = !isSelfUse(log);
+    const label = `${log.products?.name || log.reason || ""} ${formatNumber(log.quantity)}개`;
+    const msg = toSelf
+      ? `이 판매 기록을 자가소비로 전환하시겠습니까?\n${label}\n\n전환 후에는 매출·청구·거래명세서에서 빠집니다.`
+      : `이 자가소비 기록을 판매로 되돌리시겠습니까?\n${label}\n\n되돌리면 매출·청구·거래명세서에 다시 포함됩니다.`;
+    if (!confirm(msg)) return;
+    await dbUpdate("inventory_logs", { type: toSelf ? "self" : "out" }, { id: log.id });
     fetchData();
   }
 
@@ -459,7 +466,7 @@ export default function SalesPage() {
     for (const log of monthLogs) {
       const date = (log.log_date || log.created_at).slice(0, 10);
       const existing = map.get(date) || { count: 0, amount: 0, logs: [] as SalesLog[], companies: [] as string[], companyIds: [] as string[], companyAmounts: new Map<string, number>() };
-      const logAmount = log.quantity * (log.unit_price || 0);
+      const logAmount = saleAmount(log);
       existing.count += 1;
       existing.amount += logAmount;
       existing.logs.push(log);
@@ -534,7 +541,7 @@ export default function SalesPage() {
         logs: [], amount: 0,
       };
       existing.logs.push(log);
-      existing.amount += log.quantity * (log.unit_price || 0);
+      existing.amount += saleAmount(log);
       map.set(key, existing);
     }
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date) || a.companyName.localeCompare(b.companyName));
@@ -734,9 +741,13 @@ export default function SalesPage() {
                     </Link>
                   );
                 }
+                const saleLogIds = selectedRows.flatMap(r => r.logs.filter(l => !isSelfUse(l)).map(l => l.id));
+                if (saleLogIds.length === 0) {
+                  return <span className="text-xs text-violet-400">자가소비만 선택됨 (명세서 대상 아님)</span>;
+                }
                 return (
                   <Link
-                    href={`/admin/statements/new?logIds=${selectedRows.flatMap(r => r.logs.map(l => l.id)).join(",")}&companyId=${companyIds[0]}`}
+                    href={`/admin/statements/new?logIds=${saleLogIds.join(",")}&companyId=${companyIds[0]}`}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors"
                   >
                     <FileText size={14} /> 명세서 신규 발행
@@ -810,6 +821,7 @@ export default function SalesPage() {
                   const productSummary = productNames.length > 1
                     ? `${productNames[0]} 외 ${productNames.length - 1}종`
                     : productNames[0] || "-";
+                  const selfCount = row.logs.filter(isSelfUse).length;
                   return (
                     <tr
                       key={row.key}
@@ -841,7 +853,14 @@ export default function SalesPage() {
                       </td>
                       <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">{row.date}</td>
                       <td className="px-4 py-3 text-text-primary font-medium">{row.companyName}</td>
-                      <td className="px-4 py-3 text-text-secondary text-xs">{productSummary}</td>
+                      <td className="px-4 py-3 text-text-secondary text-xs">
+                        {productSummary}
+                        {selfCount > 0 && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-violet-400/10 text-violet-400 text-[10px] font-medium">
+                            자가소비 {selfCount}건
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-bold text-accent">{formatNumber(row.amount)}원</td>
                       <td className="px-4 py-3 text-right text-text-muted text-xs">{formatNumber(tax)}원</td>
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
@@ -1123,8 +1142,9 @@ export default function SalesPage() {
                       {selectedDayLogs.map((log) => {
                         const amount = (log.unit_price || 0) * log.quantity;
                         const isManual = !log.product_id;
+                        const self = isSelfUse(log);
                         return (
-                          <tr key={log.id} className="border-b border-border hover:bg-bg-card-hover transition-colors">
+                          <tr key={log.id} className={`border-b border-border hover:bg-bg-card-hover transition-colors ${self ? "bg-violet-500/5" : ""}`}>
                             <td className="px-4 py-3 text-text-primary font-medium">
                               {isManual ? (
                                 <span className="inline-flex items-center gap-1">
@@ -1134,9 +1154,14 @@ export default function SalesPage() {
                               ) : (
                                 log.products?.name || "-"
                               )}
+                              {self && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-violet-400/10 text-violet-400 text-[10px] font-medium align-middle">
+                                  자가소비
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-text-secondary">{log.companies?.name || "-"}</td>
-                            <td className="px-4 py-3 text-right text-red-400 font-bold">
+                            <td className={`px-4 py-3 text-right font-bold ${self ? "text-violet-400" : "text-red-400"}`}>
                               {formatNumber(log.quantity)}
                               <span className="text-text-muted font-normal text-xs ml-1">
                                 {log.products?.unit || (isManual ? "식" : "")}
@@ -1146,7 +1171,9 @@ export default function SalesPage() {
                               {log.unit_price > 0 ? formatNumber(log.unit_price) : "-"}
                             </td>
                             <td className="px-4 py-3 text-right font-bold text-accent">
-                              {amount > 0 ? `${formatNumber(amount)}원` : "-"}
+                              {self ? (
+                                <span className="text-xs text-violet-400 font-normal" title="매출 제외">매출 제외</span>
+                              ) : amount > 0 ? `${formatNumber(amount)}원` : "-"}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-1">
@@ -1160,9 +1187,13 @@ export default function SalesPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => convertToSelfUse(log)}
-                                  title="자가소비로 전환 (매출에서 제외)"
-                                  className="p-1.5 rounded-lg hover:bg-violet-400/10 text-text-muted hover:text-violet-400 transition-colors"
+                                  onClick={() => toggleSelfUse(log)}
+                                  title={self ? "판매로 되돌리기 (매출에 포함)" : "자가소비로 전환 (매출에서 제외)"}
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    self
+                                      ? "bg-violet-400/10 text-violet-400 hover:bg-violet-400/20"
+                                      : "hover:bg-violet-400/10 text-text-muted hover:text-violet-400"
+                                  }`}
                                 >
                                   <PackageMinus size={14} />
                                 </button>
@@ -1184,7 +1215,7 @@ export default function SalesPage() {
                       <tr className="bg-bg-dark font-bold">
                         <td colSpan={4} className="px-4 py-3 text-right text-text-muted text-xs">일계</td>
                         <td className="px-4 py-3 text-right text-accent">
-                          {formatNumber(selectedDayLogs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0))}원
+                          {formatNumber(selectedDayLogs.reduce((s, l) => s + saleAmount(l), 0))}원
                         </td>
                         <td />
                       </tr>
@@ -1196,7 +1227,7 @@ export default function SalesPage() {
                 {(() => {
                   const companyGroups = new Map<string, { name: string; logIds: string[] }>();
                   for (const log of selectedDayLogs) {
-                    if (!log.company_id) continue;
+                    if (!log.company_id || isSelfUse(log)) continue; // 자가소비는 명세서 대상 아님
                     const g = companyGroups.get(log.company_id) || { name: log.companies?.name || "-", logIds: [] };
                     g.logIds.push(log.id);
                     companyGroups.set(log.company_id, g);
