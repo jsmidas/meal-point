@@ -20,6 +20,7 @@ import {
   Edit2,
   CalendarDays,
   List,
+  PackageMinus,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -92,6 +93,8 @@ export default function SalesPage() {
   const [editingLogId, setEditingLogId] = useState<string | null>(null); // null=신규, string=수정
   const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
   const [formCompanyId, setFormCompanyId] = useState("");
+  // 구분: out=판매(매출·청구 포함), self=자가소비(재고만 차감, 매출 제외)
+  const [formKind, setFormKind] = useState<"out" | "self">("out");
   const [formItems, setFormItems] = useState<SaleItem[]>([newItem()]);
   const [formNotes, setFormNotes] = useState("");
   const [companyPrices, setCompanyPrices] = useState<CompanyPrice[]>([]);
@@ -271,10 +274,23 @@ export default function SalesPage() {
   function resetForm() {
     setFormDate(new Date().toISOString().slice(0, 10));
     setFormCompanyId("");
+    setFormKind("out");
     setFormItems([newItem()]);
     setFormNotes("");
     setCompanyPrices([]);
     setEditingLogId(null);
+  }
+
+  // 판매 기록을 자가소비로 전환 (재고는 이미 차감돼 있으므로 type 만 변경)
+  async function convertToSelfUse(log: SalesLog) {
+    if (
+      !confirm(
+        `이 판매 기록을 자가소비로 전환하시겠습니까?\n${log.products?.name || log.reason || ""} ${formatNumber(log.quantity)}개\n\n전환 후에는 매출·청구·거래명세서에서 빠지고 재고 수불 현황에서만 보입니다.`
+      )
+    )
+      return;
+    await dbUpdate("inventory_logs", { type: "self" }, { id: log.id });
+    fetchData();
   }
 
   // 수정 모달 열기
@@ -286,6 +302,7 @@ export default function SalesPage() {
     setEditingLogId(log.id);
     setFormDate(log.log_date || log.created_at.slice(0, 10));
     setFormCompanyId(log.company_id || "");
+    setFormKind(log.type === "self" ? "self" : "out");
     setFormNotes(isManual ? "" : (log.reason || ""));
 
     // 업체별 단가 로드
@@ -355,10 +372,10 @@ export default function SalesPage() {
       // 실제 개수: 박스 판매면 박스 수 × 박스당 수량
       const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
 
-      // 판매(출고) 로그
+      // 판매(출고) 또는 자가소비 로그
       const { data: insertedLogData } = await dbInsert("inventory_logs", {
         product_id: item.type === "product" ? item.product_id : null,
-        type: "out",
+        type: formKind,
         quantity: actualQty,
         reason: item.type === "manual"
           ? item.product_name
@@ -397,8 +414,8 @@ export default function SalesPage() {
     setShowModal(false);
     setSubmitting(false);
 
-    // 신규 등록 시 거래명세서 발행 안내
-    if (!isEditing && newLogIds.length > 0) {
+    // 신규 판매 등록 시 거래명세서 발행 안내 (자가소비는 명세서 대상이 아님)
+    if (!isEditing && formKind === "out" && newLogIds.length > 0) {
       setLastSavedCompanyId(formCompanyId);
       setLastSavedDate(formDate);
       setLastSavedLogIds(newLogIds);
@@ -1143,6 +1160,14 @@ export default function SalesPage() {
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => convertToSelfUse(log)}
+                                  title="자가소비로 전환 (매출에서 제외)"
+                                  className="p-1.5 rounded-lg hover:bg-violet-400/10 text-text-muted hover:text-violet-400 transition-colors"
+                                >
+                                  <PackageMinus size={14} />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => handleDelete(log)}
                                   title="삭제"
                                   className="p-1.5 rounded-lg hover:bg-red-400/10 text-text-muted hover:text-red-400 transition-colors"
@@ -1221,7 +1246,9 @@ export default function SalesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-bg-card z-10">
-              <h2 className="text-lg font-bold text-primary">{editingLogId ? "판매 수정" : "판매 등록"}</h2>
+              <h2 className="text-lg font-bold text-primary">
+                {editingLogId ? "판매 수정" : formKind === "self" ? "자가소비 등록" : "판매 등록"}
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -1232,11 +1259,43 @@ export default function SalesPage() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              {/* 구분: 판매 / 자가소비 */}
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1 p-1 rounded-xl bg-bg-dark border border-border">
+                  {(
+                    [
+                      ["out", "판매"],
+                      ["self", "자가소비"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setFormKind(key)}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        formKind === key
+                          ? key === "self"
+                            ? "bg-violet-500/20 text-violet-300"
+                            : "bg-primary/20 text-primary"
+                          : "text-text-muted hover:text-text-primary"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-text-muted">
+                  {formKind === "self"
+                    ? "재고만 차감되고 매출·청구·거래명세서·손익에서 제외됩니다. 재고 수불 현황에서 확인할 수 있습니다."
+                    : "매출로 집계되어 청구·거래명세서 대상이 됩니다."}
+                </p>
+              </div>
+
               {/* 일자 & 거래처 */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-text-secondary mb-1">
-                    판매일 <span className="text-red-400">*</span>
+                    {formKind === "self" ? "사용일" : "판매일"} <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
@@ -1449,7 +1508,7 @@ export default function SalesPage() {
                   disabled={submitting}
                   className="px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
                 >
-                  {submitting ? "처리 중..." : editingLogId ? "수정 저장" : "판매 등록"}
+                  {submitting ? "처리 중..." : editingLogId ? "수정 저장" : formKind === "self" ? "자가소비 등록" : "판매 등록"}
                 </button>
               </div>
             </form>
