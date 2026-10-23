@@ -2,10 +2,10 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { dbInsert, dbDelete } from "@/lib/db";
+import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import type { Expense } from "@/lib/supabase/types";
 import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber } from "@/lib/utils";
-import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer, Pencil } from "lucide-react";
 
 /**
  * 손익 현황
@@ -55,6 +55,7 @@ export default function PnlPage() {
   const [expDate, setExpDate] = useState(new Date().toISOString().slice(0, 10));
   const [expCategory, setExpCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [expNewCategory, setExpNewCategory] = useState(""); // '직접 입력' 선택 시 새 항목명
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null); // null=신규, string=수정
   const [expDesc, setExpDesc] = useState("");
   const [expAmount, setExpAmount] = useState(0);
   const [expNotes, setExpNotes] = useState("");
@@ -239,7 +240,26 @@ export default function PnlPage() {
     setExpDesc("");
     setExpAmount(0);
     setExpNotes("");
+    setEditingExpenseId(null);
     setShowExpense(true);
+  }
+
+  /** 기존 비용을 폼에 불러와 수정 모드로 */
+  function startEditExpense(x: Expense) {
+    setEditingExpenseId(x.id);
+    setExpDate(x.expense_date);
+    setExpCategory(x.category);
+    setExpNewCategory("");
+    setExpDesc(x.description);
+    setExpAmount(x.amount);
+    setExpNotes(x.notes || "");
+  }
+
+  function cancelEditExpense() {
+    setEditingExpenseId(null);
+    setExpDesc("");
+    setExpAmount(0);
+    setExpNotes("");
   }
 
   async function handleAddExpense(e: React.FormEvent) {
@@ -248,13 +268,19 @@ export default function PnlPage() {
     const category = expCategory === NEW_CATEGORY ? expNewCategory.trim() : expCategory;
     if (!category) return;
     setSaving(true);
-    await dbInsert("expenses", {
+    const payload = {
       expense_date: expDate,
       category,
       description: expDesc,
       amount: expAmount,
       notes: expNotes || null,
-    });
+    };
+    if (editingExpenseId) {
+      await dbUpdate("expenses", payload, { id: editingExpenseId });
+      setEditingExpenseId(null);
+    } else {
+      await dbInsert("expenses", payload);
+    }
     setSaving(false);
     // 새 항목으로 등록했으면 그 항목을 선택 상태로 유지(연속 입력)
     if (expCategory === NEW_CATEGORY) { setExpCategory(category); setExpNewCategory(""); }
@@ -267,6 +293,7 @@ export default function PnlPage() {
   async function handleDeleteExpense(id: string) {
     if (!confirm("이 비용을 삭제하시겠습니까?")) return;
     await dbDelete("expenses", { id });
+    if (editingExpenseId === id) cancelEditExpense();
     fetchData();
   }
 
@@ -664,7 +691,8 @@ export default function PnlPage() {
           <div className="bg-bg-card border border-border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="text-lg font-bold text-text-primary">
-                판관비 등록{expMonth && <span className="text-sm font-normal text-text-muted ml-2">{Number(expMonth.slice(5))}월</span>}
+                {editingExpenseId ? "판관비 수정" : "판관비 등록"}
+                {!editingExpenseId && expMonth && <span className="text-sm font-normal text-text-muted ml-2">{Number(expMonth.slice(5))}월</span>}
               </h2>
               <button type="button" onClick={() => setShowExpense(false)} title="닫기" className="text-text-muted hover:text-text-primary">
                 <X size={20} />
@@ -744,11 +772,17 @@ export default function PnlPage() {
                 />
               </div>
               <div className="flex items-center justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowExpense(false)} className="px-6 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">
-                  닫기
-                </button>
+                {editingExpenseId ? (
+                  <button type="button" onClick={cancelEditExpense} className="px-6 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">
+                    수정 취소
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setShowExpense(false)} className="px-6 py-2.5 rounded-xl border border-border text-text-secondary hover:bg-bg-card-hover transition-colors">
+                    닫기
+                  </button>
+                )}
                 <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-xl bg-primary text-bg-dark font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50">
-                  {saving ? "저장 중..." : "등록"}
+                  {saving ? "저장 중..." : editingExpenseId ? "수정 저장" : "등록"}
                 </button>
               </div>
 
@@ -762,10 +796,16 @@ export default function PnlPage() {
                 ) : (
                   <ul className="space-y-1">
                     {modalExpenses.map((x) => (
-                      <li key={x.id} className="flex items-center justify-between gap-2 rounded-lg bg-bg-dark px-3 py-2 text-xs">
+                      <li
+                        key={x.id}
+                        className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs ${editingExpenseId === x.id ? "bg-primary/10 ring-1 ring-primary/50" : "bg-bg-dark"}`}
+                      >
                         <span className="text-text-muted w-16 shrink-0">{x.expense_date.slice(5)}</span>
                         <span className="flex-1 text-text-primary truncate">{x.description}{x.notes && <span className="text-text-muted"> · {x.notes}</span>}</span>
                         <span className="text-red-300 font-medium">{formatNumber(x.amount)}</span>
+                        <button type="button" onClick={() => startEditExpense(x)} title="수정" className="p-1 rounded text-text-muted hover:text-primary">
+                          <Pencil size={13} />
+                        </button>
                         <button type="button" onClick={() => handleDeleteExpense(x.id)} title="삭제" className="p-1 rounded text-text-muted hover:text-red-400">
                           <Trash2 size={13} />
                         </button>
