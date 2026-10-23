@@ -296,7 +296,9 @@ export default function SalesPage() {
       ? `이 판매 기록을 자가소비로 전환하시겠습니까?\n${label}\n\n전환 후에는 매출·청구·거래명세서에서 빠집니다.`
       : `이 자가소비 기록을 판매로 되돌리시겠습니까?\n${label}\n\n되돌리면 매출·청구·거래명세서에 다시 포함됩니다.`;
     if (!confirm(msg)) return;
-    await dbUpdate("inventory_logs", { type: toSelf ? "self" : "out" }, { id: log.id });
+    // 자가소비로 돌릴 때는 매입가 기준 정산용으로 상품 매입가도 함께 기록
+    const costPrice = toSelf ? (log.products?.cost_price || products.find((p) => p.id === log.product_id)?.cost_price || 0) : 0;
+    await dbUpdate("inventory_logs", { type: toSelf ? "self" : "out", cost_price: costPrice }, { id: log.id });
     fetchData();
   }
 
@@ -389,6 +391,8 @@ export default function SalesPage() {
           : (formNotes || (item.box_quantity > 1 ? `${item.quantity}박스` : null)),
         company_id: formCompanyId || null,
         unit_price: item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0),
+        // 자가소비는 매입가 기준 정산도 필요하므로 기록 시점 상품 매입가를 함께 저장
+        cost_price: formKind === "self" ? (products.find((p) => p.id === item.product_id)?.cost_price || 0) : 0,
         log_date: formDate,
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1172,7 +1176,10 @@ export default function SalesPage() {
                             </td>
                             <td className="px-4 py-3 text-right font-bold text-accent">
                               {self ? (
-                                <span className="text-xs text-violet-400 font-normal" title="매출 제외">매출 제외</span>
+                                <span className="text-violet-400" title={`자가소비 — 매출 제외. 판매가 기준 ${formatNumber(amount)}원 / 매입가 기준 ${formatNumber(log.quantity * (log.cost_price || 0))}원`}>
+                                  {amount > 0 ? `${formatNumber(amount)}원` : "-"}
+                                  <span className="block text-[10px] font-normal text-text-muted">매출 제외</span>
+                                </span>
                               ) : amount > 0 ? `${formatNumber(amount)}원` : "-"}
                             </td>
                             <td className="px-4 py-3 text-center">

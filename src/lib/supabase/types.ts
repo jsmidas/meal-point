@@ -576,6 +576,7 @@ export type Database = {
           reference_type: string | null;
           company_id: string | null;
           unit_price: number;
+          cost_price: number;
           log_date: string;
           created_at: string;
         };
@@ -588,6 +589,7 @@ export type Database = {
           reference_type?: string | null;
           company_id?: string | null;
           unit_price?: number;
+          cost_price?: number;
           log_date?: string;
         };
         Update: {
@@ -599,6 +601,7 @@ export type Database = {
           reference_type?: string | null;
           company_id?: string | null;
           unit_price?: number;
+          cost_price?: number;
           log_date?: string;
         };
       };

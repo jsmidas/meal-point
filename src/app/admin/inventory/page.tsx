@@ -60,6 +60,10 @@ export default function InventoryPage() {
   const [entryQty, setEntryQty] = useState(0);
   const [entryCompanyId, setEntryCompanyId] = useState("");
   const [entryReason, setEntryReason] = useState("");
+  // 자가소비 금액: 판매 단가(사용처 업체 단가) · 매입 단가(상품 매입가) — 정산용으로 둘 다 저장
+  const [entrySalePrice, setEntrySalePrice] = useState(0);
+  const [entryCostPrice, setEntryCostPrice] = useState(0);
+  const [entryCompanyPrices, setEntryCompanyPrices] = useState<{ product_id: string; custom_price: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // 로그 상세 보기
@@ -191,6 +195,32 @@ export default function InventoryPage() {
   const totalOutbound = stockBalance.reduce((s, i) => s + i.outbound, 0);
   const totalSelfUse = stockBalance.reduce((s, i) => s + i.selfUse, 0);
 
+  // 자가소비 정산 (당월, 사용처 × 상품): 판매가 기준·매입가 기준 합계
+  type SelfRow = { key: string; companyName: string; productName: string; boxQty: number; qty: number; saleAmount: number; costAmount: number; count: number };
+  const selfSettlement = useMemo(() => {
+    const map = new Map<string, SelfRow>();
+    for (const l of logs) {
+      if (asLogType(l.type) !== "self" || !logDay(l).startsWith(month)) continue;
+      const key = `${l.company_id || "none"}::${l.product_id || l.reason || "etc"}`;
+      const prod = products.find((p) => p.id === l.product_id);
+      const row = map.get(key) || {
+        key,
+        companyName: l.companies?.name || "(사용처 미지정)",
+        productName: prod?.name || inventory.find((i) => i.product_id === l.product_id)?.products.name || l.reason || "(기타)",
+        boxQty: prod?.box_quantity ?? 1,
+        qty: 0, saleAmount: 0, costAmount: 0, count: 0,
+      };
+      row.qty += l.quantity;
+      row.saleAmount += l.quantity * (l.unit_price || 0);
+      row.costAmount += l.quantity * (l.cost_price || 0);
+      row.count += 1;
+      map.set(key, row);
+    }
+    const rows = Array.from(map.values()).sort((a, b) => a.companyName.localeCompare(b.companyName) || a.productName.localeCompare(b.productName));
+    const total = rows.reduce((s, r) => ({ qty: s.qty + r.qty, saleAmount: s.saleAmount + r.saleAmount, costAmount: s.costAmount + r.costAmount }), { qty: 0, saleAmount: 0, costAmount: 0 });
+    return { rows, total };
+  }, [logs, month, products, inventory]);
+
   // 해당 월 로그 (최신순)
   const monthLogs = useMemo(
     () =>
@@ -234,6 +264,27 @@ export default function InventoryPage() {
 
   const entryProduct = products.find((p) => p.id === entryProductId);
   const entryBoxQty = entryProduct?.box_quantity ?? 1;
+
+  // 사용처가 바뀌면 그 업체 단가를 불러온다
+  useEffect(() => {
+    if (!showEntry) return;
+    if (!entryCompanyId) { setEntryCompanyPrices([]); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("company_prices")
+      .select("product_id, custom_price")
+      .eq("company_id", entryCompanyId)
+      .then(({ data }: { data: { product_id: string; custom_price: number }[] | null }) => setEntryCompanyPrices(data || []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryCompanyId, showEntry]);
+
+  // 상품·사용처가 바뀌면 판매 단가(업체 단가 → 없으면 상품 판매가)와 매입 단가(상품 매입가)를 채운다
+  useEffect(() => {
+    if (!entryProduct) { setEntrySalePrice(0); setEntryCostPrice(0); return; }
+    const custom = entryCompanyPrices.find((cp) => cp.product_id === entryProduct.id)?.custom_price;
+    setEntrySalePrice(custom ?? entryProduct.selling_price ?? 0);
+    setEntryCostPrice(entryProduct.cost_price ?? 0);
+  }, [entryProduct, entryCompanyPrices]);
   /** 등록 일자 기준 장부 재고 (그 날까지의 로그 누적) */
   const entryLedgerStock = useMemo(() => {
     if (!entryProductId) return 0;
@@ -260,8 +311,9 @@ export default function InventoryPage() {
       quantity: entryQty,
       reason: entryReason || null,
       company_id: entryKind === "self" ? entryCompanyId || null : null,
-      // 자가소비는 매출이 아니므로 원가로 평가, 조정은 금액 없음
-      unit_price: entryKind === "self" ? entryProduct?.cost_price || 0 : 0,
+      // 자가소비는 판매 단가·매입 단가를 모두 저장해 두 기준으로 정산, 조정은 금액 없음
+      unit_price: entryKind === "self" ? entrySalePrice || 0 : 0,
+      cost_price: entryKind === "self" ? entryCostPrice || 0 : 0,
       log_date: entryDate,
     });
 
@@ -388,6 +440,12 @@ export default function InventoryPage() {
         <div className="rounded-xl border border-border bg-bg-card p-5">
           <p className="text-xs text-violet-400 mb-1">당월 자가소비</p>
           <p className="text-2xl font-bold text-violet-400">-{formatNumber(totalSelfUse)}</p>
+          {selfSettlement.total.qty > 0 && (
+            <p className="text-[11px] text-text-muted mt-1 leading-tight">
+              판매가 {formatNumber(selfSettlement.total.saleAmount)}원
+              <br />매입가 {formatNumber(selfSettlement.total.costAmount)}원
+            </p>
+          )}
         </div>
         <div
           className="rounded-xl border border-border bg-bg-card p-5 cursor-pointer hover:border-yellow-400/30 transition-colors"
@@ -572,6 +630,67 @@ export default function InventoryPage() {
                   </tr>
                 )}
               </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 자가소비 정산 */}
+      {selfSettlement.rows.length > 0 && (
+        <div className="rounded-2xl border border-violet-400/30 bg-bg-card overflow-hidden mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4 border-b border-border">
+            <h2 className="text-lg font-semibold text-text-primary">{monthLabel} 자가소비 정산</h2>
+            <span className="text-xs text-text-muted">
+              판매가 기준은 사용처 업체 단가, 매입가 기준은 기록 시점 상품 매입가. 매출·손익에는 포함되지 않습니다.
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-bg-dark">
+                  <th className="px-4 py-3 text-left text-text-muted font-medium">사용처</th>
+                  <th className="px-4 py-3 text-left text-text-muted font-medium">상품</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">수량</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium hidden md:table-cell">박스</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">판매 단가</th>
+                  <th className="px-4 py-3 text-right text-violet-400 font-medium">판매가 합계</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">매입 단가</th>
+                  <th className="px-4 py-3 text-right text-sky-400 font-medium">매입가 합계</th>
+                  <th className="px-4 py-3 text-right text-text-muted font-medium">차액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selfSettlement.rows.map((r) => (
+                  <tr key={r.key} className="border-b border-border hover:bg-bg-card-hover transition-colors">
+                    <td className="px-4 py-3 text-text-primary font-medium">{r.companyName}</td>
+                    <td className="px-4 py-3 text-text-secondary">
+                      {r.productName}
+                      <span className="text-xs text-text-muted ml-1">({r.count}건)</span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-violet-400 font-medium">{formatNumber(r.qty)}</td>
+                    <td className="px-4 py-3 text-right text-text-muted text-xs hidden md:table-cell">
+                      {r.boxQty > 1 ? `${(r.qty / r.boxQty).toFixed(1)}박스` : "-"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-text-secondary">{r.qty > 0 ? formatNumber(Math.round(r.saleAmount / r.qty)) : "-"}</td>
+                    <td className="px-4 py-3 text-right text-violet-400 font-semibold">{formatNumber(r.saleAmount)}원</td>
+                    <td className="px-4 py-3 text-right text-text-secondary">{r.qty > 0 ? formatNumber(Math.round(r.costAmount / r.qty)) : "-"}</td>
+                    <td className="px-4 py-3 text-right text-sky-400 font-semibold">{formatNumber(r.costAmount)}원</td>
+                    <td className="px-4 py-3 text-right text-text-secondary">{formatNumber(r.saleAmount - r.costAmount)}원</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-bg-dark font-bold">
+                  <td colSpan={2} className="px-4 py-3 text-right text-text-muted text-xs">합계</td>
+                  <td className="px-4 py-3 text-right text-violet-400">{formatNumber(selfSettlement.total.qty)}</td>
+                  <td className="hidden md:table-cell" />
+                  <td />
+                  <td className="px-4 py-3 text-right text-violet-400">{formatNumber(selfSettlement.total.saleAmount)}원</td>
+                  <td />
+                  <td className="px-4 py-3 text-right text-sky-400">{formatNumber(selfSettlement.total.costAmount)}원</td>
+                  <td className="px-4 py-3 text-right text-text-secondary">{formatNumber(selfSettlement.total.saleAmount - selfSettlement.total.costAmount)}원</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -822,11 +941,43 @@ export default function InventoryPage() {
                       </span>
                     </span>
                   )}
-                  {entryProductId && entryKind === "self" && entryProduct?.cost_price ? (
-                    <span>원가 평가액 {formatNumber(entryQty * entryProduct.cost_price)}원</span>
-                  ) : null}
                 </div>
               </div>
+
+              {entryKind === "self" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-text-secondary mb-1">판매 단가(개당)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={entrySalePrice}
+                      onChange={(e) => setEntrySalePrice(Number(e.target.value))}
+                      aria-label="판매 단가"
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-xs text-text-muted mt-1">
+                      {entryCompanyPrices.some((cp) => cp.product_id === entryProductId) ? "사용처 업체 단가" : "상품 판매가"} · 합계{" "}
+                      <span className="text-violet-400 font-medium">{formatNumber(entryQty * entrySalePrice)}원</span>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-text-secondary mb-1">매입 단가(개당)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={entryCostPrice}
+                      onChange={(e) => setEntryCostPrice(Number(e.target.value))}
+                      aria-label="매입 단가"
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-xs text-text-muted mt-1">
+                      상품 매입가 · 합계{" "}
+                      <span className="text-sky-400 font-medium">{formatNumber(entryQty * entryCostPrice)}원</span>
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm text-text-secondary mb-1">비고</label>
