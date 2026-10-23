@@ -463,6 +463,17 @@ export default function PnlPage() {
                       </tr>
                     );
                   })}
+                  <tr className="border-b border-border/60 print-hide">
+                    <td colSpan={months.length + 2} className="px-3 py-1 sticky left-0 bg-bg-card">
+                      <button
+                        type="button"
+                        onClick={() => openExpense(null, NEW_CATEGORY)}
+                        className="inline-flex items-center gap-1 pl-2 text-xs text-text-muted hover:text-primary transition-colors"
+                      >
+                        <Plus size={12} /> 판관비 항목 추가 (예: 차량유지비, 통신비)
+                      </button>
+                    </td>
+                  </tr>
                   <tr className="border-b border-border bg-bg-dark/60 font-bold">
                     <td className="px-3 py-2 text-red-400 sticky left-0 bg-bg-dark">판관비 합계</td>
                     {months.map((m) => <td key={m} className={`${cellCls} text-red-400`}>{money(pnl.opex[m])}</td>)}
