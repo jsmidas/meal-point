@@ -95,7 +95,7 @@ input[type="number"] {
     color: #111 !important;
     font-size: 8.5pt;
     /* 인쇄 대화상자 여백이 '없음'이거나 프린터 여백이 좁아도 상하좌우가 잘리지 않도록 안쪽 여백을 직접 둔다 */
-    padding: 7mm 7mm !important;
+    padding: 12mm 7mm 7mm !important;
     box-sizing: border-box;
     width: 100% !important;
     max-width: 100% !important;
@@ -149,6 +149,8 @@ input[type="number"] {
   .pnl-print .pnl-cards p { font-size: 8pt !important; }
   .pnl-print .pnl-cards p.text-2xl { font-size: 11pt !important; }
   .pnl-print .pnl-section { margin-bottom: 5mm !important; page-break-inside: avoid; }
-  .pnl-print .pnl-matrix { page-break-before: auto; }
+  /* 2쪽(제품×업체)·3쪽(제품별 원가)은 새 쪽에서 시작하고 쪽 상단에 여백을 직접 둔다
+     (인쇄 대화상자 여백이 '없음'이면 용지 여백이 없어지므로) */
+  .pnl-print .pnl-matrix, .pnl-print .pnl-product-summary { page-break-before: always; break-before: page; padding-top: 12mm; }
   .pnl-print button { color: inherit !important; background: transparent !important; padding: 2px 4px !important; }
 }
