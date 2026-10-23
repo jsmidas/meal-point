@@ -54,17 +54,20 @@ export const BILLING_STATUS: Record<string, { label: string; color: string }> = 
   paid: { label: "완납", color: "bg-emerald-400/10 text-emerald-400" },
 };
 
-/** 비용 카테고리 */
+/** 판관비 카테고리 — 앞 4개는 손익 현황 표에 항상 행으로 표시 */
 export const EXPENSE_CATEGORIES = [
-  "매입",
-  "인건비",
+  "광고비",
+  "포장박스",
+  "포장비닐",
+  "기타",
   "물류/배송",
+  "인건비",
   "임대료",
   "공과금",
   "소모품",
-  "마케팅",
-  "기타",
 ];
+/** 손익 현황 표에 항상 보이는 판관비 행 */
+export const EXPENSE_FIXED_CATEGORIES = ["광고비", "포장박스", "포장비닐", "기타"];
 
 /** 입출고 타입 */
 export const INVENTORY_LOG_TYPES: Record<string, { label: string; color: string }> = {

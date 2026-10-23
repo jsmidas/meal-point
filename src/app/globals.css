@@ -89,4 +89,56 @@ input[type="number"] {
     display: block !important;
     background: white !important;
   }
+
+  /* ── 손익 현황 A4 가로 출력 ── */
+  .pnl-print {
+    color: #111 !important;
+    font-size: 8.5pt;
+  }
+  .pnl-print .print-hide { display: none !important; }
+  .pnl-print .print-only { display: block !important; }
+  .pnl-print .overflow-x-auto { overflow: visible !important; }
+  .pnl-print table { width: 100% !important; border-collapse: collapse !important; font-size: 7.5pt !important; page-break-inside: auto; }
+  .pnl-print tr { page-break-inside: avoid; }
+  .pnl-print th, .pnl-print td {
+    padding: 1px 3px !important;
+    border: 1px solid #cfcfcf !important;
+    color: #111 !important;
+    background: transparent !important;
+    position: static !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    word-break: keep-all;
+  }
+  .pnl-print td.text-right, .pnl-print th.text-right { white-space: nowrap !important; }
+  .pnl-print table { font-size: 6.8pt !important; }
+  .pnl-print .pnl-main th:first-child, .pnl-print .pnl-main td:first-child { white-space: normal !important; max-width: 110px; padding-left: 2px !important; }
+  /* 표가 용지 폭을 넘지 않도록 고정 레이아웃 (칸이 좁으면 말줄임) */
+  .pnl-print .pnl-main table, .pnl-print .pnl-matrix table { table-layout: fixed !important; width: 100% !important; }
+  .pnl-print .pnl-main td, .pnl-print .pnl-main th, .pnl-print .pnl-matrix td, .pnl-print .pnl-matrix th { overflow: hidden; text-overflow: ellipsis; }
+  .pnl-print .pnl-main th:first-child, .pnl-print .pnl-main td:first-child { width: 11% !important; max-width: none; }
+  .pnl-print .pnl-matrix table { font-size: 5.8pt !important; }
+  .pnl-print .pnl-matrix th:first-child, .pnl-print .pnl-matrix td:first-child { width: 7% !important; }
+  .pnl-print .pnl-matrix th { white-space: normal !important; line-height: 1.15; }
+  .pnl-print .pnl-matrix th:first-child, .pnl-print .pnl-matrix td:first-child { white-space: nowrap !important; }
+  .pnl-print .pnl-matrix td:first-child span { display: none !important; }
+  .pnl-print .pnl-matrix td span.block { display: none !important; }
+  .pnl-print .pnl-product-summary { width: 60%; }
+  .pnl-print .pnl-product-summary table { font-size: 7.5pt !important; }
+  .pnl-print thead th, .pnl-print tfoot td { background: #ececec !important; font-weight: 700; }
+  .pnl-print .bg-bg-dark, .pnl-print .bg-bg-dark\/60 { background: #f3f3f3 !important; }
+  .pnl-print .rounded-2xl, .pnl-print .rounded-xl { border: 1px solid #bbb !important; border-radius: 0 !important; background: white !important; box-shadow: none !important; }
+  .pnl-print .text-text-muted, .pnl-print .text-text-secondary { color: #444 !important; }
+  .pnl-print .text-emerald-400 { color: #047857 !important; }
+  .pnl-print .text-blue-400 { color: #1d4ed8 !important; }
+  .pnl-print .text-red-400, .pnl-print .text-red-300\/90, .pnl-print .text-red-300 { color: #b91c1c !important; }
+  .pnl-print .text-violet-400 { color: #6d28d9 !important; }
+  .pnl-print .text-text-primary { color: #111 !important; }
+  .pnl-print h1, .pnl-print h2 { color: #111 !important; font-size: 12pt !important; }
+  .pnl-print .pnl-cards { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 4mm !important; margin-bottom: 4mm !important; }
+  .pnl-print .pnl-cards p { font-size: 8pt !important; }
+  .pnl-print .pnl-cards p.text-2xl { font-size: 11pt !important; }
+  .pnl-print .pnl-section { margin-bottom: 5mm !important; page-break-inside: avoid; }
+  .pnl-print .pnl-matrix { page-break-before: auto; }
+  .pnl-print button { color: inherit !important; background: transparent !important; padding: 2px 4px !important; }
 }
