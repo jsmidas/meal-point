@@ -28,10 +28,11 @@ interface SaleLog {
 }
 interface ProductLite { id: string; name: string; cost_price: number; box_quantity: number | null; unit: string }
 interface CompanyLite { id: string; name: string }
-interface CostHist { product_id: string; price: number; effective_from: string }
+interface CostHist { product_id: string; price: number; effective_from: string; created_at: string }
 
 const SELF_KEY = "__self__";
 const MANUAL_KEY = "__manual__";
+const NEW_CATEGORY = "__new__";
 
 export default function PnlPage() {
   const supabase = createClient();
@@ -53,6 +54,7 @@ export default function PnlPage() {
   const [expMonth, setExpMonth] = useState<string | null>(null);
   const [expDate, setExpDate] = useState(new Date().toISOString().slice(0, 10));
   const [expCategory, setExpCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [expNewCategory, setExpNewCategory] = useState(""); // '직접 입력' 선택 시 새 항목명
   const [expDesc, setExpDesc] = useState("");
   const [expAmount, setExpAmount] = useState(0);
   const [expNotes, setExpNotes] = useState("");
@@ -77,7 +79,7 @@ export default function PnlPage() {
       db.from("sale_checks").select("sale_date, company_id").gte("sale_date", startDate).lte("sale_date", endDate),
       db.from("products").select("id, name, cost_price, box_quantity, unit").order("name"),
       db.from("companies").select("id, name").order("name"),
-      db.from("company_price_history").select("product_id, price, effective_from").eq("price_type", "cost").order("effective_from", { ascending: true }),
+      db.from("company_price_history").select("product_id, price, effective_from, created_at").eq("price_type", "cost").gt("price", 0).order("effective_from", { ascending: true }).order("created_at", { ascending: true }),
       db.from("expenses").select("*").gte("expense_date", startDate).lte("expense_date", endDate).order("expense_date", { ascending: false }),
     ]);
 
@@ -99,7 +101,8 @@ export default function PnlPage() {
   const productMap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name || "(미지정)";
 
-  /** 판매일 기준 적용 매입단가: 단가 이력(effective_from <= 판매일) 중 최신, 없으면 상품 매입가 */
+  /** 판매일 기준 적용 매입단가: 단가 이력(effective_from <= 판매일) 중 최신(같은 날이면 나중 등록), 없으면 상품 매입가.
+   *  0원 행('기본가 복귀' 등)은 조회 단계에서 제외한다. */
   const costAt = useMemo(() => {
     const byProduct = new Map<string, CostHist[]>();
     for (const h of costHistory) {
@@ -232,6 +235,7 @@ export default function PnlPage() {
     const today = new Date().toISOString().slice(0, 10);
     setExpDate(month && !today.startsWith(month) ? `${month}-01` : today);
     setExpCategory(category || EXPENSE_CATEGORIES[0]);
+    setExpNewCategory("");
     setExpDesc("");
     setExpAmount(0);
     setExpNotes("");
@@ -241,15 +245,19 @@ export default function PnlPage() {
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
     if (!expDesc || expAmount <= 0) return;
+    const category = expCategory === NEW_CATEGORY ? expNewCategory.trim() : expCategory;
+    if (!category) return;
     setSaving(true);
     await dbInsert("expenses", {
       expense_date: expDate,
-      category: expCategory,
+      category,
       description: expDesc,
       amount: expAmount,
       notes: expNotes || null,
     });
     setSaving(false);
+    // 새 항목으로 등록했으면 그 항목을 선택 상태로 유지(연속 입력)
+    if (expCategory === NEW_CATEGORY) { setExpCategory(category); setExpNewCategory(""); }
     setExpDesc("");
     setExpAmount(0);
     setExpNotes("");
@@ -263,6 +271,11 @@ export default function PnlPage() {
   }
 
   const modalExpenses = expenses.filter((x) => x.expense_date.startsWith(expDate.slice(0, 7)) && x.category === expCategory);
+  /** 항목 선택지: 기본 목록 + 지금까지 등록된 항목(사용자가 직접 추가한 것 포함) */
+  const expenseCategoryOptions = useMemo(
+    () => [...EXPENSE_CATEGORIES, ...[...new Set(expenses.map((x) => x.category))].filter((c) => !EXPENSE_CATEGORIES.includes(c)).sort()],
+    [expenses],
+  );
 
   const cellCls = "px-3 py-2 text-right whitespace-nowrap";
   const headCls = "px-3 py-2 text-right text-text-muted font-medium whitespace-nowrap";
@@ -667,10 +680,26 @@ export default function PnlPage() {
                     aria-label="항목"
                     className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                   >
-                    {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {expenseCategoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    <option value={NEW_CATEGORY}>+ 새 항목 직접 입력</option>
                   </select>
                 </div>
               </div>
+              {expCategory === NEW_CATEGORY && (
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">새 항목명 <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    value={expNewCategory}
+                    onChange={(e) => setExpNewCategory(e.target.value)}
+                    placeholder="예: 차량유지비, 통신비"
+                    required
+                    maxLength={30}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-xs text-text-muted mt-1">등록하면 손익표에 이 항목 행이 자동으로 생기고, 다음부터 목록에서 고를 수 있습니다.</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm text-text-secondary mb-1">내용 <span className="text-red-400">*</span></label>
                 <input
