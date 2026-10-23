@@ -313,7 +313,7 @@ export default function PnlPage() {
   return (
     <div className="pnl-print">
       {/* 인쇄 시 A4 가로 */}
-      <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
+      <style>{`@media print { @page { size: A4 landscape; margin: 10mm 12mm; } }`}</style>
 
       {/* 인쇄 전용 머리글 */}
       <div className="hidden print-only mb-3">
