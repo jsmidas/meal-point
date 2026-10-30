@@ -49,6 +49,9 @@ export default function TrialPage() {
   }
 
   useEffect(() => {
+    // 데모 서버는 미사용 시 자동 정지(autostop) — 켜지는 데 ~10초.
+    // 페이지가 열리자마자 미리 깨워, 카카오 인증하는 동안 기동이 끝나게 한다 (응답은 안 읽음).
+    if (TRIAL_URL) fetch(TRIAL_URL, { mode: "no-cors", cache: "no-store" }).catch(() => {});
     // 카카오 콜백 오류로 복귀한 경우 안내 (?error=...)
     if (new URLSearchParams(window.location.search).get("error")) {
       setAuthError(true);
@@ -141,6 +144,9 @@ export default function TrialPage() {
                 </svg>
                 카카오로 인증하고 체험 시작
               </a>
+              <p className="text-text-muted text-xs mt-4">
+                본 프로그램은 데모 프로그램으로 처음 사용 시 10초 정도 로딩이 있을 수 있습니다.
+              </p>
             </div>
           )}
 
@@ -149,6 +155,9 @@ export default function TrialPage() {
               <Loader2 className="animate-spin mx-auto mb-4 text-primary" size={28} />
               <p className="text-text-primary font-semibold mb-1">인증 완료 — 체험 계정을 배정하고 있습니다</p>
               <p className="text-text-secondary text-sm">잠시 후 식단관리 시스템으로 자동 이동합니다...</p>
+              <p className="text-text-muted text-xs mt-3">
+                본 프로그램은 데모 프로그램으로 처음 사용 시 10초 정도 로딩이 있을 수 있습니다.
+              </p>
             </div>
           )}
 
