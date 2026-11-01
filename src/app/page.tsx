@@ -1,6 +1,7 @@
 import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
 import WhySection from "@/components/landing/WhySection";
+import PromoVideo from "@/components/landing/PromoVideo";
 import Products from "@/components/landing/Products";
 import Solutions from "@/components/landing/Solutions";
 import HeatingDemo from "@/components/landing/HeatingDemo";
@@ -18,6 +19,7 @@ export default function Home() {
       <div className="relative z-10">
         <Header />
         <Hero />
+        <PromoVideo />
         <Products />
         <HeatingDemo />
         <Solutions />
