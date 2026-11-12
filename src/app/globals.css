@@ -154,3 +154,16 @@ input[type="number"] {
   .pnl-print .pnl-matrix, .pnl-print .pnl-product-summary { page-break-before: always; break-before: page; padding-top: 12mm; }
   .pnl-print button { color: inherit !important; background: transparent !important; padding: 2px 4px !important; }
 }
+
+/* ── 메인 히어로(영상 배경) 움직임 ── */
+@keyframes hero-rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes hero-zoom { from { transform: scale(1); } to { transform: scale(1.12); } }
+@keyframes hero-pulse { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } }
+@keyframes hero-scroll { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(8px); opacity: 0.4; } }
+.hero-rise { opacity: 0; animation: hero-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+.hero-zoom { animation: hero-zoom 20s ease-in-out infinite alternate; }
+.hero-pulse { animation: hero-pulse 6s ease-in-out infinite; }
+.hero-scroll { animation: hero-scroll 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-rise, .hero-zoom, .hero-pulse, .hero-scroll { animation: none; opacity: 1; }
+}
