@@ -335,15 +335,18 @@ export default function SalesPage() {
         box_quantity: 1,
       }]);
     } else {
+      // 박스 상품이라도 수량이 박스 입수로 나누어떨어지지 않으면 낱개로 연다.
+      // 박스로 반올림해 열면(예: 150개 → 1박스) 그대로 저장했을 때 수량이 300개로 바뀐다.
+      const asBox = boxQty > 1 && log.quantity % boxQty === 0;
       setFormItems([{
         key: ++itemKeyCounter,
         type: "product",
         product_id: log.product_id || "",
         product_name: prod?.name || "",
-        unit: boxQty > 1 ? "박스" : (prod?.unit || ""),
-        quantity: boxQty > 1 ? Math.round(log.quantity / boxQty) : log.quantity,
-        unit_price: boxQty > 1 ? log.unit_price * boxQty : log.unit_price,
-        box_quantity: boxQty,
+        unit: asBox ? "박스" : (prod?.unit || ""),
+        quantity: asBox ? log.quantity / boxQty : log.quantity,
+        unit_price: asBox ? log.unit_price * boxQty : log.unit_price,
+        box_quantity: asBox ? boxQty : 1,
       }]);
     }
 
@@ -1482,11 +1485,14 @@ export default function SalesPage() {
 
                       {/* 품목 부가정보 */}
                       {item.type === "product" && item.product_id && (() => {
-                        const prod = products.find((p) => p.id === item.product_id);
                         const isCustom = hasCustomPrice(item.product_id);
-                        const boxQty = prod?.box_quantity ?? 1;
+                        const boxQty = item.box_quantity > 1 ? item.box_quantity : 1;
                         const isBox = boxQty > 1;
                         const perUnitPrice = isBox ? Math.round(item.unit_price / boxQty) : item.unit_price;
+                        // 판매 기록은 개당 단가(원 단위)로 저장된다. 박스 단가가 입수로 나누어떨어지지 않으면
+                        // 개당 단가가 반올림되어 박스당 금액이 입력값과 달라진다 → 실제 기록될 금액을 미리 보여 준다.
+                        const recordedBoxPrice = perUnitPrice * boxQty;
+                        const boxPriceAdjusted = isBox && item.unit_price > 0 && recordedBoxPrice !== item.unit_price;
                         return (
                           <div className="flex items-center gap-3 mt-1.5 ml-1 text-xs text-text-muted">
                             {isBox && (
@@ -1499,6 +1505,14 @@ export default function SalesPage() {
                             )}
                             {isBox && item.quantity > 0 && (
                               <span>= {formatNumber(item.quantity * boxQty)}개</span>
+                            )}
+                            {boxPriceAdjusted && (
+                              <span
+                                className="text-yellow-400"
+                                title="판매 기록은 개당 단가(원 단위)로 저장됩니다. 박스 단가가 입수로 나누어떨어지지 않아 개당 단가를 반올림했습니다."
+                              >
+                                박스당 {formatNumber(recordedBoxPrice)}원으로 기록됩니다
+                              </span>
                             )}
                           </div>
                         );

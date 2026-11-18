@@ -9,6 +9,7 @@ import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import { matchSalesToStatements, type SalesLineForMatch } from "@/lib/billing-match";
 import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { salesLogsToStatementItems } from "@/lib/statement-import";
 
 type RawSalesLog = {
   id: string;
@@ -125,30 +126,8 @@ function NewStatementForm() {
             const { data: prices } = await db.from("company_prices").select("*").eq("company_id", logs[0].company_id);
             setCompanyPrices(prices || []);
           }
-          const productMap = new Map<string, StatementItemDraft>();
-          for (const log of logs) {
-            const key = log.product_id || `manual_${log.reason || "기타"}`;
-            const boxQty = log.products?.box_quantity || 1;
-            const isBox = boxQty > 1;
-            const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
-            const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
-            const existing = productMap.get(key);
-            if (existing) {
-              existing.quantity += displayQty;
-              existing.amount = existing.quantity * existing.unit_price;
-            } else {
-              productMap.set(key, {
-                product_id: log.product_id || null,
-                product_name: log.products?.name || log.reason || "기타",
-                specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
-                unit: isBox ? "박스" : (log.products?.unit || "식"),
-                quantity: displayQty,
-                unit_price: displayPrice,
-                amount: displayQty * displayPrice,
-              });
-            }
-          }
-          setItems(Array.from(productMap.values()));
+          // 판매 기록의 금액 그대로 옮긴다 (단가별로 줄을 나누고, 박스 환산은 합산 후에)
+          setItems(salesLogsToStatementItems(logs));
           // 최신 날짜로 명세서 날짜 설정
           const lastDate = logs[logs.length - 1]?.log_date;
           if (lastDate) setStatementDate(lastDate);
@@ -178,30 +157,8 @@ function NewStatementForm() {
           .order("log_date");
         if (logs && logs.length > 0) {
           // 상품별로 집계
-          const productMap = new Map<string, StatementItemDraft>();
-          for (const log of logs) {
-            const key = log.product_id || `manual_${log.reason || "기타"}`;
-            const boxQty = log.products?.box_quantity || 1;
-            const isBox = boxQty > 1;
-            const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
-            const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
-            const existing = productMap.get(key);
-            if (existing) {
-              existing.quantity += displayQty;
-              existing.amount = existing.quantity * existing.unit_price;
-            } else {
-              productMap.set(key, {
-                product_id: log.product_id || null,
-                product_name: log.products?.name || log.reason || "기타",
-                specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
-                unit: isBox ? "박스" : (log.products?.unit || "식"),
-                quantity: displayQty,
-                unit_price: displayPrice,
-                amount: displayQty * displayPrice,
-              });
-            }
-          }
-          setItems(Array.from(productMap.values()));
+          // 판매 기록의 금액 그대로 옮긴다 (단가별로 줄을 나누고, 박스 환산은 합산 후에)
+          setItems(salesLogsToStatementItems(logs));
           setStatementDate(salesTo);
         }
       }
@@ -288,30 +245,8 @@ function NewStatementForm() {
     const missingLogs = unbilledRawLogs.filter((log) => missingIds.has(log.id));
     if (missingLogs.length === 0) return;
 
-    const productMap = new Map<string, StatementItemDraft>();
-    for (const log of missingLogs) {
-      const key = log.product_id || `manual_${log.reason || "기타"}`;
-      const boxQty = log.products?.box_quantity || 1;
-      const isBox = boxQty > 1;
-      const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
-      const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
-      const existing = productMap.get(key);
-      if (existing) {
-        existing.quantity += displayQty;
-        existing.amount = existing.quantity * existing.unit_price;
-      } else {
-        productMap.set(key, {
-          product_id: log.product_id || null,
-          product_name: log.products?.name || log.reason || "기타",
-          specification: isBox ? `1박스/${boxQty}${log.products?.unit || "EA"}` : "",
-          unit: isBox ? "박스" : (log.products?.unit || "식"),
-          quantity: displayQty,
-          unit_price: displayPrice,
-          amount: displayQty * displayPrice,
-        });
-      }
-    }
-    setItems(Array.from(productMap.values()));
+    // 판매 기록의 금액 그대로 옮긴다 (단가별로 줄을 나누고, 박스 환산은 합산 후에)
+    setItems(salesLogsToStatementItems(missingLogs));
     const lastDate = [...missingLogs].sort((a, b) => a.log_date.localeCompare(b.log_date)).pop()?.log_date;
     if (lastDate) setStatementDate(lastDate);
   }
@@ -344,30 +279,8 @@ function NewStatementForm() {
   // 판매 데이터 → 명세서 항목으로 변환 (상품별 집계, 박스 단위 변환)
   function importSalesData() {
     if (salesLogs.length === 0) return;
-    const productMap = new Map<string, StatementItemDraft>();
-    for (const log of salesLogs) {
-      const key = log.product_id || `manual_${log.reason || "기타"}`;
-      const boxQty = log.products?.box_quantity || 1;
-      const isBox = boxQty > 1;
-      const displayQty = isBox ? Math.round(log.quantity / boxQty) : log.quantity;
-      const displayPrice = isBox ? (log.unit_price || 0) * boxQty : (log.unit_price || 0);
-      const existing = productMap.get(key);
-      if (existing) {
-        existing.quantity += displayQty;
-        existing.amount = existing.quantity * existing.unit_price;
-      } else {
-        productMap.set(key, {
-          product_id: log.product_id || null,
-          product_name: log.products?.name || log.reason || "기타",
-          specification: isBox ? `1박스/${boxQty}${log.products.unit || "EA"}` : "",
-          unit: isBox ? "박스" : (log.products?.unit || "식"),
-          quantity: displayQty,
-          unit_price: displayPrice,
-          amount: displayQty * displayPrice,
-        });
-      }
-    }
-    setItems(Array.from(productMap.values()));
+    // 판매 기록의 금액 그대로 옮긴다 (단가별로 줄을 나누고, 박스 환산은 합산 후에)
+    setItems(salesLogsToStatementItems(salesLogs));
     setShowSalesImport(false);
   }
 
