@@ -7,6 +7,7 @@ import type { Expense } from "@/lib/supabase/types";
 import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber, todayKST } from "@/lib/utils";
 import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer, Pencil } from "lucide-react";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
 
 /**
  * 손익 현황
@@ -90,9 +91,8 @@ export default function PnlPage() {
     ]);
 
     // 판매 승인(sale_checks)된 날짜+업체만 매출로 인정. 자가소비는 승인 개념이 없으므로 전부 포함.
-    const confirmed = new Set<string>();
-    for (const c of checksRes.data || []) confirmed.add(`${c.sale_date}_${c.company_id}`);
-    const rows: SaleLog[] = (salesRes.data || []).filter((l: SaleLog) => l.type === "self" || confirmed.has(`${l.log_date}_${l.company_id}`));
+    const confirmed = buildConfirmedSales(checksRes.data);
+    const rows: SaleLog[] = (salesRes.data || []).filter((l: SaleLog) => l.type === "self" || isConfirmedSale(l, confirmed));
 
     setSales(rows);
     setProducts(prodRes.data || []);

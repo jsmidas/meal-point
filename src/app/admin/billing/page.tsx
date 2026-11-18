@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { fetchAllRows, chunk } from "@/lib/fetch-all";
+import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
 
 // 잔액 부호 표기: 미수(거래처가 덜 냄)는 '-', 과입금(더 냄)은 '+' 로 표시.
 // 입력 unpaid = 청구액 - 입금액 (양수=미수, 음수=과입금) → 표시 시 부호 반전.
@@ -31,7 +32,13 @@ function formatBalance(unpaid: number) {
 }
 
 type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
-type SalesData = { amount: number; count: number; logs: SalesLog[] };
+type SalesData = {
+  amount: number; // 매출로 인정된 판매액 (체크·승인한 날짜분)
+  count: number;
+  logs: SalesLog[];
+  unconfirmedAmount?: number; // 체크하지 않은 날짜의 판매액 — 매출에서 제외됨(안내용)
+  unconfirmedCount?: number;
+};
 // 명세서에 발행 지점(거래처) 정보를 조인해 보존 — 합산 카드에서 지점명 라벨용
 type StatementWithItems = Statement & {
   statement_items: StatementItem[];
@@ -417,22 +424,31 @@ export default function BillingPage() {
     const companies: Company[] = compRes.data || [];
     setAllCompanies(companies);
 
-    // 판매관리에서 체크된 거래처 Set
+    // 매출 인정 기준: 판매관리에서 체크(승인)한 "날짜 + 거래처"의 판매만 (손익·대시보드와 같은 규칙)
+    const confirmedSales = buildConfirmedSales(confirmRes.data);
+    // 그 달에 체크가 하루라도 있는 거래처 — 정산 화면에 표시할 거래처와 명세서를 고르는 데 쓴다
     const confirmedCompanyIds = new Set<string>();
     for (const c of confirmRes.data || []) {
       if (c.company_id) confirmedCompanyIds.add(c.company_id);
     }
 
-    // 판매 집계 (체크된 거래처만) — 그룹 대표(primary) 키로 합산, log엔 원본 company_id 보존
+    // 판매 집계 (체크한 날짜의 판매만) — 그룹 대표(primary) 키로 합산, log엔 원본 company_id 보존
     const salesMap = new Map<string, SalesData>();
     for (const log of salesRes.data || []) {
       if (!log.company_id) continue;
+      // 이번 달에 체크가 전혀 없는 거래처는 정산 대상이 아니다
       if (!confirmedCompanyIds.has(log.company_id)) continue;
       const key = toPrimary(log.company_id);
-      const ex = salesMap.get(key) || { amount: 0, count: 0, logs: [] as SalesLog[] };
-      ex.amount += log.quantity * (log.unit_price || 0);
-      ex.count += 1;
-      ex.logs.push(log);
+      const ex: SalesData = salesMap.get(key) || { amount: 0, count: 0, logs: [] as SalesLog[] };
+      if (isConfirmedSale(log, confirmedSales)) {
+        ex.amount += log.quantity * (log.unit_price || 0);
+        ex.count += 1;
+        ex.logs.push(log);
+      } else {
+        // 체크하지 않은 날짜의 판매: 매출에는 넣지 않고, 빠진 금액만 따로 세어 화면에 알려 준다
+        ex.unconfirmedAmount = (ex.unconfirmedAmount || 0) + log.quantity * (log.unit_price || 0);
+        ex.unconfirmedCount = (ex.unconfirmedCount || 0) + 1;
+      }
       salesMap.set(key, ex);
     }
 
@@ -1381,6 +1397,14 @@ export default function BillingPage() {
                       {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1) + billingAmountsFromStatements(row.statements).shipping) !== billing.total_amount && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 bg-orange-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
                           <AlertTriangle size={10} /> 청구액 불일치
+                        </span>
+                      )}
+                      {(row.sales.unconfirmedCount || 0) > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] text-text-muted bg-bg-dark rounded-full px-2 py-0.5 border border-border"
+                          title="판매 관리 달력에서 체크(승인)하지 않은 날짜의 판매입니다. 매출에 포함하려면 판매 관리에서 해당 날짜를 체크하세요."
+                        >
+                          미승인 판매 {row.sales.unconfirmedCount}건 {formatNumber(row.sales.unconfirmedAmount || 0)}원 제외
                         </span>
                       )}
                       {billing?.tax_invoice_issued && row.statements.length > 0 && statementBasedTotal(row.statements) !== billing.total_amount && (

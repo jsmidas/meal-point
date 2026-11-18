@@ -19,6 +19,8 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
+import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 /* ───────── 타입 ───────── */
 
@@ -51,7 +53,7 @@ interface RecentSale {
 interface DashboardData {
   companies: number;
   products: number;
-  monthSales: number; // 이번 달 판매액 (출고 로그 기준)
+  monthSales: number; // 이번 달 매출 (체크·승인한 날짜의 판매만)
   monthPaid: number; // 이번 달 입금액
   totalUnpaid: number; // 누계 미수금 (청구 - 입금)
   pendingPortalOrders: number; // 승인 대기 포털 발주
@@ -98,12 +100,12 @@ export default function AdminDashboard() {
       const monthEnd = ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0));
       const week = thisWeekRange(now);
 
-      const [compRes, prodRes, salesRes, payRes, billRes, pendingRes, weekOrderRes, weekSaleRes, recentRes] =
+      const [compRes, prodRes, salesRes, payRes, billRes, pendingRes, weekOrderRes, weekSaleRes, recentRes, checkRes] =
         await Promise.all([
           db.from("companies").select("id", { count: "exact", head: true }).eq("is_active", true),
           db.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
           // 이번 달 판매(출고) 로그
-          db.from("inventory_logs").select("quantity, unit_price").eq("type", "out").gte("log_date", monthStart).lte("log_date", monthEnd),
+          fetchAllRows(() => db.from("inventory_logs").select("id, quantity, unit_price, log_date, company_id").eq("type", "out").gte("log_date", monthStart).lte("log_date", monthEnd).order("id")),
           // 이번 달 입금
           db.from("payments").select("amount").gte("payment_date", monthStart).lte("payment_date", monthEnd),
           // 전체 청구 (미수 계산: 청구 - 입금)
@@ -119,11 +121,15 @@ export default function AdminDashboard() {
           // 최근 판매 등록
           db.from("inventory_logs").select("id, company_id, log_date, quantity, unit_price, created_at, companies(name)")
             .eq("type", "out").order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(60),
+          // 이번 달 판매 체크(승인) — 매출 인정 기준
+          fetchAllRows(() => db.from("sale_checks").select("id, sale_date, company_id").gte("sale_date", monthStart).lte("sale_date", monthEnd).order("id")),
         ]);
 
-      // 이번 달 판매액
-      const monthSales = (salesRes.data || []).reduce(
-        (s: number, l: { quantity: number; unit_price: number }) => s + (l.quantity || 0) * (l.unit_price || 0), 0);
+      // 이번 달 매출: 판매관리에서 체크(승인)한 날짜의 판매만 (정산·손익과 같은 기준)
+      const confirmedSales = buildConfirmedSales(checkRes.data);
+      const monthSales = (salesRes.data || [])
+        .filter((l: { log_date: string; company_id: string | null }) => isConfirmedSale(l, confirmedSales))
+        .reduce((s: number, l: { quantity: number; unit_price: number }) => s + (l.quantity || 0) * (l.unit_price || 0), 0);
       // 이번 달 입금액
       const monthPaid = (payRes.data || []).reduce((s: number, p: { amount: number }) => s + (p.amount || 0), 0);
 
@@ -205,7 +211,7 @@ export default function AdminDashboard() {
   ];
 
   const kpis = [
-    { label: "이번 달 판매액", value: v(data?.monthSales), icon: TrendingUp, color: "text-emerald-400 bg-emerald-400/10", href: "/admin/sales" },
+    { label: "이번 달 매출 (승인분)", value: v(data?.monthSales), icon: TrendingUp, color: "text-emerald-400 bg-emerald-400/10", href: "/admin/sales" },
     { label: "이번 달 입금액", value: v(data?.monthPaid), icon: Wallet, color: "text-sky-400 bg-sky-400/10", href: "/admin/billing" },
     { label: "누계 미수금", value: v(data?.totalUnpaid), icon: AlertCircle, color: "text-red-400 bg-red-400/10", href: "/admin/billing", danger: (data?.totalUnpaid || 0) > 0 },
     { label: "승인 대기 발주", value: v(data?.pendingPortalOrders, "건"), icon: ShoppingCart, color: "text-yellow-400 bg-yellow-400/10", href: "/admin/orders", danger: (data?.pendingPortalOrders || 0) > 0 },
