@@ -142,20 +142,9 @@ export default function StatementDetailPage() {
     const taxAmount = Math.round(supplyAmount * 0.1);
     const totalAmount = supplyAmount + taxAmount + editShippingFee;
 
-    // 1. statement 업데이트
-    await dbUpdate("statements", {
-      supply_amount: supplyAmount,
-      tax_amount: taxAmount,
-      total_amount: totalAmount,
-      shipping_fee: editShippingFee,
-      notes: editNotes || null,
-    }, { id });
-
-    // 2. 기존 항목 삭제
-    await dbDelete("statement_items", { statement_id: id });
-
-    // 3. 새 항목 삽입
-    const insertItems = editItems.map((item, i) => ({
+    // 1. 새 항목을 먼저 넣는다 — 실패하면 기존 데이터는 그대로 남는다
+    const oldItemIds = (statement.statement_items || []).map((it) => it.id);
+    const insertItems = editItems.map((item) => ({
       statement_id: id,
       product_name: item.product_name,
       specification: item.specification || null,
@@ -163,52 +152,94 @@ export default function StatementDetailPage() {
       quantity: item.quantity,
       unit_price: item.unit_price,
       amount: item.amount,
-      sort_order: i,
     }));
-    await dbInsert("statement_items", insertItems);
-
-    // 4. 관련 청구(billings) 자동 갱신 — 명세서와 동일 월의 청구가 있으면 금액 재계산
-    if (statement.company_id && statement.statement_date) {
-      const billingMonth = statement.statement_date.slice(0, 7);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any;
-      const { data: billing } = await db
-        .from("billings")
-        .select("id")
-        .eq("company_id", statement.company_id)
-        .eq("billing_month", billingMonth)
-        .single();
-
-      if (billing) {
-        // 해당 월의 모든 명세서 합산
-        const [y, m] = billingMonth.split("-").map(Number);
-        const from = `${billingMonth}-01`;
-        const to = `${billingMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-        const { data: stmts } = await db
-          .from("statements")
-          .select("supply_amount")
-          .eq("company_id", statement.company_id)
-          .gte("statement_date", from)
-          .lte("statement_date", to);
-
-        const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
-        const newTax = Math.round(newSupply * 0.1);
-        await dbUpdate("billings", {
-          total_supply: newSupply,
-          total_tax: newTax,
-          total_amount: newSupply + newTax,
-        }, { id: billing.id });
-      }
+    const inserted = await dbInsert("statement_items", insertItems);
+    if (inserted.error) {
+      alert(`저장 실패: 항목을 저장하지 못했습니다. 기존 내용은 그대로입니다.
+${inserted.error}`);
+      setSaving(false);
+      return;
     }
+
+    // 2. 기존 항목 삭제 (새 항목 저장이 확인된 뒤에만)
+    const failedDeletes: string[] = [];
+    for (const oldId of oldItemIds) {
+      const del = await dbDelete("statement_items", { id: oldId });
+      if (del.error) failedDeletes.push(oldId);
+    }
+
+    // 3. statement 합계 업데이트
+    const updated = await dbUpdate("statements", {
+      supply_amount: supplyAmount,
+      tax_amount: taxAmount,
+      total_amount: totalAmount,
+      shipping_fee: editShippingFee,
+      notes: editNotes || null,
+    }, { id });
+
+    if (failedDeletes.length > 0 || updated.error) {
+      alert(
+        "저장 중 일부 단계가 실패했습니다. 화면을 새로 불러오니 항목과 합계를 확인해 주세요." +
+          (failedDeletes.length > 0 ? `
+- 이전 항목 ${failedDeletes.length}건이 지워지지 않아 중복으로 보일 수 있습니다.` : "") +
+          (updated.error ? `
+- 합계 저장 실패: ${updated.error}` : ""),
+      );
+    }
+
+    // 4. 관련 청구(billings) 자동 갱신
+    await recalcBilling(statement.company_id, statement.statement_date);
 
     setEditing(false);
     setSaving(false);
     await load();
   }
 
+  /** 명세서와 같은 월의 청구가 있으면 그 달 명세서 합으로 금액을 다시 계산한다. */
+  async function recalcBilling(companyId: string | null | undefined, statementDate: string | null | undefined) {
+    if (!companyId || !statementDate) return;
+    const billingMonth = statementDate.slice(0, 7);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data: billing } = await db
+      .from("billings")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("billing_month", billingMonth)
+      .maybeSingle();
+    if (!billing) return;
+
+    const [y, m] = billingMonth.split("-").map(Number);
+    const from = `${billingMonth}-01`;
+    const to = `${billingMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+    const { data: stmts, error: stmtsError } = await db
+      .from("statements")
+      .select("supply_amount")
+      .eq("company_id", companyId)
+      .gte("statement_date", from)
+      .lte("statement_date", to);
+    if (stmtsError) return; // 조회 실패 시 0원으로 덮어쓰지 않는다
+
+    const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
+    const newTax = Math.round(newSupply * 0.1);
+    const res = await dbUpdate("billings", {
+      total_supply: newSupply,
+      total_tax: newTax,
+      total_amount: newSupply + newTax,
+    }, { id: billing.id });
+    if (res.error) alert(`청구 금액 갱신 실패: ${res.error}
+정산 화면에서 금액을 확인해 주세요.`);
+  }
+
   async function handleDelete() {
     if (!confirm("이 거래명세서를 삭제하시겠습니까?")) return;
-    await dbDelete("statements", { id });
+    const res = await dbDelete("statements", { id });
+    if (res.error) {
+      alert(`삭제 실패: ${res.error}`);
+      return;
+    }
+    // 삭제된 명세서만큼 그 달 청구 금액을 다시 계산
+    await recalcBilling(statement?.company_id, statement?.statement_date);
     router.push("/admin/statements");
   }
 
