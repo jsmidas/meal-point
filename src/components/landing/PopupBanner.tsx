@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { Popup } from "@/lib/supabase/types";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
-import { todayKST } from "@/lib/utils";
 
 export default function PopupBanner() {
   const [popups, setPopups] = useState<Popup[]>([]);
@@ -14,17 +12,14 @@ export default function PopupBanner() {
 
   useEffect(() => {
     async function fetchPopups() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = createClient() as any;
-      const today = todayKST();
-      const { data } = await db
-        .from("popups")
-        .select("*")
-        .eq("is_active", true)
-        .or(`start_date.is.null,start_date.lte.${today}`)
-        .or(`end_date.is.null,end_date.gte.${today}`)
-        .order("sort_order", { ascending: true });
-      setPopups(data || []);
+      // 지금 노출할 팝업만 서버(/api/public/site)에서 받는다
+      try {
+        const res = await fetch("/api/public/site");
+        const json = await res.json();
+        setPopups(json.popups || []);
+      } catch {
+        setPopups([]);
+      }
       setLoaded(true);
     }
     // 오늘 이미 닫은 팝업은 표시하지 않음

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import type { PublicProduct } from "@/lib/public-data";
 import { productGroups, categoryLabels, type GroupKey } from "@/lib/categories";
 import ProductCard, { type ProductCardItem } from "@/components/ProductCard";
 import { useCompanyPricing } from "@/lib/use-company-pricing";
@@ -26,15 +26,17 @@ export default function Products() {
 
   useEffect(() => {
     async function load() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = createClient() as any;
-
-      // 활성 상품 + 발행된 상세페이지 조회
-      const [{ data: prods }, { data: pages }] = await Promise.all([
-        // is_published 컬럼(v34) 미적용 상태에서도 동작하도록 select("*") 후 클라이언트에서 미게시 제외
-        db.from("products").select("*").eq("is_active", true).neq("category", "ticket_printer").order("name"),
-        db.from("product_pages").select("product_id, hero_images").eq("is_published", true),
-      ]);
+      // 공개 화면은 DB를 직접 읽지 않고 서버(/api/public)를 거친다 — 공개 컬럼·게시된 상품만 받는다
+      let prods: PublicProduct[] = [];
+      let pages: { product_id: string; hero_images: string[] | null }[] = [];
+      try {
+        const res = await fetch("/api/public/products");
+        const json = await res.json();
+        prods = json.products || [];
+        pages = json.pages || [];
+      } catch {
+        // 불러오기 실패 — 빈 목록으로 표시
+      }
 
       // 발행된 상세페이지 매핑
       const publishedMap = new Map<string, string[]>();
@@ -42,9 +44,10 @@ export default function Products() {
         publishedMap.set(pg.product_id, pg.hero_images || []);
       }
 
-      const items: ProductItem[] = (prods || [])
-        .filter((p: { is_published?: boolean | null }) => p.is_published !== false)
-        .map((p: { id: string; name: string; category: string; image_url: string | null }) => {
+      // 식권발행기는 전용 섹션에서 따로 소개하므로 상품 목록에서는 뺀다
+      const items: ProductItem[] = prods
+        .filter((p) => p.category !== "ticket_printer")
+        .map((p) => {
         const published = publishedMap.has(p.id);
         // 이미지 우선순위: 상세페이지 히어로 → 상품 이미지
         const heroImages = publishedMap.get(p.id);

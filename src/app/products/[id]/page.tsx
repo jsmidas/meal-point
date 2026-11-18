@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import type { Product, ProductPage, KeyPoint, SpecItem, ProcessStep, FigmaEmbed } from "@/lib/supabase/types";
 import Link from "next/link";
 import { useCompanyPricing } from "@/lib/use-company-pricing";
@@ -41,7 +40,6 @@ const iconMap: Record<string, React.ElementType> = {
 
 export default function ProductDetailPage() {
   const { id } = useParams();
-  const supabase = createClient();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [page, setPage] = useState<ProductPage | null>(null);
@@ -51,24 +49,16 @@ export default function ProductDetailPage() {
 
   useEffect(() => {
     async function fetchData() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any;
-      const { data: prod } = await db
-        .from("products")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      const { data: pg } = await db
-        .from("product_pages")
-        .select("*")
-        .eq("product_id", id)
-        .eq("is_published", true)
-        .maybeSingle();
-
-      // 홈페이지 미게시 상품은 직접 URL 접근도 차단
-      setProduct(prod && prod.is_published !== false ? prod : null);
-      setPage(pg || null);
+      // 공개 화면은 DB를 직접 읽지 않고 서버(/api/public)를 거친다 — 공개 컬럼·게시된 상품만 받는다
+      try {
+        const res = await fetch(`/api/public/products/${id}`);
+        const json = await res.json();
+        setProduct(json.product || null);
+        setPage(json.page || null);
+      } catch {
+        setProduct(null);
+        setPage(null);
+      }
       setLoading(false);
     }
     fetchData();

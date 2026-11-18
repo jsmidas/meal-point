@@ -41,14 +41,13 @@ export default function Header() {
   }, []);
 
   useEffect(() => {
-    import("@/lib/supabase/client").then(({ createClient }) => {
-      const supabase = createClient();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("company_info").select("logo_image_url").limit(1).maybeSingle()
-        .then(({ data }: { data: { logo_image_url: string | null } | null }) => {
-          if (data?.logo_image_url) setLogoUrl(data.logo_image_url);
-        });
-    });
+    // 로고는 서버(/api/public/site)가 로고 주소만 골라 준다 — 회사 정보 테이블을 브라우저에서 직접 읽지 않는다
+    fetch("/api/public/site")
+      .then((res) => res.json())
+      .then((data: { logo_image_url?: string | null }) => {
+        if (data?.logo_image_url) setLogoUrl(data.logo_image_url);
+      })
+      .catch(() => {});
   }, []);
 
   async function handleLogout() {
