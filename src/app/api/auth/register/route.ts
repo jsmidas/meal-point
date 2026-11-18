@@ -9,7 +9,8 @@ export const runtime = "nodejs";
  * 홈페이지 회원가입(업체 승인 요청).
  * multipart/form-data: login_id, password, name(담당자), company_name, biz_number, phone, email, cert(파일)
  * JSON 도 받되 파일은 multipart 에서만 가능.
- * 가입 즉시 approval_status='pending' 으로 두고, 관리자가 거래처에 연결해 승인한다.
+ * 사업자등록증(cert)은 선택. 첨부해 업로드에 성공했을 때만 approval_status='pending'(승인 요청)이 되고,
+ * 없으면 'none' 으로 가입만 된다 — 이후 '내 정보'(/api/account)에서 올리면 승인 요청으로 전환된다.
  */
 export async function POST(request: NextRequest) {
   let fields: Record<string, string> = {};
@@ -73,8 +74,7 @@ export async function POST(request: NextRequest) {
       provider: "local",
       role: "member",
       is_active: true,
-      approval_status: "pending",
-      approval_requested_at: new Date().toISOString(),
+      approval_status: "none",
     })
     .select("id")
     .single();
@@ -87,7 +87,9 @@ export async function POST(request: NextRequest) {
   if (cert) {
     const up = await uploadBizCert(supabase, created.id, cert);
     if ("path" in up) {
-      await db.update({ biz_cert_path: up.path }).eq("id", created.id);
+      await db
+        .update({ biz_cert_path: up.path, approval_status: "pending", approval_requested_at: new Date().toISOString() })
+        .eq("id", created.id);
     } else {
       certWarning = up.error;
     }

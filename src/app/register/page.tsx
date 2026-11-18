@@ -37,10 +37,6 @@ export default function RegisterPage() {
       setError("비밀번호는 8자 이상이어야 합니다.");
       return;
     }
-    if (!cert) {
-      setError("사업자등록증 파일을 올려주세요.");
-      return;
-    }
 
     setLoading(true);
     try {
@@ -52,14 +48,17 @@ export default function RegisterPage() {
       fd.append("biz_number", form.biz_number);
       fd.append("phone", form.phone);
       fd.append("email", form.email);
-      fd.append("cert", cert);
+      if (cert) fd.append("cert", cert);
       const res = await fetch("/api/auth/register", { method: "POST", body: fd });
       const data = await res.json();
 
       if (data.ok) {
         alert(
-          (data.warning ? `가입은 되었지만 사업자등록증 업로드에 실패했습니다: ${data.warning}\n로그인 후 '내 정보'에서 다시 올려주세요.\n\n` : "") +
-            "가입 신청이 접수되었습니다.\n관리자 승인이 완료되면 상품마다 귀사 단가가 표시됩니다.",
+          data.warning
+            ? `가입은 되었지만 사업자등록증 업로드에 실패했습니다: ${data.warning}\n로그인 후 '내 정보'에서 다시 올려주세요.`
+            : data.cert_uploaded
+              ? "가입이 완료되었습니다.\n사업자등록증 확인 후 승인되면 상품마다 귀사 단가가 표시됩니다."
+              : "가입이 완료되었습니다.\n로그인 후 '내 정보'에서 사업자등록증을 올리면 업체 단가 승인을 요청할 수 있습니다.",
         );
         router.push("/login");
       } else {
@@ -99,7 +98,7 @@ export default function RegisterPage() {
           </Link>
           <p className="text-text-secondary mt-2">업체 회원가입</p>
           <p className="text-xs text-text-muted mt-2 leading-relaxed">
-            가입 후 관리자가 사업자등록증을 확인해 승인하면<br />상품마다 귀사에 적용되는 단가가 표시됩니다.
+            가입 후 바로 로그인할 수 있습니다. 사업자등록증을 올려<br />승인받으면 상품마다 귀사에 적용되는 단가가 표시됩니다.
           </p>
         </div>
 
@@ -165,7 +164,7 @@ export default function RegisterPage() {
 
           <div>
             <label className="block text-sm text-text-secondary mb-1">
-              사업자등록증 <span className="text-red-400 ml-1">*</span>
+              사업자등록증 <span className="text-text-muted ml-1">(선택)</span>
             </label>
             <label className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-border bg-bg-dark cursor-pointer hover:border-primary transition-colors">
               {cert ? <FileText size={18} className="text-primary shrink-0" /> : <Upload size={18} className="text-text-muted shrink-0" />}
@@ -179,7 +178,10 @@ export default function RegisterPage() {
                 onChange={(e) => setCert(e.target.files?.[0] || null)}
               />
             </label>
-            <p className="text-[11px] text-text-muted mt-1">관리자만 열람하며 승인 심사 외 용도로 쓰지 않습니다.</p>
+            <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+              지금 올리지 않아도 됩니다. 가입 후 &apos;내 정보&apos;에서 올리면 승인 요청이 접수됩니다.<br />
+              관리자만 열람하며 승인 심사 외 용도로 쓰지 않습니다.
+            </p>
           </div>
 
           <button
@@ -187,7 +189,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
           >
-            {loading ? "신청 중..." : "가입 및 승인 요청"}
+            {loading ? "가입 중..." : "가입하기"}
           </button>
 
           <p className="text-center text-sm text-text-muted">
