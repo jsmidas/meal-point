@@ -10,6 +10,22 @@ async function getMemberId(req: NextRequest): Promise<string | null> {
   return s?.id || null;
 }
 
+/**
+ * 이 회원이 카카오 인증으로 가입한 회원인가.
+ * 무료 체험은 카카오 인증을 거친 회원에게만 준다 — 체험 화면의 안내("카카오 인증 한 번이면")와 같게,
+ * 그리고 아이디·다른 소셜 계정을 여러 개 만들어 체험을 반복해서 받는 것을 막기 위해서다.
+ * 조회에 실패하면 발급하지 않는 쪽(false)으로 판단한다.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function isKakaoMember(db: any, memberId: string): Promise<boolean> {
+  const { data, error } = await db.from("members").select("provider").eq("id", memberId).maybeSingle();
+  if (error) {
+    console.error("[trial] 회원 가입 방식 조회 실패", error.message);
+    return false;
+  }
+  return data?.provider === "kakao";
+}
+
 // 회원의 유효한(만료 전) 활성 사용권 + 배정 계정 조회
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchActiveGrant(db: any, memberId: string, nowIso: string) {
@@ -63,6 +79,10 @@ export async function GET(request: NextRequest) {
       expiresAt: grant.expires_at,
     });
   }
+  // 카카오 인증 회원이 아니면 체험을 새로 시작할 수 없다 (이미 진행 중인 체험은 위에서 그대로 보여 준다)
+  if (!(await isKakaoMember(db, memberId))) {
+    return NextResponse.json({ authenticated: true, status: "kakao_required" });
+  }
   // 진행 중인 사용권이 없는데 지난 사용권이 있으면 이미 체험을 마친 회원이다 (1인 1회)
   if (await hasUsedTrial(db, memberId)) {
     return NextResponse.json({ authenticated: true, status: "used" });
@@ -90,6 +110,11 @@ export async function POST(request: NextRequest) {
       account: { login_id: active.meal_guest_accounts.login_id, login_pw: active.meal_guest_accounts.login_pw },
       expiresAt: active.expires_at,
     });
+  }
+
+  // 1.2) 카카오 인증 회원에게만 발급한다 — 화면을 거치지 않고 직접 호출해도 서버에서 막는다
+  if (!(await isKakaoMember(db, memberId))) {
+    return NextResponse.json({ ok: false, status: "kakao_required", error: "카카오 인증이 필요합니다." }, { status: 403 });
   }
 
   // 1.5) 체험은 1인 1회 — 이미 체험을 마친 회원에게는 새로 발급하지 않는다

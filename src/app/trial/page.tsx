@@ -17,6 +17,7 @@ type Account = { login_id: string; login_pw: string };
 type State =
   | { kind: "loading" }
   | { kind: "guest" }
+  | { kind: "kakao_required" } // 로그인은 돼 있지만 카카오 인증 회원이 아님
   | { kind: "entering" } // 인증 완료 → 배정·시스템 진입 자동 진행 중
   | { kind: "active"; account: Account; expiresAt: string } // TRIAL_URL 미설정 폴백
   | { kind: "full" }
@@ -70,6 +71,8 @@ export default function TrialPage() {
           setState({ kind: "entering" });
         } else if (d.status === "used") {
           setState({ kind: "used" });
+        } else if (d.status === "kakao_required") {
+          setState({ kind: "kakao_required" });
         } else {
           setState({ kind: "entering" });
           void startTrial();
@@ -89,6 +92,7 @@ export default function TrialPage() {
       }
       if (d.status === "full") setState({ kind: "full" });
       else if (d.status === "used") setState({ kind: "used" });
+      else if (d.status === "kakao_required") setState({ kind: "kakao_required" });
       else if (d.status === "active") {
         if (!enterTrial(d.account, d.expiresAt)) return;
         setState({ kind: "entering" });
@@ -154,6 +158,35 @@ export default function TrialPage() {
               </a>
               <p className="text-text-muted text-xs mt-4">
                 본 프로그램은 데모 프로그램으로 처음 사용 시 10초 정도 로딩이 있을 수 있습니다.
+              </p>
+            </div>
+          )}
+
+          {state.kind === "kakao_required" && (
+            <div className="text-center py-4">
+              {authError && (
+                <p className="text-red-400 text-sm mb-4">
+                  인증 처리에 실패했습니다. 다시 시도해 주세요.
+                </p>
+              )}
+              <p className="text-text-primary font-semibold mb-2">카카오 인증이 필요합니다</p>
+              <p className="text-text-secondary text-sm mb-6">
+                무료 체험은 카카오 인증을 거친 회원에게 제공됩니다.<br />
+                지금은 다른 방법으로 로그인되어 있습니다. 카카오로 인증하면 체험 계정이 자동으로 배정됩니다.
+              </p>
+              <a
+                href="/api/auth/kakao?next=/trial"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-[#191919]"
+                style={{ backgroundColor: "#FEE500" }}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <path d="M10 1C4.477 1 0 4.477 0 8.667c0 2.7 1.752 5.076 4.396 6.443l-1.12 4.11a.3.3 0 00.456.326l4.764-3.16c.487.05.983.076 1.504.076 5.523 0 10-3.477 10-7.795C20 4.477 15.523 1 10 1z" fill="#191919" />
+                </svg>
+                카카오로 인증하고 체험 시작
+              </a>
+              <p className="text-text-muted text-xs mt-4 leading-relaxed">
+                카카오로 인증하면 이 브라우저는 카카오 계정으로 로그인된 상태가 됩니다.<br />
+                기존 계정은 다시 로그인하면 그대로 사용할 수 있습니다.
               </p>
             </div>
           )}
