@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog, CompanyPriceHistory } from "@/lib/supabase/types";
-import { formatNumber, formatDate } from "@/lib/utils";
+import { formatNumber, formatDate, todayKST } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import {
   Plus,
@@ -49,7 +49,7 @@ export default function InboundPage() {
     company_id: "",
     quantity: 1,
     unit_price: 0,
-    log_date: new Date().toISOString().slice(0, 10),
+    log_date: todayKST(),
     reason: "",
   });
 
@@ -233,7 +233,7 @@ export default function InboundPage() {
       company_id: "",
       quantity: 1,
       unit_price: 0,
-      log_date: new Date().toISOString().slice(0, 10),
+      log_date: todayKST(),
       reason: "",
     });
   }
@@ -615,7 +615,7 @@ export default function InboundPage() {
                 }
                 const [y, m] = month.split("-").map(Number);
                 const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayKST();
                 const isPast = dateStr < today;
                 const isToday = dateStr === today;
                 const isFuture = dateStr > today;

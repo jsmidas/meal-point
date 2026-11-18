@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
-import { formatNumber, formatDate } from "@/lib/utils";
+import { formatNumber, formatDate, todayKST } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete, dbUpsert } from "@/lib/db";
 import {
   Plus,
@@ -96,7 +96,7 @@ export default function SalesPage() {
   // 판매 등록/수정 모달
   const [showModal, setShowModal] = useState(false);
   const [editingLogId, setEditingLogId] = useState<string | null>(null); // null=신규, string=수정
-  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formDate, setFormDate] = useState(todayKST());
   const [formCompanyId, setFormCompanyId] = useState("");
   // 구분: out=판매(매출·청구 포함), self=자가소비(재고만 차감, 매출 제외)
   const [formKind, setFormKind] = useState<"out" | "self">("out");
@@ -279,7 +279,7 @@ export default function SalesPage() {
   }, [formItems]);
 
   function resetForm() {
-    setFormDate(new Date().toISOString().slice(0, 10));
+    setFormDate(todayKST());
     setFormCompanyId("");
     setFormKind("out");
     setFormItems([newItem()]);
@@ -962,7 +962,7 @@ export default function SalesPage() {
                 }
                 const [y, m] = month.split("-").map(Number);
                 const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayKST();
                 const isPast = dateStr < today;
                 const isToday = dateStr === today;
                 const isFuture = dateStr > today;
@@ -1094,7 +1094,7 @@ export default function SalesPage() {
               <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <h2 className="text-base font-semibold text-text-primary">
                   {selectedDate} 판매 현황
-                  {selectedDate > new Date().toISOString().slice(0, 10) && (
+                  {selectedDate > todayKST() && (
                     <span className="ml-2 text-xs text-yellow-500 font-normal">예정일</span>
                   )}
                 </h2>
@@ -1110,7 +1110,7 @@ export default function SalesPage() {
 
               {selectedDayLogs.length === 0 ? (
                 <div className="px-6 py-10 text-center text-text-muted text-sm">
-                  {selectedDate > new Date().toISOString().slice(0, 10)
+                  {selectedDate > todayKST()
                     ? "아직 등록된 판매 예정 내역이 없습니다."
                     : "이 날 등록된 판매 내역이 없습니다."}
                   <div className="mt-3">

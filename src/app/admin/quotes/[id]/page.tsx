@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { QuoteWithItems, CompanyInfo, QuoteSendLog } from "@/lib/supabase/types";
-import { QUOTE_STATUS, formatNumber, formatDate, generateOrderNumber } from "@/lib/utils";
+import { QUOTE_STATUS, formatNumber, formatDate, generateOrderNumber, todayKST } from "@/lib/utils";
 import { dbUpdate, dbDelete, dbInsert } from "@/lib/db";
 import { ArrowLeft, Trash2, Printer, ShoppingCart, Send, Clock, Plus } from "lucide-react";
 import Link from "next/link";
@@ -80,13 +80,27 @@ export default function QuoteDetailPage() {
       alert("등록된 거래처가 있는 견적서만 주문 전환이 가능합니다.");
       return;
     }
+    // 주문 항목은 등록 상품만 담을 수 있다. 직접입력 품목이 섞여 있으면 항목 저장이 통째로 실패하므로 미리 막는다.
+    const directItems = quote.quote_items.filter((i) => !i.product_id);
+    if (directItems.length > 0) {
+      alert(
+        "직접 입력한 품목이 있어 주문으로 전환할 수 없습니다.\n" +
+          `- ${directItems.map((i) => i.product_name).join(", ")}\n\n` +
+          "해당 품목을 상품으로 등록해 견적서를 다시 작성하거나, 주문을 직접 등록해 주세요.",
+      );
+      return;
+    }
+    if (quote.quote_items.length === 0) {
+      alert("품목이 없는 견적서는 주문으로 전환할 수 없습니다.");
+      return;
+    }
     if (!confirm("이 견적서를 주문으로 전환하시겠습니까?")) return;
 
     const totalAmount = quote.quote_items.reduce((sum, i) => sum + i.amount, 0);
     const { data: orderData, error } = await dbInsert("orders", {
       order_number: generateOrderNumber(),
       company_id: quote.company_id,
-      order_date: new Date().toISOString().slice(0, 10),
+      order_date: todayKST(),
       total_amount: totalAmount,
       notes: `견적서 ${quote.quote_number}에서 전환`,
     });
@@ -97,10 +111,10 @@ export default function QuoteDetailPage() {
       return;
     }
 
-    await dbInsert("order_items",
+    const itemsRes = await dbInsert("order_items",
       quote.quote_items.map((item) => ({
         order_id: order.id,
-        product_id: item.product_id || "00000000-0000-0000-0000-000000000000",
+        product_id: item.product_id,
         product_name: item.product_name,
         unit: item.unit,
         quantity: item.quantity,
@@ -108,6 +122,15 @@ export default function QuoteDetailPage() {
         amount: item.amount,
       })),
     );
+    if (itemsRes.error) {
+      // 항목 없는 주문이 남지 않도록 방금 만든 주문을 되돌린다
+      const rollback = await dbDelete("orders", { id: order.id });
+      alert(
+        `주문 전환 실패: 품목을 저장하지 못했습니다.\n${itemsRes.error}` +
+          (rollback.error ? "\n\n품목 없는 주문이 남았을 수 있습니다. 주문 목록에서 확인 후 삭제해 주세요." : ""),
+      );
+      return;
+    }
 
     await updateStatus("accepted");
     router.push(`/admin/orders/${order.id}`);

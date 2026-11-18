@@ -42,7 +42,9 @@ export async function POST(request: NextRequest) {
   // 토스 orderId 규칙: 영문/숫자/-/_ , 6~64자
   const tossOrderId = `MP${randomUUID().replace(/-/g, "")}`;
 
-  const days = Number.isFinite(body.expires_days) && body.expires_days! > 0 ? body.expires_days! : 7;
+  // 유효기간: 1~365일 (범위를 벗어나면 기본 7일)
+  const rawDays = Math.floor(Number(body.expires_days));
+  const days = Number.isFinite(rawDays) && rawDays >= 1 && rawDays <= 365 ? rawDays : 7;
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
   const admin = createAdminClient();

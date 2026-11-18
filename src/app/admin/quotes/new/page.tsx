@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, QuoteWithItems } from "@/lib/supabase/types";
-import { generateQuoteNumber, formatNumber, formatDate } from "@/lib/utils";
-import { dbInsert } from "@/lib/db";
+import { generateQuoteNumber, formatNumber, formatDate, todayKST } from "@/lib/utils";
+import { dbInsert, dbDelete } from "@/lib/db";
 import { Plus, Trash2, ArrowLeft, Building2, PenLine, Copy, X } from "lucide-react";
 import Link from "next/link";
 
@@ -37,7 +37,7 @@ export default function NewQuotePage() {
   const [recipientBizCategory, setRecipientBizCategory] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
-  const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0, 10));
+  const [quoteDate, setQuoteDate] = useState(todayKST());
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<QuoteItemDraft[]>([]);
@@ -261,7 +261,7 @@ export default function NewQuotePage() {
       return;
     }
 
-    await dbInsert("quote_items",
+    const itemsRes = await dbInsert("quote_items",
       items.map((item) => ({
         quote_id: quote.id,
         product_id: item.product_id || null,
@@ -273,6 +273,16 @@ export default function NewQuotePage() {
         amount: item.amount,
       })),
     );
+    if (itemsRes.error) {
+      // 품목 없는 견적서가 남지 않도록 방금 만든 견적서를 되돌린다
+      const rollback = await dbDelete("quotes", { id: quote.id });
+      alert(
+        `생성 실패: 품목을 저장하지 못했습니다.\n${itemsRes.error}` +
+          (rollback.error ? "\n\n품목 없는 견적서가 남았을 수 있습니다. 견적서 목록에서 확인 후 삭제해 주세요." : ""),
+      );
+      setSaving(false);
+      return;
+    }
 
     router.push(`/admin/quotes/${quote.id}`);
   }

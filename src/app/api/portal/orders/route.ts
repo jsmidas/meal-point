@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPortalSession } from "@/lib/auth/portal";
 import { generateOrderNumber } from "@/lib/utils";
+import { buildPortalOrder } from "@/lib/portal-order";
 
 /**
  * 포털 발주 — 거래처 발주 계정 전용.
@@ -38,80 +39,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "권한이 없습니다." }, { status: 401 });
   }
 
-  const body = await request.json();
-  const rawItems: { product_id?: string; quantity?: number }[] = Array.isArray(body.items)
-    ? body.items
-    : [];
-  const notes: string | null = body.notes ? String(body.notes) : null;
-  const orderDate: string =
-    typeof body.order_date === "string" && body.order_date
-      ? body.order_date
-      : new Date().toISOString().slice(0, 10);
-
-  // 수량 > 0 인 항목만
-  const wanted = rawItems
-    .map((i) => ({ product_id: String(i.product_id || ""), quantity: Number(i.quantity) || 0 }))
-    .filter((i) => i.product_id && i.quantity > 0);
-
-  if (wanted.length === 0) {
-    return NextResponse.json(
-      { ok: false, error: "발주할 상품과 수량을 입력하세요." },
-      { status: 400 },
-    );
-  }
-
+  const body = await request.json().catch(() => null);
   const supabase = createAdminClient();
-  const productIds = [...new Set(wanted.map((i) => i.product_id))];
 
-  // 단가는 서버가 DB에서 확정 (거래처 단가 > 기본 판매가)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [{ data: products }, { data: prices }] = await Promise.all([
-    (supabase.from("products") as any)
-      .select("id, name, unit, selling_price, is_active")
-      .in("id", productIds),
-    (supabase.from("company_prices") as any)
-      .select("product_id, custom_price")
-      .eq("company_id", session.companyId)
-      .in("product_id", productIds),
-  ]);
-
-  const productMap = new Map<
-    string,
-    { name: string; unit: string; selling_price: number; is_active: boolean }
-  >();
-  for (const p of products || []) productMap.set(p.id, p);
-  const priceMap: Record<string, number> = {};
-  for (const row of prices || []) priceMap[row.product_id] = Number(row.custom_price);
-
-  // 항목 구성 + 검증
-  const orderItems: {
-    product_id: string;
-    product_name: string;
-    unit: string;
-    quantity: number;
-    unit_price: number;
-    amount: number;
-  }[] = [];
-  for (const w of wanted) {
-    const p = productMap.get(w.product_id);
-    if (!p || !p.is_active) {
-      return NextResponse.json(
-        { ok: false, error: "판매 중이 아닌 상품이 포함되어 있습니다." },
-        { status: 400 },
-      );
-    }
-    const unitPrice = priceMap[w.product_id] ?? p.selling_price ?? 0;
-    orderItems.push({
-      product_id: w.product_id,
-      product_name: p.name,
-      unit: p.unit,
-      quantity: w.quantity,
-      unit_price: unitPrice,
-      amount: unitPrice * w.quantity,
-    });
+  // 수량·발주일 검증 + 단가 확정 (거래처 단가 > 기본 판매가)
+  const built = await buildPortalOrder(supabase, session.companyId, body);
+  if (!built.ok) {
+    return NextResponse.json({ ok: false, error: built.error }, { status: built.status });
   }
-
-  const totalAmount = orderItems.reduce((s, i) => s + i.amount, 0);
+  const { items: orderItems, totalAmount, notes, orderDate } = built;
 
   // 주문번호 생성 (충돌 시 재시도)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

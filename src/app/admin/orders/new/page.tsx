@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { dbInsert } from "@/lib/db";
+import { dbInsert, dbDelete } from "@/lib/db";
 import type { Company, Product } from "@/lib/supabase/types";
-import { generateOrderNumber, formatNumber } from "@/lib/utils";
+import { generateOrderNumber, formatNumber, todayKST } from "@/lib/utils";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -27,7 +27,7 @@ export default function NewOrderPage() {
   const [companyPrices, setCompanyPrices] = useState<Record<string, number>>({});
   const [companyId, setCompanyId] = useState("");
   const [orderDate, setOrderDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    todayKST(),
   );
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<OrderItemDraft[]>([]);
@@ -168,7 +168,17 @@ export default function NewOrderPage() {
       amount: item.amount,
     }));
 
-    await dbInsert("order_items", orderItems);
+    const itemsRes = await dbInsert("order_items", orderItems);
+    if (itemsRes.error) {
+      // 항목 없는 주문이 남지 않도록 방금 만든 주문을 되돌린다
+      const rollback = await dbDelete("orders", { id: order.id });
+      alert(
+        `주문 생성 실패: 품목을 저장하지 못했습니다.\n${itemsRes.error}` +
+          (rollback.error ? "\n\n품목 없는 주문이 남았을 수 있습니다. 주문 목록에서 확인 후 삭제해 주세요." : ""),
+      );
+      setSaving(false);
+      return;
+    }
 
     router.push(`/admin/orders/${order.id}`);
   }

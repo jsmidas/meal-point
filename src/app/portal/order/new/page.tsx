@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, todayKST } from "@/lib/utils";
 
 interface PortalProduct {
   id: string;
@@ -24,7 +24,7 @@ export default function PortalNewOrderPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [notes, setNotes] = useState("");
   const [orderDate, setOrderDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    todayKST(),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

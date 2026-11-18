@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import type { InventoryWithProduct, InventoryLog, Product } from "@/lib/supabase/types";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, todayKST } from "@/lib/utils";
 import type { Company } from "@/lib/supabase/types";
 import {
   INVENTORY_LOG_TYPE_BADGE,
@@ -55,7 +55,7 @@ export default function InventoryPage() {
   // 자가소비 / 재고 조정 등록 모달
   const [showEntry, setShowEntry] = useState(false);
   const [entryKind, setEntryKind] = useState<EntryKind>("self");
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(todayKST());
   const [entryProductId, setEntryProductId] = useState("");
   const [entryQty, setEntryQty] = useState(0);
   const [entryCompanyId, setEntryCompanyId] = useState("");
@@ -251,7 +251,7 @@ export default function InventoryPage() {
   // ── 자가소비 / 재고 조정 등록 ──
   function openEntry(kind: EntryKind, productId = "") {
     setEntryKind(kind);
-    setEntryDate(new Date().toISOString().slice(0, 10));
+    setEntryDate(todayKST());
     setEntryProductId(productId);
     setEntryQty(0);
     setEntryReason("");

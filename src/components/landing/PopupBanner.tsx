@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Popup } from "@/lib/supabase/types";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { todayKST } from "@/lib/utils";
 
 export default function PopupBanner() {
   const [popups, setPopups] = useState<Popup[]>([]);
@@ -15,7 +16,7 @@ export default function PopupBanner() {
     async function fetchPopups() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const db = createClient() as any;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayKST();
       const { data } = await db
         .from("popups")
         .select("*")

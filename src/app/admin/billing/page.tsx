@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Statement, StatementItem, BillingWithPayments, Payment } from "@/lib/supabase/types";
-import { formatNumber, generateBillingNumber, numberToKorean } from "@/lib/utils";
+import { formatNumber, generateBillingNumber, numberToKorean, todayKST, currentMonthKST } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import { matchSalesToStatements, summarizeMismatch, type SalesLineForMatch } from "@/lib/billing-match";
 import {
@@ -72,7 +72,7 @@ export default function BillingPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(currentMonthKST());
   const [companyRows, setCompanyRows] = useState<CompanyRow[]>([]);
   const [allCompanies, setAllCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,7 +109,7 @@ export default function BillingPage() {
 
   // 세금계산서 모달 (CompanyRow 기반으로 변경)
   const [taxModal, setTaxModal] = useState<CompanyRow | null>(null);
-  const [taxDate, setTaxDate] = useState(new Date().toISOString().slice(0, 10));
+  const [taxDate, setTaxDate] = useState(todayKST());
   const [taxNumber, setTaxNumber] = useState("");
   const [taxChecked, setTaxChecked] = useState<Set<string>>(new Set()); // 선택된 명세서 ID
   const [taxSupplyOverride, setTaxSupplyOverride] = useState<number | null>(null); // 수동 금액 입력
@@ -117,7 +117,7 @@ export default function BillingPage() {
   // 입금 모달 (CompanyRow 기반으로 변경 - 청구 없어도 가능)
   const [payModalRow, setPayModalRow] = useState<CompanyRow | null>(null);
   const [payAmount, setPayAmount] = useState(0);
-  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [payDate, setPayDate] = useState(todayKST());
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payNotes, setPayNotes] = useState("");
   const [payDepositor, setPayDepositor] = useState("");
@@ -174,7 +174,7 @@ export default function BillingPage() {
       .order("created_at", { ascending: false })
       .limit(500);
     if (days > 0) {
-      const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      const since = todayKST(new Date(Date.now() - days * 86400000));
       q = q.gte("payment_date", since);
     }
     const [{ data: rows }, { data: lastRow }] = await Promise.all([
@@ -553,11 +553,36 @@ export default function BillingPage() {
 
   function openTaxModal(row: CompanyRow) {
     setTaxModal(row);
-    setTaxDate(new Date().toISOString().slice(0, 10));
+    setTaxDate(todayKST());
     setTaxNumber("");
     setTaxSupplyOverride(null);
     // 명세서 선택 해제 → 판매액 기준으로 시작 (명세서와 판매액이 다를 수 있으므로)
     setTaxChecked(new Set());
+  }
+
+  /**
+   * 청구(billings) 한 건을 만든다. 청구번호는 난수라 같은 달 안에서 겹칠 수 있으므로
+   * 실패하면 새 번호로 몇 번 더 시도한다. 끝내 실패하면 id 없이 오류 메시지를 돌려준다.
+   */
+  async function createBillingRow(
+    billingMonth: string,
+    fields: Record<string, unknown>,
+  ): Promise<{ id: string | null; error: string | null }> {
+    let lastError: string | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await dbInsert("billings", {
+        billing_number: generateBillingNumber(billingMonth),
+        billing_month: billingMonth,
+        ...fields,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = (Array.isArray(res.data) ? res.data[0] : res.data) as any;
+      if (!res.error && row?.id) return { id: row.id as string, error: null };
+      lastError = res.error || "청구를 만들지 못했습니다.";
+      // 청구번호 중복이 아닌 오류(같은 거래처·월 청구가 이미 있음, 권한 만료 등)는 재시도해도 같다
+      if (!/billing_number/i.test(lastError)) break;
+    }
+    return { id: null, error: lastError };
   }
 
   // 세금계산서 발행 처리
@@ -571,31 +596,40 @@ export default function BillingPage() {
 
     // 청구 없으면 자동 생성
     if (!billingId) {
-      const { data: newBillingData } = await dbInsert("billings", {
-        billing_number: generateBillingNumber(month),
+      const created = await createBillingRow(month, {
         company_id: taxModal.id,
-        billing_month: month,
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
         total_amount: taxComputedTotal,
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const newBilling = (Array.isArray(newBillingData) ? newBillingData[0] : newBillingData) as any;
-      billingId = newBilling?.id;
+      if (!created.id) {
+        alert(`세금계산서 처리 실패: 청구를 만들지 못했습니다.\n${created.error || ""}`);
+        return;
+      }
+      billingId = created.id;
     } else {
       // 기존 청구 금액 업데이트
-      await dbUpdate("billings", {
+      const upd = await dbUpdate("billings", {
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
         total_amount: taxComputedTotal,
       }, { id: billingId });
+      if (upd.error) {
+        alert(`세금계산서 처리 실패: 청구 금액을 저장하지 못했습니다.\n${upd.error}`);
+        return;
+      }
     }
 
-    await dbUpdate("billings", {
+    const issued = await dbUpdate("billings", {
       tax_invoice_issued: true,
       tax_invoice_date: taxDate,
       tax_invoice_number: taxNumber || null,
-    }, { id: billingId! });
+    }, { id: billingId });
+    if (issued.error) {
+      alert(`세금계산서 발행 표시를 저장하지 못했습니다.\n${issued.error}`);
+      fetchData();
+      return;
+    }
 
     setTaxModal(null);
     setTaxNumber("");
@@ -615,7 +649,7 @@ export default function BillingPage() {
     // 수정 모드: 단일 row 갱신 (분배 미지원, 기존 동작 유지)
     if (editingPayment) {
       setPaySubmitting(true);
-      await dbUpdate("payments", {
+      const edited = await dbUpdate("payments", {
         amount: payAmount,
         payment_date: payDate,
         payment_method: payMethod,
@@ -623,6 +657,11 @@ export default function BillingPage() {
         depositor_name: payDepositor || null,
         bank_name: payBank || null,
       }, { id: editingPayment.id });
+      if (edited.error) {
+        alert(`입금 수정 실패: ${edited.error}`);
+        setPaySubmitting(false);
+        return;
+      }
       await syncBillingPaidById(editingPayment.billing_id);
       closePayModal();
       fetchData();
@@ -641,11 +680,10 @@ export default function BillingPage() {
     const affectedBillingIds: string[] = [];
     const estPromoted: Record<string, string> = {}; // 가정산 센티넬 → 승격된 실제 billingId (중복 생성 방지)
 
-    // 분할 모드: 기존 입금 row를 삭제 (반제 처리). 분배 합계 = 입금액 보장됨.
-    if (splittingPayment) {
-      affectedBillingIds.push(splittingPayment.billing_id);
-      await dbDelete("payments", { id: splittingPayment.id });
-    }
+    // 저장 순서: 새 입금을 모두 저장 → 전부 성공했을 때만 (분할 모드의) 기존 입금 삭제.
+    // 중간에 하나라도 실패하면 이번에 넣은 입금을 되돌려, "저장된 줄 알았는데 빠진 입금"이 생기지 않게 한다.
+    const insertedPaymentIds: string[] = [];
+    let failure: string | null = null;
 
     // 충당 대상별 insert
     for (const entry of allocPlan.entries) {
@@ -662,17 +700,17 @@ export default function BillingPage() {
           const supply = det?.estSupply ?? 0;
           const tax = Math.round(supply * 0.1);
           const total = det?.estTotal ?? supply + tax;
-          const { data: estBillingData } = await dbInsert("billings", {
-            billing_number: generateBillingNumber(estMonth),
+          const created = await createBillingRow(estMonth, {
             company_id: payModalRow.id,
-            billing_month: estMonth,
             total_supply: supply,
             total_tax: tax,
             total_amount: total,
           });
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const estBilling = (Array.isArray(estBillingData) ? estBillingData[0] : estBillingData) as any;
-          billingId = estBilling?.id as string;
+          if (!created.id) {
+            failure = `${estMonth} 청구를 만들지 못했습니다. ${created.error || ""}`;
+            break;
+          }
+          billingId = created.id;
           estPromoted[sentinel] = billingId;
         }
       }
@@ -681,20 +719,20 @@ export default function BillingPage() {
       if (!billingId) {
         const supply = payModalRow.sales.amount || entry.amount;
         const tax = Math.round(supply * 0.1);
-        const { data: newBillingData } = await dbInsert("billings", {
-          billing_number: generateBillingNumber(month),
+        const created = await createBillingRow(month, {
           company_id: payModalRow.id,
-          billing_month: month,
           total_supply: supply,
           total_tax: tax,
           total_amount: supply + tax,
         });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const newBilling = (Array.isArray(newBillingData) ? newBillingData[0] : newBillingData) as any;
-        billingId = newBilling?.id as string;
+        if (!created.id) {
+          failure = `${month} 청구를 만들지 못했습니다. ${created.error || ""}`;
+          break;
+        }
+        billingId = created.id;
       }
 
-      await dbInsert("payments", {
+      const payRes = await dbInsert("payments", {
         billing_id: billingId,
         amount: entry.amount,
         payment_date: payDate,
@@ -705,7 +743,47 @@ export default function BillingPage() {
         payment_group_id: groupId,
         statement_id: entry.statementId,
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const payRow = (Array.isArray(payRes.data) ? payRes.data[0] : payRes.data) as any;
+      if (payRes.error || !payRow?.id) {
+        failure = `입금을 저장하지 못했습니다. ${payRes.error || ""}`;
+        break;
+      }
+      insertedPaymentIds.push(payRow.id as string);
       affectedBillingIds.push(billingId);
+    }
+
+    if (failure) {
+      // 이번에 넣은 입금을 되돌린다 (기존 입금은 건드리지 않았다)
+      let rollbackFailed = 0;
+      for (const pid of insertedPaymentIds) {
+        const del = await dbDelete("payments", { id: pid });
+        if (del.error) rollbackFailed++;
+      }
+      for (const bid of Array.from(new Set(affectedBillingIds))) {
+        await syncBillingPaidById(bid);
+      }
+      alert(
+        `입금 처리 실패: ${failure}\n\n` +
+          (rollbackFailed > 0
+            ? `일부 입금(${rollbackFailed}건)이 저장된 채 남았습니다. 입금 내역을 확인해 주세요.`
+            : "이번 입금은 저장되지 않았습니다. 기존 입금 내역은 그대로입니다."),
+      );
+      setPaySubmitting(false);
+      fetchData();
+      return;
+    }
+
+    // 분할 모드: 새 분배가 모두 저장된 뒤에 기존 입금 row를 삭제 (반제 처리). 분배 합계 = 입금액 보장됨.
+    if (splittingPayment) {
+      affectedBillingIds.push(splittingPayment.billing_id);
+      const del = await dbDelete("payments", { id: splittingPayment.id });
+      if (del.error) {
+        alert(
+          "새 분배는 저장됐지만 기존 입금을 지우지 못해 입금이 중복으로 잡혀 있습니다.\n" +
+            `입금 내역에서 기존 입금(${formatNumber(splittingPayment.amount)}원)을 직접 삭제해 주세요.\n${del.error}`,
+        );
+      }
     }
 
     // 각 billing의 paid_amount 재계산
@@ -1018,13 +1096,15 @@ export default function BillingPage() {
   async function syncBillingPaid(billingId: string, totalAmount: number) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
-    const { data: payments } = await db.from("payments").select("amount").eq("billing_id", billingId);
+    const { data: payments, error: payError } = await db.from("payments").select("amount").eq("billing_id", billingId);
+    // 조회에 실패했는데 그대로 진행하면 입금액이 0원(미수)으로 덮어써진다 → 건드리지 않는다
+    if (payError) return;
     const newPaid = (payments || []).reduce((sum: number, p: { amount: number }) => sum + p.amount, 0);
     const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= totalAmount ? "paid" : "partial";
     await dbUpdate("billings", {
       paid_amount: newPaid,
       status: newStatus,
-      paid_date: newStatus === "paid" ? new Date().toISOString().slice(0, 10) : null,
+      paid_date: newStatus === "paid" ? todayKST() : null,
     }, { id: billingId });
   }
 
@@ -1047,15 +1127,17 @@ export default function BillingPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const total = billingSupply + billingTax;
-    await dbInsert("billings", {
-      billing_number: generateBillingNumber(month),
+    const created = await createBillingRow(month, {
       company_id: billingModal.companyId,
-      billing_month: month,
       total_supply: billingSupply,
       total_tax: billingTax,
       total_amount: total,
       notes: billingNotes || null,
     });
+    if (!created.id) {
+      alert(`청구 생성 실패: ${created.error || "알 수 없는 오류"}`);
+      return;
+    }
     setBillingModal(null);
     setBillingSupply(0);
     setBillingTax(0);
@@ -1482,7 +1564,7 @@ export default function BillingPage() {
                         setEditingPayment(null);
                         setSplittingPayment(null);
                         setPayAmount(0);
-                        setPayDate(new Date().toISOString().slice(0, 10));
+                        setPayDate(todayKST());
                         setPayMethod("bank_transfer");
                         setPayNotes("");
                         setPayDepositor("");

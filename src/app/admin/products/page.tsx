@@ -65,8 +65,34 @@ export default function ProductsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("정말 삭제하시겠습니까?")) return;
-    await dbDelete("products", { id });
+    // 상품을 지우면 그 상품의 입출고 이력·거래처 단가·상세페이지가 함께 지워져 지난 달 판매액과 수불이 바뀐다.
+    // 입출고 이력이 있는 상품은 삭제하지 않고 "판매 중단"으로 두도록 막는다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count, error: countError } = await (supabase as any)
+      .from("inventory_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", id);
+    if (countError) {
+      alert("입출고 이력을 확인하지 못해 삭제를 중단했습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    if ((count ?? 0) > 0) {
+      alert(
+        `이 상품은 입출고 이력이 ${count}건 있어 삭제할 수 없습니다.\n` +
+          "삭제하면 과거 판매·재고 기록이 함께 사라집니다.\n\n" +
+          "더 이상 팔지 않는 상품이면 수정 화면에서 '판매 중단'으로 바꿔 주세요.",
+      );
+      return;
+    }
+    if (!confirm("정말 삭제하시겠습니까?\n이 상품의 거래처 단가와 상세페이지도 함께 삭제됩니다.")) return;
+    const res = await dbDelete("products", { id });
+    if (res.error) {
+      alert(
+        /foreign key|violates/i.test(res.error)
+          ? "주문에 사용된 상품이라 삭제할 수 없습니다. 수정 화면에서 '판매 중단'으로 바꿔 주세요."
+          : `삭제 실패: ${res.error}`,
+      );
+    }
     fetchProducts();
   }
 

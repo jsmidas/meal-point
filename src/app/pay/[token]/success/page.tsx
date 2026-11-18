@@ -26,18 +26,36 @@ function SuccessInner() {
       return;
     }
     (async () => {
-      const res = await fetch("/api/payments/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, paymentKey, orderId, amount }),
-      });
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        setState("ok");
-      } else {
-        setState("fail");
-        setMessage(json.error || "결제 승인에 실패했습니다.");
+      let errorMessage = "결제 승인에 실패했습니다.";
+      try {
+        const res = await fetch("/api/payments/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, paymentKey, orderId, amount }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok) {
+          setState("ok");
+          return;
+        }
+        if (json?.error) errorMessage = json.error;
+      } catch {
+        errorMessage = "서버와 통신하지 못했습니다.";
       }
+
+      // 승인 요청이 실패로 보여도 실제로는 결제가 끝났을 수 있다(새로고침·중복 탭 등) → 현재 상태를 한 번 더 확인
+      try {
+        const check = await fetch(`/api/payments/${token}`, { cache: "no-store" });
+        const cj = await check.json().catch(() => null);
+        if (check.ok && cj?.data?.status === "paid") {
+          setState("ok");
+          return;
+        }
+      } catch {
+        // 확인 실패 — 아래에서 실패로 안내
+      }
+      setState("fail");
+      setMessage(errorMessage);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -70,7 +88,8 @@ function SuccessInner() {
             <h1 className="text-lg font-bold text-text-primary">결제 처리 실패</h1>
             <p className="text-sm text-text-secondary mt-3">{message}</p>
             <p className="text-xs text-text-muted mt-4">
-              결제가 중복 청구되지 않았으니 안심하시고, 판매자에게 문의해 주세요.
+              결제 여부가 확실하지 않으면 다시 결제하지 마시고, 이 화면을 새로고침하거나
+              판매자에게 문의해 주세요.
             </p>
           </>
         )}

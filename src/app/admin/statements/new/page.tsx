@@ -4,8 +4,8 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
-import { generateStatementNumber, formatNumber, formatDate } from "@/lib/utils";
-import { dbInsert, dbUpdate } from "@/lib/db";
+import { generateStatementNumber, formatNumber, formatDate, todayKST } from "@/lib/utils";
+import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import { matchSalesToStatements, type SalesLineForMatch } from "@/lib/billing-match";
 import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -44,7 +44,7 @@ function NewStatementForm() {
   const [companyPrices, setCompanyPrices] = useState<CompanyPrice[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [statementDate, setStatementDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    todayKST(),
   );
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<StatementItemDraft[]>([]);
@@ -239,10 +239,11 @@ function NewStatementForm() {
   // 최근 3개월간 어느 명세서에도 들어가지 않은 출고를 식별
   async function fetchUnbilledLogs(cId: string) {
     setUnbilledLoading(true);
-    const now = new Date();
-    const fromDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    const from = fromDate.toISOString().slice(0, 10);
-    const to = now.toISOString().slice(0, 10);
+    // 한국시간 기준: 두 달 전 1일 ~ 오늘
+    const to = todayKST();
+    const [ty, tm] = to.split("-").map(Number);
+    const fromMonth = new Date(Date.UTC(ty, tm - 1 - 2, 1));
+    const from = `${fromMonth.getUTCFullYear()}-${String(fromMonth.getUTCMonth() + 1).padStart(2, "0")}-01`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
@@ -463,7 +464,17 @@ function NewStatementForm() {
       amount: item.amount,
     }));
 
-    await dbInsert("statement_items", stItems);
+    const itemsRes = await dbInsert("statement_items", stItems);
+    if (itemsRes.error) {
+      // 항목 없는 명세서가 청구에 합산되지 않도록 방금 만든 명세서를 되돌린다
+      const rollback = await dbDelete("statements", { id: statement.id });
+      alert(
+        `생성 실패: 품목을 저장하지 못했습니다.\n${itemsRes.error}` +
+          (rollback.error ? "\n\n품목 없는 명세서가 남았을 수 있습니다. 명세서 목록에서 확인 후 삭제해 주세요." : ""),
+      );
+      setSaving(false);
+      return;
+    }
 
     // 관련 청구(billings) 자동 갱신
     const billingMonth = statementDate.slice(0, 7);

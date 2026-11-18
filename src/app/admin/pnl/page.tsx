@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import type { Expense } from "@/lib/supabase/types";
-import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber } from "@/lib/utils";
+import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber, todayKST } from "@/lib/utils";
 import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer, Pencil } from "lucide-react";
 
 /**
@@ -52,7 +52,7 @@ export default function PnlPage() {
   // 비용 등록 모달
   const [showExpense, setShowExpense] = useState(false);
   const [expMonth, setExpMonth] = useState<string | null>(null);
-  const [expDate, setExpDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expDate, setExpDate] = useState(todayKST());
   const [expCategory, setExpCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [expNewCategory, setExpNewCategory] = useState(""); // '직접 입력' 선택 시 새 항목명
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null); // null=신규, string=수정
@@ -233,7 +233,7 @@ export default function PnlPage() {
   // ── 비용 등록 ──
   function openExpense(month: string | null, category?: string) {
     setExpMonth(month);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayKST();
     setExpDate(month && !today.startsWith(month) ? `${month}-01` : today);
     setExpCategory(category || EXPENSE_CATEGORIES[0]);
     setExpNewCategory("");

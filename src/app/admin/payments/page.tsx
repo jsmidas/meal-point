@@ -120,13 +120,18 @@ export default function PaymentsPage() {
   async function handleCancel(row: Row) {
     if (row.status !== "pending") return;
     if (!confirm(`"${row.order_name}" 결제 요청을 취소하시겠습니까?`)) return;
-    await dbUpdate("payment_requests", { status: "canceled" }, { id: row.id });
+    // 화면을 띄워 둔 사이 고객이 결제를 끝냈을 수 있다 → 아직 결제대기인 경우에만 취소되도록 조건을 건다
+    const res = await dbUpdate("payment_requests", { status: "canceled" }, { id: row.id, status: "pending" });
+    if (res.error) alert(`취소 실패: ${res.error}`);
     fetchData();
   }
 
   async function handleDelete(row: Row) {
+    if (row.status === "paid") return;
     if (!confirm(`"${row.order_name}" 결제 요청 기록을 삭제하시겠습니까?`)) return;
-    await dbDelete("payment_requests", { id: row.id });
+    // 화면에 보이는 상태 그대로일 때만 삭제 (그 사이 결제완료로 바뀌었으면 지워지지 않는다)
+    const res = await dbDelete("payment_requests", { id: row.id, status: row.status });
+    if (res.error) alert(`삭제 실패: ${res.error}`);
     fetchData();
   }
 
@@ -214,6 +219,14 @@ export default function PaymentsPage() {
                     {row.companies && (
                       <span className="text-xs text-text-muted">
                         · {row.companies.name}
+                      </span>
+                    )}
+                    {row.status === "paid" && row.company_id && !row.payment_id && (
+                      <span
+                        className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-400/10 text-red-400"
+                        title="결제는 완료됐지만 정산관리(청구·입금)에 자동 반영되지 않았습니다. 정산 화면에서 입금을 직접 등록해 주세요."
+                      >
+                        정산 미반영
                       </span>
                     )}
                   </div>

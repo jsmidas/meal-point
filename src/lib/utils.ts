@@ -1,17 +1,35 @@
+/** 한국시간(Asia/Seoul) 기준 오늘 날짜 YYYY-MM-DD. 서버(UTC)·브라우저 어디서 불러도 같은 값을 낸다. */
+export function todayKST(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** 한국시간 기준 이번 달 YYYY-MM */
+export function currentMonthKST(d: Date = new Date()): string {
+  return todayKST(d).slice(0, 7);
+}
+
+/** 문서번호용 날짜 YYYYMMDD (한국시간) */
+function numberDate(): string {
+  return todayKST().replace(/-/g, "");
+}
+
+function rand3(): string {
+  return String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
+}
+
 /** 주문번호 생성: ORD-20260312-001 */
 export function generateOrderNumber() {
-  const d = new Date();
-  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
-  return `ORD-${date}-${rand}`;
+  return `ORD-${numberDate()}-${rand3()}`;
 }
 
 /** 거래명세서번호 생성: ST-20260312-001 */
 export function generateStatementNumber() {
-  const d = new Date();
-  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
-  return `ST-${date}-${rand}`;
+  return `ST-${numberDate()}-${rand3()}`;
 }
 
 /** 주문 상태 한글 라벨 */
@@ -25,17 +43,12 @@ export const ORDER_STATUS: Record<string, { label: string; color: string }> = {
 
 /** 견적서번호 생성: QT-20260312-001 */
 export function generateQuoteNumber() {
-  const d = new Date();
-  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
-  return `QT-${date}-${rand}`;
+  return `QT-${numberDate()}-${rand3()}`;
 }
 
-/** 청구번호 생성: BL-202603-001 */
+/** 청구번호 생성: BL-202603-001 (난수라 겹칠 수 있다 — 저장 실패 시 호출부에서 새 번호로 재시도할 것) */
 export function generateBillingNumber(month: string) {
-  const m = month.replace("-", "");
-  const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
-  return `BL-${m}-${rand}`;
+  return `BL-${month.replace("-", "")}-${rand3()}`;
 }
 
 /** 견적서 상태 */

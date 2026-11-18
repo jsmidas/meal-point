@@ -155,8 +155,7 @@ export default function StatementDetailPage() {
     }));
     const inserted = await dbInsert("statement_items", insertItems);
     if (inserted.error) {
-      alert(`저장 실패: 항목을 저장하지 못했습니다. 기존 내용은 그대로입니다.
-${inserted.error}`);
+      alert(`저장 실패: 항목을 저장하지 못했습니다. 기존 내용은 그대로입니다.\n${inserted.error}`);
       setSaving(false);
       return;
     }
@@ -180,10 +179,8 @@ ${inserted.error}`);
     if (failedDeletes.length > 0 || updated.error) {
       alert(
         "저장 중 일부 단계가 실패했습니다. 화면을 새로 불러오니 항목과 합계를 확인해 주세요." +
-          (failedDeletes.length > 0 ? `
-- 이전 항목 ${failedDeletes.length}건이 지워지지 않아 중복으로 보일 수 있습니다.` : "") +
-          (updated.error ? `
-- 합계 저장 실패: ${updated.error}` : ""),
+          (failedDeletes.length > 0 ? `\n- 이전 항목 ${failedDeletes.length}건이 지워지지 않아 중복으로 보일 수 있습니다.` : "") +
+          (updated.error ? `\n- 합계 저장 실패: ${updated.error}` : ""),
       );
     }
 
@@ -227,8 +224,7 @@ ${inserted.error}`);
       total_tax: newTax,
       total_amount: newSupply + newTax,
     }, { id: billing.id });
-    if (res.error) alert(`청구 금액 갱신 실패: ${res.error}
-정산 화면에서 금액을 확인해 주세요.`);
+    if (res.error) alert(`청구 금액 갱신 실패: ${res.error}\n정산 화면에서 금액을 확인해 주세요.`);
   }
 
   async function handleDelete() {

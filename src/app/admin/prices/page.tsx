@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbDelete } from "@/lib/db";
 import type { Company, Product, CompanyPrice, CompanyPriceHistory } from "@/lib/supabase/types";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, todayKST } from "@/lib/utils";
 import { Save, Check, Building2, RotateCcw, History as HistoryIcon, X, ShoppingBag, Truck, ListOrdered, Search } from "lucide-react";
 
 type DirtyMap = Record<string, number>;
@@ -20,7 +20,7 @@ export default function PricesPage() {
   const supabase = createClient();
 
   const [mode, setMode] = useState<PriceMode>("sell");
-  const [effectiveFrom, setEffectiveFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [effectiveFrom, setEffectiveFrom] = useState(() => todayKST());
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);

@@ -34,7 +34,14 @@ export default function CompaniesPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("정말 삭제하시겠습니까?")) return;
-    await dbDelete("companies", { id });
+    const res = await dbDelete("companies", { id });
+    if (res.error) {
+      alert(
+        /foreign key|violates/i.test(res.error)
+          ? "주문·명세서·청구 등 거래 기록이 있는 거래처는 삭제할 수 없습니다. 수정 화면에서 '비활성'으로 바꿔 주세요."
+          : `삭제 실패: ${res.error}`,
+      );
+    }
     fetchCompanies();
   }
 

@@ -5,6 +5,7 @@
  */
 
 const TOSS_API = "https://api.tosspayments.com/v1";
+const TOSS_TIMEOUT_MS = 20_000;
 
 export function getTossClientKey(): string {
   // 테스트 키: test_ck_xxx / 운영 키: live_ck_xxx
@@ -32,26 +33,46 @@ export interface TossConfirmResult {
   receipt: { url: string } | null;
 }
 
+export type TossResult =
+  | { ok: true; data: TossConfirmResult }
+  | { ok: false; code: string; message: string };
+
 /**
- * 결제 승인. 반드시 서버에서 호출하며, amount 는 우리 DB 값을 그대로 넘긴다.
+ * 토스 API 호출 공통부.
+ * 시간 초과·네트워크 오류·비JSON 응답·키 미설정을 모두 실패 결과로 돌려준다(예외를 던지지 않음).
  */
-export async function confirmTossPayment(params: {
-  paymentKey: string;
-  orderId: string;
-  amount: number;
-}): Promise<{ ok: true; data: TossConfirmResult } | { ok: false; code: string; message: string }> {
-  const auth = Buffer.from(`${getSecretKey()}:`).toString("base64");
+async function tossRequest(path: string, init: RequestInit): Promise<TossResult> {
+  let auth: string;
+  try {
+    auth = Buffer.from(`${getSecretKey()}:`).toString("base64");
+  } catch (err) {
+    console.error("[toss]", err instanceof Error ? err.message : err);
+    return { ok: false, code: "NOT_CONFIGURED", message: "결제 설정이 완료되지 않았습니다. 판매자에게 문의해 주세요." };
+  }
 
-  const res = await fetch(`${TOSS_API}/payments/confirm`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(params),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${TOSS_API}${path}`, {
+      ...init,
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(TOSS_TIMEOUT_MS),
+      cache: "no-store",
+    });
+  } catch {
+    return {
+      ok: false,
+      code: "NETWORK_ERROR",
+      message: "결제사와 통신하지 못했습니다. 잠시 후 다시 확인해 주세요.",
+    };
+  }
 
-  const json = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let json: any = null;
+  try {
+    json = await res.json();
+  } catch {
+    return { ok: false, code: "INVALID_RESPONSE", message: "결제사 응답을 해석하지 못했습니다." };
+  }
 
   if (!res.ok) {
     return {
@@ -73,6 +94,25 @@ export async function confirmTossPayment(params: {
       receipt: json.receipt ?? null,
     },
   };
+}
+
+/**
+ * 결제 승인. 반드시 서버에서 호출하며, amount 는 우리 DB 값을 그대로 넘긴다.
+ */
+export async function confirmTossPayment(params: {
+  paymentKey: string;
+  orderId: string;
+  amount: number;
+}): Promise<TossResult> {
+  return tossRequest("/payments/confirm", { method: "POST", body: JSON.stringify(params) });
+}
+
+/**
+ * 주문번호로 결제 조회. 승인 요청의 결과를 받지 못했거나(시간 초과) 이미 처리된 결제일 때
+ * 실제 결제 상태를 확인하는 데 쓴다.
+ */
+export async function getTossPaymentByOrderId(orderId: string): Promise<TossResult> {
+  return tossRequest(`/payments/orders/${encodeURIComponent(orderId)}`, { method: "GET" });
 }
 
 /** Asia/Seoul 기준 YYYY-MM-DD */
