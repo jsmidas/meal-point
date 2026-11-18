@@ -25,6 +25,27 @@ async function fetchActiveGrant(db: any, memberId: string, nowIso: string) {
   return data;
 }
 
+/**
+ * 이 회원이 체험을 이미 사용했는가 (1인 1회).
+ * 만료·회수된 사용권이 하나라도 있으면 사용한 것으로 본다.
+ * 관리자가 "재체험 허용"을 누르면 지난 사용권이 status='reopened' 로 바뀌어 다시 신청할 수 있다.
+ * 조회에 실패하면 새로 발급하지 않도록 "사용함"으로 본다(무제한 재발급 방지).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function hasUsedTrial(db: any, memberId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from("meal_trial_grants")
+    .select("id")
+    .eq("member_id", memberId)
+    .neq("status", "reopened")
+    .limit(1);
+  if (error) {
+    console.error("[trial] 체험 이력 조회 실패", error.message);
+    return true;
+  }
+  return !!data && data.length > 0;
+}
+
 // GET — 현재 체험 상태 조회
 export async function GET(request: NextRequest) {
   const memberId = await getMemberId(request);
@@ -41,6 +62,10 @@ export async function GET(request: NextRequest) {
       account: { login_id: grant.meal_guest_accounts.login_id, login_pw: grant.meal_guest_accounts.login_pw },
       expiresAt: grant.expires_at,
     });
+  }
+  // 진행 중인 사용권이 없는데 지난 사용권이 있으면 이미 체험을 마친 회원이다 (1인 1회)
+  if (await hasUsedTrial(db, memberId)) {
+    return NextResponse.json({ authenticated: true, status: "used" });
   }
   return NextResponse.json({ authenticated: true, status: "eligible" });
 }
@@ -65,6 +90,12 @@ export async function POST(request: NextRequest) {
       account: { login_id: active.meal_guest_accounts.login_id, login_pw: active.meal_guest_accounts.login_pw },
       expiresAt: active.expires_at,
     });
+  }
+
+  // 1.5) 체험은 1인 1회 — 이미 체험을 마친 회원에게는 새로 발급하지 않는다
+  //      (예전에는 만료 다음 날 다시 들어오면 화면이 열리는 것만으로 새 7일이 발급됐다)
+  if (await hasUsedTrial(db, memberId)) {
+    return NextResponse.json({ ok: true, status: "used" });
   }
 
   // 2) 비어있는 게스트 계정 1개를 원자적으로 점유 (FOR UPDATE SKIP LOCKED)

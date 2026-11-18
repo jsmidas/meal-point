@@ -22,6 +22,7 @@ type Grant = {
   granted_at: string;
   expires_at: string;
   status: string;
+  member_id?: string | null;
   members?: { name: string; email: string | null } | null;
   meal_guest_accounts?: { login_id: string; label: string | null } | null;
 };
@@ -31,8 +32,9 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// 발급 건의 표시 상태: 체험 중(active·만료 전) / 만료 / 회수
-function grantState(g: Grant): "active" | "expired" | "revoked" {
+// 발급 건의 표시 상태: 체험 중(active·만료 전) / 만료 / 회수 / 재체험 허용됨
+function grantState(g: Grant): "active" | "expired" | "revoked" | "reopened" {
+  if (g.status === "reopened") return "reopened";
   if (g.status === "revoked") return "revoked";
   if (g.status === "active" && new Date(g.expires_at).getTime() > Date.now()) return "active";
   return "expired";
@@ -118,6 +120,32 @@ export default function TrialAdminPage() {
     }
     fetchData();
   }
+
+  // 재체험 허용: 체험은 1인 1회라, 한 번 더 쓰게 하려면 지난 사용권을 "재체험 허용됨"으로 바꿔 준다
+  async function reopenTrial(grant: Grant) {
+    if (!grant.member_id) return;
+    const name = grant.members?.name || "회원";
+    if (!window.confirm(`${name}님이 무료 체험을 한 번 더 신청할 수 있게 할까요?\n(체험은 원래 한 분당 한 번입니다)`)) return;
+    try {
+      const res = await fetch("/api/trial/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reopen", member_id: grant.member_id }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        alert(json?.error || "재체험 허용에 실패했습니다.");
+        return;
+      }
+    } catch {
+      alert("재체험 허용 요청에 실패했습니다.");
+      return;
+    }
+    fetchData();
+  }
+
+  // 지금 체험 중인 회원 — 이 회원들의 지난 이력에는 "재체험 허용" 버튼을 보이지 않는다
+  const activeMemberIds = new Set(grants.filter((g) => grantState(g) === "active").map((g) => g.member_id));
 
   const availableCount = accounts.filter((a) => a.is_active && a.status === "available").length;
   const assignedCount = accounts.filter((a) => a.status === "assigned").length;
@@ -287,6 +315,8 @@ export default function TrialAdminPage() {
                             </span>
                           ) : state === "revoked" ? (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">회수됨</span>
+                          ) : state === "reopened" ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400">재체험 허용됨</span>
                           ) : (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-text-muted/15 text-text-muted">만료</span>
                           )}
@@ -299,6 +329,16 @@ export default function TrialAdminPage() {
                               className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-red-400 hover:border-red-400/40 transition-colors"
                             >
                               <RotateCcw size={13} /> 회수
+                            </button>
+                          )}
+                          {(state === "expired" || state === "revoked") && g.member_id && !activeMemberIds.has(g.member_id) && (
+                            <button
+                              type="button"
+                              onClick={() => reopenTrial(g)}
+                              title="체험은 한 분당 한 번입니다. 이 회원이 한 번 더 신청할 수 있게 합니다."
+                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-sky-400 hover:border-sky-400/40 transition-colors"
+                            >
+                              재체험 허용
                             </button>
                           )}
                         </td>

@@ -19,7 +19,9 @@ type State =
   | { kind: "guest" }
   | { kind: "entering" } // 인증 완료 → 배정·시스템 진입 자동 진행 중
   | { kind: "active"; account: Account; expiresAt: string } // TRIAL_URL 미설정 폴백
-  | { kind: "full" };
+  | { kind: "full" }
+  | { kind: "used" } // 이미 체험을 마친 회원 (1인 1회)
+  | { kind: "error" }; // 배정 중 오류
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -29,7 +31,7 @@ function formatDate(iso: string): string {
 const cautions = [
   "체험 환경은 여러 방문자가 함께 사용하는 하나의 시스템입니다. 다른 체험자가 입력한 데이터가 보이거나 수정될 수 있으니, 실제 운영 데이터나 개인정보(직원·거래처 연락처 등)는 입력하지 마세요.",
   "발주서·지시서 등 모든 문서는 체험용입니다. 실제 협력업체로 전송되지 않습니다.",
-  "체험 계정은 발급 후 7일간 유효하며, 체험 데이터는 주기적으로 초기 상태로 복원됩니다. 작성한 내용은 보관되지 않습니다.",
+  "체험 계정은 발급 후 7일간 유효하며(한 분당 한 번), 체험 데이터는 주기적으로 초기 상태로 복원됩니다. 작성한 내용은 보관되지 않습니다.",
   "기능 둘러보기 용도이며 일부 기능(백업·시스템 설정 등 관리자 기능)은 제한됩니다.",
 ];
 
@@ -66,6 +68,8 @@ export default function TrialPage() {
         else if (d.status === "active") {
           if (!enterTrial(d.account, d.expiresAt)) return;
           setState({ kind: "entering" });
+        } else if (d.status === "used") {
+          setState({ kind: "used" });
         } else {
           setState({ kind: "entering" });
           void startTrial();
@@ -84,12 +88,16 @@ export default function TrialPage() {
         return;
       }
       if (d.status === "full") setState({ kind: "full" });
+      else if (d.status === "used") setState({ kind: "used" });
       else if (d.status === "active") {
         if (!enterTrial(d.account, d.expiresAt)) return;
         setState({ kind: "entering" });
+      } else {
+        // 배정 실패 — "배정하고 있습니다" 화면에 멈춰 있지 않게 오류로 안내
+        setState({ kind: "error" });
       }
     } catch {
-      setState({ kind: "guest" });
+      setState({ kind: "error" });
     }
   }
 
@@ -195,6 +203,42 @@ export default function TrialPage() {
                   체험 사이트 준비 중 — 문의하기
                 </a>
               )}
+            </div>
+          )}
+
+          {state.kind === "used" && (
+            <div className="text-center py-4">
+              <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <Clock className="text-primary" size={28} />
+              </div>
+              <p className="text-text-primary font-semibold mb-2">무료 체험 기간이 종료되었습니다</p>
+              <p className="text-text-secondary text-sm mb-6">
+                무료 체험은 한 분당 한 번(7일) 제공됩니다.<br />
+                계속 사용하시거나 한 번 더 체험이 필요하시면 문의해 주세요.
+              </p>
+              <a
+                href="/#contact"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
+              >
+                도입·재체험 문의하기
+              </a>
+            </div>
+          )}
+
+          {state.kind === "error" && (
+            <div className="text-center py-4">
+              <div className="w-14 h-14 rounded-xl bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="text-red-400" size={28} />
+              </div>
+              <p className="text-text-primary font-semibold mb-2">체험 계정을 준비하지 못했습니다</p>
+              <p className="text-text-secondary text-sm mb-6">잠시 후 다시 시도해 주세요. 계속되면 문의해 주세요.</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-border text-text-primary font-semibold text-sm hover:bg-bg-card-hover transition-colors"
+              >
+                다시 시도
+              </button>
             </div>
           )}
 
