@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbDelete } from "@/lib/db";
 import type { Company, Product, CompanyPrice, CompanyPriceHistory } from "@/lib/supabase/types";
 import { formatNumber, todayKST } from "@/lib/utils";
+import { resolveSellPrice } from "@/lib/box-price";
 import { Save, Check, Building2, RotateCcw, History as HistoryIcon, X, ShoppingBag, Truck, ListOrdered, Search } from "lucide-react";
 
 type DirtyMap = Record<string, number>;
@@ -28,6 +29,10 @@ export default function PricesPage() {
   const [history, setHistory] = useState<CompanyPriceHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState<DirtyMap>({});
+  // 박스 금액 수정분 (판매가 모드, 박스 상품만). 0 = 박스 금액 지움 → 개당 단가 × 입수
+  const [dirtyBox, setDirtyBox] = useState<DirtyMap>({});
+  // 박스 금액을 입력해 개당 단가가 자동으로 채워진 칸 (박스 금액을 고치면 개당 단가도 따라 바뀐다)
+  const [autoEaKeys, setAutoEaKeys] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -75,17 +80,21 @@ export default function PricesPage() {
   // 모드 전환 시 dirty 초기화
   useEffect(() => {
     setDirty({});
+    setDirtyBox({});
     setSaved(false);
   }, [mode]);
+
+  // 수정된 칸 (개당 단가 또는 박스 금액 중 하나라도 바뀐 거래처·상품)
+  const dirtyKeys = useMemo(() => [...new Set([...Object.keys(dirty), ...Object.keys(dirtyBox)])], [dirty, dirtyBox]);
 
   // 저장하지 않은 수정이 있으면 새로고침/창닫기 시 경고 (수정만 하고 저장을 안 눌러
   // "변경했는데 반영 안 됨"으로 이어지는 실수 방지)
   useEffect(() => {
-    if (Object.keys(dirty).length === 0) return;
+    if (dirtyKeys.length === 0) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  }, [dirtyKeys]);
 
   // 모드별 거래처 (sell=판매처/customer, cost=매입처/supplier, both는 양쪽 모두)
   const filteredCompanies = useMemo(() => {
@@ -125,9 +134,20 @@ export default function PricesPage() {
     return map;
   }, [mode, companyPrices, history, today]);
 
+  // 지금 적용 중인 박스 금액 (판매가 모드). 없는 칸은 개당 단가 × 입수
+  const boxPriceMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (mode !== "sell") return map;
+    for (const cp of companyPrices) {
+      const box = Number(cp.box_price);
+      if (box > 0) map[`${cp.company_id}_${cp.product_id}`] = box;
+    }
+    return map;
+  }, [mode, companyPrices]);
+
   // 예약 단가: 적용일이 아직 오지 않은 이력 중 가장 먼저 적용될 1건 (칸 아래에 "MM-DD부터 ○원"으로 표시)
   const pendingMap = useMemo(() => {
-    const map: Record<string, { id: string; price: number; date: string; createdAt: string }> = {};
+    const map: Record<string, { id: string; price: number; boxPrice: number; date: string; createdAt: string }> = {};
     for (const h of history) {
       if (h.price_type !== mode || !h.company_id) continue;
       if (h.effective_from <= today) continue;
@@ -135,7 +155,7 @@ export default function PricesPage() {
       const cur = map[k];
       // 더 이른 적용일 우선, 같은 날이면 나중에 저장한 것
       if (!cur || h.effective_from < cur.date || (h.effective_from === cur.date && h.created_at > cur.createdAt)) {
-        map[k] = { id: h.id, price: Number(h.price), date: h.effective_from, createdAt: h.created_at };
+        map[k] = { id: h.id, price: Number(h.price), boxPrice: Number(h.box_price) || 0, date: h.effective_from, createdAt: h.created_at };
       }
     }
     return map;
@@ -172,16 +192,47 @@ export default function PricesPage() {
     const key = `${companyId}_${productId}`;
     const num = value === "" ? 0 : Number(value);
     setDirty((prev) => ({ ...prev, [key]: num }));
+    // 직접 입력한 개당 단가는 박스 금액 입력이 더 이상 덮어쓰지 않는다
+    setAutoEaKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setSaved(false);
+  }
+
+  function getDisplayBoxPrice(companyId: string, productId: string): string {
+    const key = `${companyId}_${productId}`;
+    if (key in dirtyBox) return dirtyBox[key] === 0 ? "" : String(dirtyBox[key]);
+    const saved = boxPriceMap[key];
+    return saved !== undefined ? String(saved) : "";
+  }
+
+  // 박스 금액 입력. 개당 단가가 아직 없는 칸이면 박스 금액 ÷ 입수(반올림)로 개당 단가도 채운다
+  // (거래처별 단가는 개당 단가가 있어야 저장되고, 낱개 판매에는 개당 단가가 쓰인다).
+  function handleBoxPriceChange(companyId: string, productId: string, boxQty: number, value: string) {
+    const key = `${companyId}_${productId}`;
+    const num = value === "" ? 0 : Number(value);
+    setDirtyBox((prev) => ({ ...prev, [key]: num }));
+    const currentEa = key in dirty ? dirty[key] : priceMap[key] ?? 0;
+    const autoFilled = key in dirty && !(key in priceMap) && autoEaKeys.has(key);
+    if (num > 0 && boxQty > 1 && (currentEa === 0 || autoFilled)) {
+      setDirty((prev) => ({ ...prev, [key]: Math.round(num / boxQty) }));
+      setAutoEaKeys((prev) => new Set(prev).add(key));
+    }
     setSaved(false);
   }
 
   function handleReset() {
     setDirty({});
+    setDirtyBox({});
+    setAutoEaKeys(new Set());
     setSaved(false);
   }
 
   async function handleSave() {
-    const keys = Object.keys(dirty);
+    const keys = dirtyKeys;
     if (keys.length === 0) return;
     if (!effectiveFrom) {
       alert("적용 시작일을 입력해주세요.");
@@ -197,7 +248,10 @@ export default function PricesPage() {
       const sepIdx = k.indexOf("_");
       const companyId = k.substring(0, sepIdx);
       const productId = k.substring(sepIdx + 1);
-      const newPrice = dirty[k];
+      // 한쪽만 고친 칸은 다른 쪽을 지금 값 그대로 이어 간다 (이력 한 줄이 개당 단가 + 박스 금액을 함께 갖는다)
+      const newPrice = k in dirty ? dirty[k] : priceMap[k] ?? 0;
+      const newBoxRaw = k in dirtyBox ? dirtyBox[k] : boxPriceMap[k] ?? 0;
+      const newBox = mode === "sell" && newPrice > 0 && newBoxRaw > 0 ? newBoxRaw : null;
 
       // 빈값(0)으로 지운 셀: 기존 거래처별 단가가 있었다면 '기본가 복귀'(0원) 이력을 남긴다.
       // 이 마커가 없으면 (특히 매입가 모드에서) 저장해도 이전 값이 그대로 되살아난다.
@@ -212,6 +266,8 @@ export default function PricesPage() {
           product_id: productId,
           price_type: mode,
           price: newPrice,
+          // 매입가 이력에는 보내지 않는다 (박스 금액은 판매가에만 쓴다)
+          ...(mode === "sell" ? { box_price: newBox } : {}),
           effective_from: effectiveFrom,
           notes: isClear ? "기본가 복귀" : null,
         });
@@ -252,6 +308,8 @@ export default function PricesPage() {
 
     await load();
     setDirty({});
+    setDirtyBox({});
+    setAutoEaKeys(new Set());
     setSaved(true);
     setSaving(false);
     setTimeout(() => setSaved(false), 2000);
@@ -315,7 +373,7 @@ export default function PricesPage() {
       });
   }, [history, allHistoryFilter, allHistorySearch, companyNameMap, productNameMap]);
 
-  const dirtyCount = Object.keys(dirty).length;
+  const dirtyCount = dirtyKeys.length;
 
   if (loading) {
     return <div className="text-center py-20 text-text-muted">로딩 중...</div>;
@@ -403,6 +461,7 @@ export default function PricesPage() {
           ? " 미래 날짜라 그 전까지는 지금 단가가 그대로 쓰이고, 해당 날짜가 되면 자동으로 바뀝니다."
           : " 오늘 이전 날짜라 저장 즉시 적용됩니다(더 최근 적용일의 단가가 이미 있으면 그 단가가 유지됩니다)."}
         과거에 저장된 단가는 그대로 보존되며, 셀 옆 시계 아이콘으로 변경 이력을 확인할 수 있습니다.
+        {mode === "sell" && " 박스 상품은 개당 단가 아래 칸에 박스 금액을 따로 넣을 수 있습니다. 비워 두면 개당 단가 × 입수로 계산하고, 넣으면 박스 단위 판매·명세서·주문·견적에 그 금액을 씁니다."}
         {mode === "cost" && " 매입가는 매입처별로 관리되며, 입고 시점 단가는 inventory_logs에 기록되어 별도 변경되지 않습니다."}
       </div>
 
@@ -480,6 +539,8 @@ export default function PricesPage() {
                   {products.map((p, i) => {
                     const isFirst = i === 0 || products[i - 1].category !== p.category;
                     const basePrice = mode === "sell" ? p.selling_price : p.cost_price;
+                    // 기본 박스 판매가가 따로 등록돼 있으면 그 금액 (상품 관리에서 입력)
+                    const baseBox = mode === "sell" ? resolveSellPrice(p).box : basePrice * p.box_quantity;
                     return (
                       <td
                         key={p.id}
@@ -490,7 +551,7 @@ export default function PricesPage() {
                         {basePrice > 0 ? formatNumber(basePrice) : "-"}
                         {(p.box_quantity ?? 1) > 1 && basePrice > 0 && (
                           <div className="text-xs text-text-muted font-normal">
-                            박스 {formatNumber(basePrice * p.box_quantity)}
+                            박스 {formatNumber(baseBox)}
                           </div>
                         )}
                       </td>
@@ -516,6 +577,14 @@ export default function PricesPage() {
                       const hasCustom = hasCustomPrice(company.id, p.id);
                       const displayVal = getDisplayPrice(company.id, p.id);
                       const basePrice = mode === "sell" ? p.selling_price : p.cost_price;
+                      // 박스 금액 칸: 판매가 모드의 박스 상품만
+                      const boxQty = (p.box_quantity ?? 1) > 1 ? p.box_quantity : 1;
+                      const showBox = mode === "sell" && boxQty > 1;
+                      const boxVal = showBox ? getDisplayBoxPrice(company.id, p.id) : "";
+                      const isBoxDirty = key in dirtyBox;
+                      // 비워 두었을 때 적용되는 박스 금액 (개당 단가 × 입수, 거래처 단가가 없으면 기본 박스가)
+                      const eaForBox = Number(displayVal) || 0;
+                      const boxPlaceholder = eaForBox > 0 ? eaForBox * boxQty : resolveSellPrice(p).box;
 
                       return (
                         <td
@@ -551,12 +620,35 @@ export default function PricesPage() {
                               <HistoryIcon size={11} />
                             </button>
                           </div>
+                          {showBox && (
+                            <div className="flex items-center gap-0.5 mt-0.5 pr-[22px]">
+                              <span className="shrink-0 text-[10px] text-text-muted pl-0.5">박스</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={boxVal}
+                                placeholder={boxPlaceholder > 0 ? String(boxPlaceholder) : ""}
+                                onChange={(e) => handleBoxPriceChange(company.id, p.id, boxQty, e.target.value)}
+                                onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                                aria-label={`${company.name} - ${p.name} 박스 금액`}
+                                title="박스 금액 — 비워 두면 개당 단가 × 입수"
+                                className={`w-full px-1 py-1 text-center text-[11px] rounded border focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                                  isBoxDirty
+                                    ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-300 font-bold"
+                                    : boxVal
+                                    ? "border-primary/20 bg-primary/5 text-primary font-medium"
+                                    : "border-transparent bg-transparent text-text-muted hover:border-border hover:bg-bg-dark"
+                                }`}
+                              />
+                            </div>
+                          )}
                           {pendingMap[key] && (
                             <div
                               className="text-[10px] leading-tight text-sky-400 pb-0.5"
                               title={`${pendingMap[key].date}부터 적용 예정 — 그 전까지는 위 단가가 쓰입니다`}
                             >
                               {pendingMap[key].date.slice(5)}부터 {pendingMap[key].price > 0 ? formatNumber(pendingMap[key].price) : "기본가"}
+                              {pendingMap[key].price > 0 && pendingMap[key].boxPrice > 0 && ` · 박스 ${formatNumber(pendingMap[key].boxPrice)}`}
                               <button
                                 type="button"
                                 onClick={() => cancelPending(key, `${company.name} - ${p.name}`)}
@@ -617,6 +709,9 @@ export default function PricesPage() {
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-medium text-text-primary">
                           {h.price === 0 ? <span className="text-text-muted">기본가 복귀</span> : `${formatNumber(h.price)}원`}
+                          {h.price > 0 && Number(h.box_price) > 0 && (
+                            <span className="block text-xs text-text-muted">박스 {formatNumber(Number(h.box_price))}원</span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-text-muted text-xs">
                           {h.created_at ? h.created_at.slice(0, 10) : "-"}
@@ -717,6 +812,9 @@ export default function PricesPage() {
                           <td className="px-4 py-2 text-text-primary">{pName}</td>
                           <td className="px-4 py-2 text-right font-mono font-medium text-text-primary whitespace-nowrap">
                             {h.price === 0 ? <span className="text-text-muted">기본가 복귀</span> : `${formatNumber(h.price)}원`}
+                            {h.price > 0 && Number(h.box_price) > 0 && (
+                              <span className="ml-2 text-xs text-text-muted">박스 {formatNumber(Number(h.box_price))}원</span>
+                            )}
                           </td>
                           <td className="px-4 py-2 text-text-muted text-xs whitespace-nowrap">
                             {h.created_at ? h.created_at.slice(0, 10) : "-"}

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, QuoteWithItems } from "@/lib/supabase/types";
 import { generateQuoteNumber, formatNumber, formatDate, todayKST } from "@/lib/utils";
 import { dbInsert, dbDelete } from "@/lib/db";
+import { resolveSellPrice } from "@/lib/box-price";
 import { Plus, Trash2, ArrowLeft, Building2, PenLine, Copy, X } from "lucide-react";
 import Link from "next/link";
 
@@ -77,6 +78,17 @@ export default function NewQuotePage() {
     return cp ? cp.custom_price : product.selling_price;
   }
 
+  // 박스 금액: 개당 단가가 단가표 값 그대로일 때만 단가표의 박스 금액을 쓴다.
+  // (견적에서 개당 단가를 직접 고쳤으면 그 단가 × 입수)
+  function boxPriceFor(productId: string | null, eaPrice: number, boxQty: number): number {
+    const p = productId ? products.find((pr) => pr.id === productId) : null;
+    if (p) {
+      const resolved = resolveSellPrice(p, companyPrices.find((cp) => cp.product_id === p.id));
+      if (resolved.ea === eaPrice && resolved.boxQty === boxQty) return resolved.box;
+    }
+    return eaPrice * boxQty;
+  }
+
   function handleCompanySelect(id: string) {
     setCompanyId(id);
     loadCompanyPrices(id);
@@ -118,7 +130,7 @@ export default function NewQuotePage() {
           const eaPrice = getProductPrice(p);
           const boxQty = p.box_quantity || 1;
           if (boxQty > 1) {
-            const boxPrice = eaPrice * boxQty;
+            const boxPrice = boxPriceFor(p.id, eaPrice, boxQty);
             return {
               product_id: item.product_id || null,
               product_name: item.product_name,
@@ -189,7 +201,7 @@ export default function NewQuotePage() {
           item.box_qty = boxQty;
           if (boxQty > 1) {
             item.unit = "박스";
-            item.unit_price = eaPrice * boxQty;
+            item.unit_price = boxPriceFor(p.id, eaPrice, boxQty);
             item.specification = `${boxQty}EA/박스`;
           } else {
             item.unit = p.unit || "EA";
@@ -209,7 +221,7 @@ export default function NewQuotePage() {
       // 단위 변경 시 박스↔EA 전환
       if (field === "unit") {
         if (value === "박스" && item.box_qty > 1) {
-          item.unit_price = item.ea_price * item.box_qty;
+          item.unit_price = boxPriceFor(item.product_id, item.ea_price, item.box_qty);
         } else {
           item.unit_price = item.ea_price;
         }

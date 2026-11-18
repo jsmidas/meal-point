@@ -30,6 +30,7 @@ const emptyForm = {
   box_quantity: 1,
   cost_price: 0,
   selling_price: 0,
+  selling_box_price: 0, // 0 = 따로 정하지 않음 (개당 판매가 × 입수)
   description: "",
   is_active: true,
   is_published: true,
@@ -46,6 +47,7 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
           box_quantity: product.box_quantity ?? 1,
           cost_price: product.cost_price,
           selling_price: product.selling_price,
+          selling_box_price: product.selling_box_price ?? 0,
           description: product.description || "",
           is_active: product.is_active,
           is_published: product.is_published ?? true,
@@ -75,10 +77,16 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
     e.preventDefault();
     setSaving(true);
 
+    // 박스 판매가는 박스 상품에만 저장한다. 비웠거나 박스 상품이 아니면 NULL (개당 판매가 × 입수)
+    const payload = {
+      ...form,
+      selling_box_price: form.box_quantity > 1 && form.selling_box_price > 0 ? form.selling_box_price : null,
+    };
+
     if (isEdit) {
-      await dbUpdate("products", form, { id: product!.id });
+      await dbUpdate("products", payload, { id: product!.id });
     } else {
-      await dbInsert("products", form);
+      await dbInsert("products", payload);
     }
 
     setSaving(false);
@@ -196,6 +204,25 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
               />
             </div>
+            {form.box_quantity > 1 && (
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  박스 판매가 (원, 선택)
+                </label>
+                <input
+                  type="number"
+                  name="selling_box_price"
+                  value={form.selling_box_price || ""}
+                  onChange={handleChange}
+                  min={0}
+                  placeholder={String(form.selling_price * form.box_quantity)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+                />
+                <p className="mt-1 text-xs text-text-muted">
+                  비워 두면 개당 판매가 × 박스당 수량으로 계산합니다.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Box price & Margin indicator */}
@@ -208,7 +235,7 @@ export default function ProductModal({ product, onClose, onSaved }: Props) {
                 </span>
                 <span className="text-text-muted mx-1">/</span>
                 <span className="text-primary font-semibold">
-                  판매가 {(form.selling_price * form.box_quantity).toLocaleString()}원
+                  판매가 {(form.selling_box_price > 0 ? form.selling_box_price : form.selling_price * form.box_quantity).toLocaleString()}원
                 </span>
                 <span className="text-text-muted ml-1">
                   ({form.box_quantity}개/박스)

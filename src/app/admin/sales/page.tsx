@@ -26,9 +26,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { logAmount, logBoxPrice } from "@/lib/inventory";
+import { resolveSellPrice } from "@/lib/box-price";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
-type CompanyPrice = { product_id: string; custom_price: number };
+type CompanyPrice = { product_id: string; custom_price: number; box_price: number | null };
 
 /** 자가소비(self) 여부. 자가소비는 목록에는 보이지만 매출 금액·명세서 대상에서 제외 */
 const isSelfUse = (log: SalesLog) => log.type === "self";
@@ -211,7 +212,7 @@ export default function SalesPage() {
     if (!companyId) { setCompanyPrices([]); return; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
-    const { data } = await db.from("company_prices").select("product_id, custom_price").eq("company_id", companyId);
+    const { data } = await db.from("company_prices").select("product_id, custom_price, box_price").eq("company_id", companyId);
     setCompanyPrices(data || []);
   }, [supabase]);
 
@@ -221,6 +222,12 @@ export default function SalesPage() {
     if (cp) return cp.custom_price;
     const prod = products.find((p) => p.id === productId);
     return prod?.selling_price || 0;
+  }
+
+  // 박스 금액: 단가표에 박스 금액이 따로 있으면 그 금액, 없으면 개당 단가 × 입수
+  function getBoxPrice(productId: string): number {
+    const prod = products.find((p) => p.id === productId);
+    return resolveSellPrice(prod, companyPrices.find((p) => p.product_id === productId)).box;
   }
 
   function hasCustomPrice(productId: string): boolean {
@@ -239,9 +246,7 @@ export default function SalesPage() {
     setFormItems((prev) =>
       prev.map((item) => {
         if (item.type !== "product" || !item.product_id) return item;
-        const perUnitPrice = getProductPrice(item.product_id);
-        const boxQty = item.box_quantity > 1 ? item.box_quantity : 1;
-        return { ...item, unit_price: item.unit === "박스" ? perUnitPrice * boxQty : perUnitPrice };
+        return { ...item, unit_price: item.unit === "박스" ? getBoxPrice(item.product_id) : getProductPrice(item.product_id) };
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,7 +267,7 @@ export default function SalesPage() {
               product_id: productId,
               product_name: prod?.name || "",
               unit: isBox ? "박스" : (prod?.unit || ""),
-              unit_price: isBox ? perUnitPrice * boxQty : perUnitPrice,
+              unit_price: isBox ? getBoxPrice(productId) : perUnitPrice,
               box_quantity: boxQty,
             }
           : item

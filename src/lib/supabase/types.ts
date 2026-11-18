@@ -119,6 +119,8 @@ export type Database = {
           box_quantity: number;
           cost_price: number;
           selling_price: number;
+          /** 기본 박스 판매가. null 이면 selling_price * box_quantity — resolveSellPrice() 로 구한다 */
+          selling_box_price: number | null;
           description: string | null;
           image_url: string | null;
           is_active: boolean;
@@ -133,6 +135,7 @@ export type Database = {
           box_quantity?: number;
           cost_price?: number;
           selling_price?: number;
+          selling_box_price?: number | null;
           description?: string | null;
           image_url?: string | null;
           is_active?: boolean;
@@ -145,6 +148,7 @@ export type Database = {
           box_quantity?: number;
           cost_price?: number;
           selling_price?: number;
+          selling_box_price?: number | null;
           description?: string | null;
           image_url?: string | null;
           is_active?: boolean;
@@ -157,6 +161,8 @@ export type Database = {
           company_id: string;
           product_id: string;
           custom_price: number;
+          /** 박스 금액. null 이면 custom_price * 상품 입수 */
+          box_price: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -164,11 +170,13 @@ export type Database = {
           company_id: string;
           product_id: string;
           custom_price: number;
+          box_price?: number | null;
         };
         Update: {
           company_id?: string;
           product_id?: string;
           custom_price?: number;
+          box_price?: number | null;
         };
       };
       orders: {
@@ -769,6 +777,8 @@ export type Database = {
           product_id: string;
           price_type: "sell" | "cost";
           price: number;
+          /** 박스 금액(판매가 이력). null 이면 price * 상품 입수 */
+          box_price: number | null;
           effective_from: string;
           notes: string | null;
           created_at: string;
@@ -778,6 +788,7 @@ export type Database = {
           product_id: string;
           price_type: "sell" | "cost";
           price: number;
+          box_price?: number | null;
           effective_from: string;
           notes?: string | null;
         };
@@ -786,6 +797,7 @@ export type Database = {
           product_id?: string;
           price_type?: "sell" | "cost";
           price?: number;
+          box_price?: number | null;
           effective_from?: string;
           notes?: string | null;
         };

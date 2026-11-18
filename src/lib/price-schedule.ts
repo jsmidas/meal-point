@@ -25,6 +25,8 @@ export interface SellHistoryRow {
   company_id: string;
   product_id: string;
   price: number | string;
+  /** 박스 금액 (schema-v44). 없으면 개당 단가 × 입수 */
+  box_price?: number | string | null;
   effective_from: string; // YYYY-MM-DD
   created_at: string; // ISO
 }
@@ -49,6 +51,18 @@ export function isPending(h: SellHistoryRow, today: string): boolean {
  * @returns 단가(>0) / null(기본가로 복귀 또는 거래처 단가 없음) / undefined(아직 효력 있는 이력이 없음 — 판단 보류)
  */
 export function priceAsOf(rows: SellHistoryRow[], today: string): number | null | undefined {
+  const state = priceStateAsOf(rows, today);
+  return state === undefined || state === null ? state : state.price;
+}
+
+/**
+ * priceAsOf 와 같은 규칙으로, 적용 중인 개당 단가와 박스 금액을 함께 구한다.
+ * 박스 금액은 그 단가를 저장할 때 같이 저장한 값이다(없으면 null → 개당 단가 × 입수).
+ */
+export function priceStateAsOf(
+  rows: SellHistoryRow[],
+  today: string,
+): { price: number; boxPrice: number | null } | null | undefined {
   let best: SellHistoryRow | null = null;
   let bestDate = "";
   for (const r of rows) {
@@ -61,7 +75,9 @@ export function priceAsOf(rows: SellHistoryRow[], today: string): number | null 
   }
   if (!best) return undefined;
   const price = Number(best.price);
-  return Number.isFinite(price) && price > 0 ? price : null;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const box = Number(best.box_price);
+  return { price, boxPrice: Number.isFinite(box) && box > 0 ? box : null };
 }
 
 export interface SyncResult {
@@ -91,13 +107,13 @@ export async function syncSellPrices(
     fetchAllRows<SellHistoryRow>(() =>
       db
         .from("company_price_history")
-        .select("id, company_id, product_id, price, effective_from, created_at")
+        .select("id, company_id, product_id, price, box_price, effective_from, created_at")
         .eq("price_type", "sell")
         .not("company_id", "is", null)
         .order("id"),
     ),
-    fetchAllRows<{ id: string; company_id: string; product_id: string; custom_price: number | string }>(() =>
-      db.from("company_prices").select("id, company_id, product_id, custom_price").order("id"),
+    fetchAllRows<{ id: string; company_id: string; product_id: string; custom_price: number | string; box_price: number | string | null }>(() =>
+      db.from("company_prices").select("id, company_id, product_id, custom_price, box_price").order("id"),
     ),
   ]);
   if (histRes.error || cacheRes.error) {
@@ -112,9 +128,14 @@ export async function syncSellPrices(
     if (list) list.push(h);
     else byPair.set(k, [h]);
   }
-  const cache = new Map<string, { id: string; price: number }>();
+  const cache = new Map<string, { id: string; price: number; boxPrice: number | null }>();
   for (const c of cacheRes.data) {
-    cache.set(pairKey(c.company_id, c.product_id), { id: c.id, price: Number(c.custom_price) });
+    const box = Number(c.box_price);
+    cache.set(pairKey(c.company_id, c.product_id), {
+      id: c.id,
+      price: Number(c.custom_price),
+      boxPrice: Number.isFinite(box) && box > 0 ? box : null,
+    });
   }
 
   // 대상 조합 고르기
@@ -137,7 +158,7 @@ export async function syncSellPrices(
     const rows = byPair.get(k);
     if (!rows) continue;
     result.checked++;
-    const desired = priceAsOf(rows, today);
+    const desired = priceStateAsOf(rows, today);
     if (desired === undefined) continue; // 아직 효력 있는 이력이 없다 — 현재 값을 그대로 둔다
 
     const current = cache.get(k);
@@ -151,11 +172,14 @@ export async function syncSellPrices(
     } else if (!current) {
       const { error } = await db
         .from("company_prices")
-        .insert({ company_id: companyId, product_id: productId, custom_price: desired });
+        .insert({ company_id: companyId, product_id: productId, custom_price: desired.price, box_price: desired.boxPrice });
       if (error) result.errors.push(error.message);
       else result.changed++;
-    } else if (current.price !== desired) {
-      const { error } = await db.from("company_prices").update({ custom_price: desired }).eq("id", current.id);
+    } else if (current.price !== desired.price || current.boxPrice !== desired.boxPrice) {
+      const { error } = await db
+        .from("company_prices")
+        .update({ custom_price: desired.price, box_price: desired.boxPrice })
+        .eq("id", current.id);
       if (error) result.errors.push(error.message);
       else result.changed++;
     }

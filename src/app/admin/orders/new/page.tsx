@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbDelete } from "@/lib/db";
 import type { Company, Product } from "@/lib/supabase/types";
 import { generateOrderNumber, formatNumber, todayKST } from "@/lib/utils";
+import { resolveSellPrice } from "@/lib/box-price";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -25,6 +26,8 @@ export default function NewOrderPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [companyPrices, setCompanyPrices] = useState<Record<string, number>>({});
+  // 거래처별 박스 금액 (단가표에 따로 저장된 것만)
+  const [companyBoxPrices, setCompanyBoxPrices] = useState<Record<string, number>>({});
   const [companyId, setCompanyId] = useState("");
   const [orderDate, setOrderDate] = useState(
     todayKST(),
@@ -50,22 +53,31 @@ export default function NewOrderPage() {
 
   // 거래처 선택 시 해당 거래처의 단가 로드
   useEffect(() => {
-    if (!companyId) { setCompanyPrices({}); return; }
+    if (!companyId) { setCompanyPrices({}); setCompanyBoxPrices({}); return; }
     async function loadPrices() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any)
         .from("company_prices")
-        .select("product_id, custom_price")
+        .select("product_id, custom_price, box_price")
         .eq("company_id", companyId);
       const map: Record<string, number> = {};
+      const boxMap: Record<string, number> = {};
       for (const row of data || []) {
         map[row.product_id] = Number(row.custom_price);
+        if (Number(row.box_price) > 0) boxMap[row.product_id] = Number(row.box_price);
       }
       setCompanyPrices(map);
-      // 기존 항목들의 단가도 업데이트
+      setCompanyBoxPrices(boxMap);
+      // 기존 항목들의 단가도 업데이트 (박스 단위 항목은 박스 금액, 그 외는 개당 단가)
       setItems((prev) =>
         prev.map((item) => {
-          const price = map[item.product_id] ?? products.find((p) => p.id === item.product_id)?.selling_price ?? item.unit_price;
+          const p = products.find((pr) => pr.id === item.product_id);
+          if (!p && map[item.product_id] === undefined) return item;
+          const resolved = resolveSellPrice(
+            p,
+            map[item.product_id] !== undefined ? { custom_price: map[item.product_id], box_price: boxMap[item.product_id] } : null,
+          );
+          const price = item.unit === "박스" ? resolved.box : resolved.ea;
           return { ...item, unit_price: price, amount: item.quantity * price };
         })
       );
@@ -111,7 +123,11 @@ export default function NewOrderPage() {
           const boxQty = p.box_quantity || 1;
           if (boxQty > 1) {
             item.unit = "박스";
-            item.unit_price = eaPrice * boxQty;
+            // 단가표에 박스 금액이 따로 있으면 그 금액, 없으면 개당 단가 × 입수
+            item.unit_price = resolveSellPrice(
+              p,
+              companyPrices[p.id] !== undefined ? { custom_price: companyPrices[p.id], box_price: companyBoxPrices[p.id] } : null,
+            ).box;
           } else {
             item.unit = p.unit || "EA";
             item.unit_price = eaPrice;

@@ -11,6 +11,7 @@ import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-rea
 import Link from "next/link";
 import { salesLogsToStatementItems } from "@/lib/statement-import";
 import { logAmount } from "@/lib/inventory";
+import { resolveSellPrice } from "@/lib/box-price";
 
 type RawSalesLog = {
   id: string;
@@ -326,7 +327,8 @@ function NewStatementForm() {
           const boxQty = p.box_quantity || 1;
           if (boxQty > 1) {
             item.unit = "박스";
-            item.unit_price = eaPrice * boxQty;
+            // 단가표에 박스 금액이 따로 있으면 그 금액, 없으면 개당 단가 × 입수
+            item.unit_price = resolveSellPrice(p, companyPrices.find((cp) => cp.product_id === p.id)).box;
             item.specification = `1박스/${boxQty}${p.unit || "EA"}`;
           } else {
             item.unit = p.unit || "EA";
