@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { syncSellPrices } from "@/lib/price-schedule";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,18 @@ export async function GET(request: NextRequest) {
     console.error(`[cron/expire-trials] ${step} 실패`, message);
     return NextResponse.json({ ok: false, step, error: message }, { status: 500 });
   };
+
+  // 0) 적용일이 된 예약 판매 단가를 "지금 적용 중인 단가"에 반영한다.
+  //    이 작업은 매일 한국시간 자정에 돌기 때문에, 적용일 0시부터 새 단가가 쓰인다.
+  //    체험 계정 정리와는 별개 작업이라, 여기서 실패해도 아래 정리는 계속 진행한다.
+  let prices: { checked: number; changed: number; errors: number } | null = null;
+  try {
+    const r = await syncSellPrices(db);
+    prices = { checked: r.checked, changed: r.changed, errors: r.errors.length };
+    if (r.errors.length > 0) console.error("[cron] 예약 단가 반영 오류", r.errors.slice(0, 3));
+  } catch (err) {
+    console.error("[cron] 예약 단가 반영 실패", err instanceof Error ? err.message : err);
+  }
 
   // 1) 만료된 활성 사용권
   const { data: expired, error: expiredError } = await db
@@ -97,5 +110,6 @@ export async function GET(request: NextRequest) {
     released: accountIds.length,
     repaired,
     webhook: webhookOk,
+    prices,
   });
 }

@@ -60,7 +60,17 @@ export default function PricesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // 화면을 열 때 적용일이 된 예약 단가를 먼저 반영한다(자정 예약 작업이 못 돌았을 때의 보조).
+  useEffect(() => {
+    (async () => {
+      try {
+        await fetch("/api/admin/prices/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      } catch {
+        // 반영 실패 — 아래에서 현재 저장된 값을 그대로 보여 준다
+      }
+      load();
+    })();
+  }, [load]);
 
   // 모드 전환 시 dirty 초기화
   useEffect(() => {
@@ -87,9 +97,11 @@ export default function PricesPage() {
     });
   }, [companies, mode]);
 
+  const today = todayKST();
+
   // 모드별 가격 맵 (현재 적용가)
-  // sell: company_prices 캐시(기존)
-  // cost: history(cost) 중 거래처별·상품별 최신 1건
+  // sell: company_prices — 서버가 단가 이력의 적용일 기준으로 맞춰 둔 "지금 적용 중인 단가"
+  // cost: history(cost) 중 적용일이 오늘 이하인 것 가운데 거래처별·상품별 최신 1건
   const priceMap = useMemo(() => {
     const map: Record<string, number> = {};
     if (mode === "sell") {
@@ -102,6 +114,7 @@ export default function PricesPage() {
       for (const h of history) {
         if (h.price_type !== "cost") continue;
         if (!h.company_id) continue; // NULL은 거래처별 그리드 표시 대상 아님
+        if (h.effective_from > today) continue; // 아직 적용일 전 — 예약 단가로 따로 표시
         const k = `${h.company_id}_${h.product_id}`;
         if (seen.has(k)) continue;
         seen.add(k);
@@ -110,7 +123,23 @@ export default function PricesPage() {
       }
     }
     return map;
-  }, [mode, companyPrices, history]);
+  }, [mode, companyPrices, history, today]);
+
+  // 예약 단가: 적용일이 아직 오지 않은 이력 중 가장 먼저 적용될 1건 (칸 아래에 "MM-DD부터 ○원"으로 표시)
+  const pendingMap = useMemo(() => {
+    const map: Record<string, { id: string; price: number; date: string; createdAt: string }> = {};
+    for (const h of history) {
+      if (h.price_type !== mode || !h.company_id) continue;
+      if (h.effective_from <= today) continue;
+      const k = `${h.company_id}_${h.product_id}`;
+      const cur = map[k];
+      // 더 이른 적용일 우선, 같은 날이면 나중에 저장한 것
+      if (!cur || h.effective_from < cur.date || (h.effective_from === cur.date && h.created_at > cur.createdAt)) {
+        map[k] = { id: h.id, price: Number(h.price), date: h.effective_from, createdAt: h.created_at };
+      }
+    }
+    return map;
+  }, [history, mode, today]);
 
   // 카테고리 그룹
   const categoryGroups = useMemo(() => {
@@ -161,6 +190,8 @@ export default function PricesPage() {
     setSaving(true);
 
     const errors: string[] = [];
+    const savedPairs: { companyId: string; productId: string; price: number }[] = [];
+    const isFuture = effectiveFrom > todayKST();
 
     for (const k of keys) {
       const sepIdx = k.indexOf("_");
@@ -174,6 +205,7 @@ export default function PricesPage() {
       const hadCustom = `${companyId}_${productId}` in priceMap;
 
       // 1) history insert — 신규 단가 또는 기본가 복귀 마커
+      let historyFailed = false;
       if (newPrice > 0 || (isClear && hadCustom)) {
         const { error: hErr } = await dbInsert("company_price_history", {
           company_id: companyId,
@@ -186,23 +218,31 @@ export default function PricesPage() {
         if (hErr) {
           console.error("이력 저장 실패:", hErr, { companyId, productId, newPrice });
           errors.push(hErr);
+          historyFailed = true;
         }
       }
 
-      // 2) sell 모드: company_prices 캐시 갱신 (기존 코드와의 호환)
-      if (mode === "sell") {
-        await dbDelete("company_prices", { company_id: companyId, product_id: productId });
-        if (newPrice > 0) {
-          const { error } = await dbInsert("company_prices", {
-            company_id: companyId,
-            product_id: productId,
-            custom_price: newPrice,
-          });
-          if (error) {
-            console.error("단가 저장 실패:", error);
-            errors.push(error);
-          }
+      // 이력이 저장된 조합만 기록해 두었다가 아래에서 한꺼번에 반영한다
+      if (mode === "sell" && !historyFailed && (newPrice > 0 || (isClear && hadCustom))) {
+        savedPairs.push({ companyId, productId, price: newPrice });
+      }
+    }
+
+    // 2) sell 모드: "지금 적용 중인 단가"(company_prices)를 서버가 적용일 기준으로 맞춘다.
+    //    적용일이 오늘 이하이면 바로 반영되고, 미래이면 현재 단가를 그대로 둔 채 그 날짜에 반영된다.
+    if (mode === "sell" && savedPairs.length > 0) {
+      try {
+        const res = await fetch("/api/admin/prices/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairs: savedPairs.map(({ companyId, productId }) => ({ companyId, productId })) }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          errors.push(json?.error || (json?.errors && json.errors[0]) || "현재 단가 반영에 실패했습니다.");
         }
+      } catch {
+        errors.push("현재 단가 반영 요청에 실패했습니다.");
       }
     }
 
@@ -215,6 +255,28 @@ export default function PricesPage() {
     setSaved(true);
     setSaving(false);
     setTimeout(() => setSaved(false), 2000);
+
+    if (errors.length === 0 && isFuture && (mode === "cost" || savedPairs.length > 0)) {
+      alert(
+        `${effectiveFrom}부터 적용되도록 저장했습니다.\n` +
+          "그 전까지는 지금 단가가 그대로 쓰이고, 해당 날짜가 되면 자동으로 바뀝니다.\n" +
+          "예약된 단가는 각 칸 아래에 표시됩니다.",
+      );
+    }
+  }
+
+  // 예약된 단가 취소: 아직 적용 전인 이력 한 건을 지운다(현재 단가에는 영향 없음)
+  async function cancelPending(key: string, label: string) {
+    const pending = pendingMap[key];
+    if (!pending) return;
+    const what = pending.price > 0 ? `${formatNumber(pending.price)}원` : "기본가 복귀";
+    if (!window.confirm(`${label}\n${pending.date}부터 적용 예정인 단가(${what})를 취소할까요?`)) return;
+    const res = await dbDelete("company_price_history", { id: pending.id });
+    if (res.error) {
+      alert(`취소 실패: ${res.error}`);
+      return;
+    }
+    await load();
   }
 
   // 이력 모달용: 선택한 셀의 history 시계열
@@ -336,7 +398,10 @@ export default function PricesPage() {
 
       {/* 안내 */}
       <div className="rounded-xl border border-border bg-bg-card/50 p-3 text-xs text-text-muted mb-4">
-        변경된 단가는 입력한 <span className="text-primary font-semibold">{effectiveFrom}</span>부터 적용되도록 변경 이력에 기록됩니다.
+        변경된 단가는 입력한 <span className="text-primary font-semibold">{effectiveFrom}</span>부터 적용됩니다.
+        {effectiveFrom > today
+          ? " 미래 날짜라 그 전까지는 지금 단가가 그대로 쓰이고, 해당 날짜가 되면 자동으로 바뀝니다."
+          : " 오늘 이전 날짜라 저장 즉시 적용됩니다(더 최근 적용일의 단가가 이미 있으면 그 단가가 유지됩니다)."}
         과거에 저장된 단가는 그대로 보존되며, 셀 옆 시계 아이콘으로 변경 이력을 확인할 수 있습니다.
         {mode === "cost" && " 매입가는 매입처별로 관리되며, 입고 시점 단가는 inventory_logs에 기록되어 별도 변경되지 않습니다."}
       </div>
@@ -351,6 +416,9 @@ export default function PricesPage() {
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded bg-yellow-500/20 inline-block border border-yellow-500/30" /> 수정됨 (미저장)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-sky-400 font-semibold">12-01부터 5,200</span> 예약된 단가 (적용일 전)
         </span>
       </div>
 
@@ -483,6 +551,23 @@ export default function PricesPage() {
                               <HistoryIcon size={11} />
                             </button>
                           </div>
+                          {pendingMap[key] && (
+                            <div
+                              className="text-[10px] leading-tight text-sky-400 pb-0.5"
+                              title={`${pendingMap[key].date}부터 적용 예정 — 그 전까지는 위 단가가 쓰입니다`}
+                            >
+                              {pendingMap[key].date.slice(5)}부터 {pendingMap[key].price > 0 ? formatNumber(pendingMap[key].price) : "기본가"}
+                              <button
+                                type="button"
+                                onClick={() => cancelPending(key, `${company.name} - ${p.name}`)}
+                                className="ml-1 text-text-muted hover:text-red-400"
+                                title="예약된 단가 취소"
+                                aria-label="예약된 단가 취소"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          )}
                         </td>
                       );
                     })}
