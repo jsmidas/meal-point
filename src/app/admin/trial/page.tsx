@@ -102,9 +102,19 @@ export default function TrialAdminPage() {
   // 수동 회수: 사용권 revoked + 계정 available 복귀
   async function revokeGrant(grant: Grant) {
     if (!window.confirm(`${grant.members?.name || "회원"}님의 체험을 회수하시겠습니까?`)) return;
-    await dbUpdate("meal_trial_grants", { status: "revoked" }, { id: grant.id });
+    const revoked = await dbUpdate("meal_trial_grants", { status: "revoked" }, { id: grant.id });
+    if (revoked.error) {
+      alert(`회수 실패: ${revoked.error}`);
+      return;
+    }
     if (grant.guest_account_id) {
-      await dbUpdate("meal_guest_accounts", { status: "available" }, { id: grant.guest_account_id });
+      const released = await dbUpdate("meal_guest_accounts", { status: "available" }, { id: grant.guest_account_id });
+      if (released.error) {
+        alert(
+          "사용권은 회수됐지만 계정을 '사용 가능'으로 되돌리지 못했습니다.\n" +
+            "매일 자정 정리 작업에서 자동으로 풀리며, 급하면 계정 목록에서 상태를 확인해 주세요.",
+        );
+      }
     }
     fetchData();
   }

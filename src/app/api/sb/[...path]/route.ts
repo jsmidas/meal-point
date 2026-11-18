@@ -18,8 +18,22 @@ export const dynamic = "force-dynamic";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// 전달하지 않을 요청 헤더
-const DROP_REQ_HEADERS = new Set(["host", "cookie", "connection", "content-length", "apikey", "authorization", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip"]);
+// 전달할 요청 헤더 (허용 목록).
+// 브라우저가 붙이는 헤더(User-Agent, Origin, Referer, Sec-Fetch-* 등)를 그대로 넘기면 Supabase 가
+// "브라우저에서 비밀 키를 썼다"고 판단해 401 로 거절한다(새 형식 sb_secret_ 키). 조회·업로드에 필요한 것만 넘긴다.
+const KEEP_REQ_HEADERS = new Set([
+  "accept",
+  "content-type",
+  "prefer",
+  "range",
+  "range-unit",
+  "accept-profile",
+  "content-profile",
+  "x-upsert",
+  "cache-control",
+  "if-match",
+  "if-none-match",
+]);
 // 전달할 응답 헤더
 const KEEP_RES_HEADERS = ["content-type", "content-range", "range-unit", "x-total-count", "cache-control", "etag", "last-modified", "location", "sb-request-id"];
 
@@ -51,7 +65,7 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   const target = `${SUPABASE_URL}/${path}${request.nextUrl.search}`;
   const headers = new Headers();
   request.headers.forEach((v, k) => {
-    if (!DROP_REQ_HEADERS.has(k.toLowerCase())) headers.set(k, v);
+    if (KEEP_REQ_HEADERS.has(k.toLowerCase())) headers.set(k, v);
   });
   headers.set("apikey", SERVICE_KEY);
   headers.set("Authorization", `Bearer ${SERVICE_KEY}`);

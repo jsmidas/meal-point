@@ -6,6 +6,7 @@ import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import type { Expense } from "@/lib/supabase/types";
 import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber, todayKST } from "@/lib/utils";
 import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer, Pencil } from "lucide-react";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 /**
  * 손익 현황
@@ -71,12 +72,16 @@ export default function PnlPage() {
     const endDate = `${year}-12-31`;
 
     const [salesRes, checksRes, prodRes, compRes, histRes, expRes] = await Promise.all([
-      db.from("inventory_logs")
-        .select("id, log_date, company_id, product_id, quantity, unit_price, cost_price, type, reason")
-        .in("type", ["out", "self"])
-        .gte("log_date", startDate)
-        .lte("log_date", endDate)
-        .limit(10000),
+      // 연간 매출·원가 합계가 잘리지 않도록 끝까지 읽는다
+      fetchAllRows(() =>
+        db.from("inventory_logs")
+          .select("id, log_date, company_id, product_id, quantity, unit_price, cost_price, type, reason")
+          .in("type", ["out", "self"])
+          .gte("log_date", startDate)
+          .lte("log_date", endDate)
+          .order("log_date", { ascending: true })
+          .order("id", { ascending: true }),
+      ),
       db.from("sale_checks").select("sale_date, company_id").gte("sale_date", startDate).lte("sale_date", endDate),
       db.from("products").select("id, name, cost_price, box_quantity, unit").order("name"),
       db.from("companies").select("id, name").order("name"),

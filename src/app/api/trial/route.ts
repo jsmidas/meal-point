@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSession } from "@/lib/auth/guard";
+import { getLiveSession } from "@/lib/auth/guard";
 const TRIAL_DAYS = 7;
 
 // 서명된 세션 쿠키에서 회원 ID 추출 (카카오 등 소셜 로그인 시 { role, id, name })
 async function getMemberId(req: NextRequest): Promise<string | null> {
-  const s = await getSession(req);
+  // 정지·삭제된 회원은 제외 (현재 상태를 DB로 확인)
+  const s = await getLiveSession(req);
   return s?.id || null;
 }
 
@@ -69,25 +70,68 @@ export async function POST(request: NextRequest) {
   // 2) 비어있는 게스트 계정 1개를 원자적으로 점유 (FOR UPDATE SKIP LOCKED)
   const { data: claimed, error: claimErr } = await db.rpc("claim_guest_account");
   if (claimErr) {
-    return NextResponse.json({ ok: false, error: claimErr.message }, { status: 500 });
+    console.error("[trial] 계정 점유 실패", claimErr.message);
+    return NextResponse.json({ ok: false, error: "체험 계정을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
   const account = Array.isArray(claimed) ? claimed[0] : claimed;
   if (!account) {
     return NextResponse.json({ ok: true, status: "full" }); // 정원 마감
   }
+  const releaseAccount = async () => {
+    const { error } = await db.from("meal_guest_accounts").update({ status: "available" }).eq("id", account.id);
+    // 실패해도 매일 도는 정리 작업(cron)이 사용권 없는 계정을 다시 풀어 준다
+    if (error) console.error("[trial] 계정 반납 실패", { accountId: account.id, message: error.message });
+  };
 
   // 3) 사용권 발급 (7일)
   const expiresAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const { error: grantErr } = await db.from("meal_trial_grants").insert({
-    member_id: memberId,
-    guest_account_id: account.id,
-    expires_at: expiresAt,
-    status: "active",
-  });
-  if (grantErr) {
+  const { data: grant, error: grantErr } = await db
+    .from("meal_trial_grants")
+    .insert({
+      member_id: memberId,
+      guest_account_id: account.id,
+      expires_at: expiresAt,
+      status: "active",
+    })
+    .select("id")
+    .single();
+  if (grantErr || !grant) {
     // 발급 실패 시 점유 롤백
-    await db.from("meal_guest_accounts").update({ status: "available" }).eq("id", account.id);
-    return NextResponse.json({ ok: false, error: grantErr.message }, { status: 500 });
+    await releaseAccount();
+    // 같은 회원의 다른 요청이 먼저 발급한 경우(회원당 활성 1건 제약 — schema-v42) 그 사용권을 돌려준다
+    const existing = await fetchActiveGrant(db, memberId, nowIso);
+    if (existing && existing.meal_guest_accounts) {
+      return NextResponse.json({
+        ok: true,
+        status: "active",
+        account: { login_id: existing.meal_guest_accounts.login_id, login_pw: existing.meal_guest_accounts.login_pw },
+        expiresAt: existing.expires_at,
+      });
+    }
+    console.error("[trial] 사용권 발급 실패", grantErr?.message);
+    return NextResponse.json({ ok: false, error: "체험 사용권을 발급하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+  }
+
+  // 4) 동시 요청 정리: 두 탭에서 동시에 신청하면 둘 다 "사용권 없음"으로 보고 각각 발급할 수 있다.
+  //    가장 먼저 만들어진 사용권 하나만 남기고, 내 것이 그게 아니면 반납한다.
+  const { data: actives } = await db
+    .from("meal_trial_grants")
+    .select("id, expires_at, meal_guest_accounts(login_id, login_pw)")
+    .eq("member_id", memberId)
+    .eq("status", "active")
+    .gt("expires_at", nowIso)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  const winner = actives && actives.length > 0 ? actives[0] : null;
+  if (winner && winner.id !== grant.id && winner.meal_guest_accounts) {
+    await db.from("meal_trial_grants").delete().eq("id", grant.id);
+    await releaseAccount();
+    return NextResponse.json({
+      ok: true,
+      status: "active",
+      account: { login_id: winner.meal_guest_accounts.login_id, login_pw: winner.meal_guest_accounts.login_pw },
+      expiresAt: winner.expires_at,
+    });
   }
 
   return NextResponse.json({

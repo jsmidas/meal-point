@@ -21,6 +21,7 @@ import {
   Split,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { fetchAllRows, chunk } from "@/lib/fetch-all";
 
 // 잔액 부호 표기: 미수(거래처가 덜 냄)는 '-', 과입금(더 냄)은 '+' 로 표시.
 // 입력 unpaid = 청구액 - 입금액 (양수=미수, 음수=과입금) → 표시 시 부호 반전.
@@ -238,13 +239,14 @@ export default function BillingPage() {
     const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
 
     const [salesRes, stmtRes, billRes, compRes, confirmRes, prevBillRes, prevStmtRes] = await Promise.all([
-      db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date"),
+      fetchAllRows(() => db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date").order("id")),
       db.from("statements").select("*, statement_items(*), companies(id, name, biz_number)").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
-      db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }),
-      db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }),
+      // 이월 미수는 과거 청구·명세서 전체로 계산한다 → 건수가 늘어도 잘리지 않게 끝까지 읽는다
+      fetchAllRows(() => db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }).order("id")),
+      fetchAllRows(() => db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }).order("id")),
     ]);
 
     // ── 사업자번호 그룹 인덱스 ──
@@ -276,9 +278,14 @@ export default function BillingPage() {
 
     // 이전 월 명세서별 매칭 입금 합산
     const prevStmtIds: string[] = (prevStmtRes.data || []).map((s: { id: string }) => s.id);
-    const { data: prevStmtPayments } = prevStmtIds.length > 0
-      ? await db.from("payments").select("statement_id, amount").in("statement_id", prevStmtIds)
-      : { data: [] };
+    // ID가 많으면 한 번에 조회할 수 없으므로(주소 길이 한도) 100개씩 나눠 읽는다
+    const prevStmtPayments: Array<{ statement_id: string; amount: number }> = [];
+    for (const ids of chunk(prevStmtIds, 100)) {
+      const part = await fetchAllRows<{ statement_id: string; amount: number }>(() =>
+        db.from("payments").select("id, statement_id, amount").in("statement_id", ids).order("id"),
+      );
+      prevStmtPayments.push(...part.data);
+    }
     const paidByStmt: Record<string, number> = {};
     for (const p of (prevStmtPayments || []) as Array<{ statement_id: string; amount: number }>) {
       if (!p.statement_id) continue;

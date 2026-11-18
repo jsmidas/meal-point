@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
@@ -122,12 +123,15 @@ export default function SalesPage() {
     const db = supabase as any;
 
     const [logRes, prodRes, compRes, orderRes, stmtRes, checkRes] = await Promise.all([
-      db
-        .from("inventory_logs")
-        .select("*, companies(*), products(*)")
-        .in("type", ["out", "self"]) // 자가소비(self)도 표시하되 금액 집계·명세서 대상에서는 제외
-        .order("log_date", { ascending: false })
-        .limit(500),
+      // 월별 합계·달력이 잘리지 않도록 전부 읽는다 (예전에는 최신 500건만 읽어 과거 월이 일부만 보였다)
+      fetchAllRows(() =>
+        db
+          .from("inventory_logs")
+          .select("*, companies(*), products(*)")
+          .in("type", ["out", "self"]) // 자가소비(self)도 표시하되 금액 집계·명세서 대상에서는 제외
+          .order("log_date", { ascending: false })
+          .order("id", { ascending: true }),
+      ),
       db.from("products").select("*").eq("is_active", true).order("name"),
       db.from("companies").select("*").eq("is_active", true).order("name"),
       db.from("orders").select("*, companies(name)").order("order_date", { ascending: true }).limit(500),

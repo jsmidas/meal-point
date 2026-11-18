@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 type LogWithCompany = InventoryLog & { companies?: Company | null };
 type EntryKind = "self" | "adjust";
@@ -87,12 +88,15 @@ export default function InventoryPage() {
 
     const [invRes, logRes, prodRes, compRes] = await Promise.all([
       db.from("inventory").select("*, products(*)").order("products(name)"),
-      db
-        .from("inventory_logs")
-        .select("*, companies(*)")
-        .order("log_date", { ascending: true })
-        .order("created_at", { ascending: true })
-        .limit(5000),
+      // 기초·기말 재고는 전체 로그 누적이므로 한 건도 빠지면 안 된다 → 끝까지 읽는다
+      fetchAllRows(() =>
+        db
+          .from("inventory_logs")
+          .select("*, companies(*)")
+          .order("log_date", { ascending: true })
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true }),
+      ),
       db.from("products").select("*").eq("is_active", true).order("name"),
       db.from("companies").select("*").eq("is_active", true).order("name"),
     ]);
