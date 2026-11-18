@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { logAmount } from "@/lib/inventory";
 
 /* ───────── 타입 ───────── */
 
@@ -105,7 +106,7 @@ export default function AdminDashboard() {
           db.from("companies").select("id", { count: "exact", head: true }).eq("is_active", true),
           db.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
           // 이번 달 판매(출고) 로그
-          fetchAllRows(() => db.from("inventory_logs").select("id, quantity, unit_price, log_date, company_id").eq("type", "out").gte("log_date", monthStart).lte("log_date", monthEnd).order("id")),
+          fetchAllRows(() => db.from("inventory_logs").select("id, quantity, unit_price, amount, log_date, company_id").eq("type", "out").gte("log_date", monthStart).lte("log_date", monthEnd).order("id")),
           // 이번 달 입금
           db.from("payments").select("amount").gte("payment_date", monthStart).lte("payment_date", monthEnd),
           // 전체 청구 (미수 계산: 청구 - 입금)
@@ -119,7 +120,7 @@ export default function AdminDashboard() {
           // 금주 판매 등록 여부 확인용
           db.from("inventory_logs").select("company_id, log_date").eq("type", "out").gte("log_date", week.start).lte("log_date", week.end),
           // 최근 판매 등록
-          db.from("inventory_logs").select("id, company_id, log_date, quantity, unit_price, created_at, companies(name)")
+          db.from("inventory_logs").select("id, company_id, log_date, quantity, unit_price, amount, created_at, companies(name)")
             .eq("type", "out").order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(60),
           // 이번 달 판매 체크(승인) — 매출 인정 기준
           fetchAllRows(() => db.from("sale_checks").select("id, sale_date, company_id").gte("sale_date", monthStart).lte("sale_date", monthEnd).order("id")),
@@ -129,7 +130,7 @@ export default function AdminDashboard() {
       const confirmedSales = buildConfirmedSales(checkRes.data);
       const monthSales = (salesRes.data || [])
         .filter((l: { log_date: string; company_id: string | null }) => isConfirmedSale(l, confirmedSales))
-        .reduce((s: number, l: { quantity: number; unit_price: number }) => s + (l.quantity || 0) * (l.unit_price || 0), 0);
+        .reduce((s: number, l: { quantity: number; unit_price: number; amount: number | null }) => s + logAmount(l), 0);
       // 이번 달 입금액
       const monthPaid = (payRes.data || []).reduce((s: number, p: { amount: number }) => s + (p.amount || 0), 0);
 
@@ -178,7 +179,7 @@ export default function AdminDashboard() {
         const key = `${date}_${l.company_id}`;
         if (!recentMap.has(key) && recentMap.size >= 5) continue;
         const row = recentMap.get(key) || { key, date, companyName: l.companies?.name || "(거래처 없음)", amount: 0, itemCount: 0 };
-        row.amount += (l.quantity || 0) * (l.unit_price || 0);
+        row.amount += logAmount(l);
         row.itemCount += 1;
         recentMap.set(key, row);
       }

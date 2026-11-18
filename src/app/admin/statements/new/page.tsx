@@ -10,12 +10,14 @@ import { matchSalesToStatements, type SalesLineForMatch } from "@/lib/billing-ma
 import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { salesLogsToStatementItems } from "@/lib/statement-import";
+import { logAmount } from "@/lib/inventory";
 
 type RawSalesLog = {
   id: string;
   product_id: string | null;
   quantity: number;
   unit_price: number;
+  amount: number | null;
   log_date: string;
   reason: string | null;
   products: { name: string; unit: string; box_quantity: number } | null;
@@ -27,6 +29,7 @@ type SalesSearchLog = {
   product_id: string | null;
   quantity: number;
   unit_price: number | null;
+  amount: number | null;
   log_date: string;
   reason: string | null;
   products: { name: string; unit: string; box_quantity: number } | null;
@@ -205,7 +208,7 @@ function NewStatementForm() {
     const db = supabase as any;
     const [logsRes, stmtsRes] = await Promise.all([
       db.from("inventory_logs")
-        .select("id, product_id, quantity, unit_price, log_date, reason, products(name, unit, box_quantity)")
+        .select("id, product_id, quantity, unit_price, amount, log_date, reason, products(name, unit, box_quantity)")
         .eq("type", "out")
         .eq("company_id", cId)
         .gte("log_date", from)
@@ -224,7 +227,7 @@ function NewStatementForm() {
       product_name: log.products?.name || log.reason || "기타",
       quantity: log.quantity,
       unit_price: log.unit_price || 0,
-      amount: log.quantity * (log.unit_price || 0),
+      amount: logAmount(log),
       log_date: log.log_date,
       unit: log.products?.unit,
     }));
@@ -583,7 +586,7 @@ function NewStatementForm() {
             {salesLogs.length > 0 && (
               <div className="space-y-2">
                 <div className="text-sm text-text-secondary">
-                  {salesLogs.length}건의 판매 데이터 ({formatNumber(salesLogs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0))}원)
+                  {salesLogs.length}건의 판매 데이터 ({formatNumber(salesLogs.reduce((s, l) => s + logAmount(l), 0))}원)
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-bg-dark">
                   <table className="w-full text-xs">
@@ -598,7 +601,7 @@ function NewStatementForm() {
                           <td className="px-3 py-1.5 text-text-primary">{log.products?.name || log.reason || "-"}</td>
                           <td className="px-3 py-1.5 text-right text-text-secondary">{formatNumber(log.quantity)}</td>
                           <td className="px-3 py-1.5 text-right text-text-secondary">{formatNumber(log.unit_price || 0)}</td>
-                          <td className="px-3 py-1.5 text-right text-text-primary font-medium">{formatNumber(log.quantity * (log.unit_price || 0))}</td>
+                          <td className="px-3 py-1.5 text-right text-text-primary font-medium">{formatNumber(logAmount(log))}</td>
                         </tr>
                       ))}
                     </tbody>

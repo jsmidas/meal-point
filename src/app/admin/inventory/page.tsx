@@ -10,6 +10,7 @@ import {
   INVENTORY_LOG_TYPE_BADGE,
   applyLog,
   asLogType,
+  logAmount,
   logTypeLabel,
 } from "@/lib/inventory";
 import {
@@ -145,7 +146,7 @@ export default function InventoryPage() {
         }
         if (!day.startsWith(month)) break; // 다음 달 이후 로그는 제외
 
-        const amount = log.quantity * (log.unit_price || 0);
+        const amount = logAmount(log);
         switch (asLogType(log.type)) {
           case "in":
             inbound += log.quantity;
@@ -215,7 +216,7 @@ export default function InventoryPage() {
         qty: 0, saleAmount: 0, costAmount: 0, count: 0,
       };
       row.qty += l.quantity;
-      row.saleAmount += l.quantity * (l.unit_price || 0);
+      row.saleAmount += logAmount(l);
       row.costAmount += l.quantity * (l.cost_price || 0);
       row.count += 1;
       map.set(key, row);
@@ -738,7 +739,7 @@ export default function InventoryPage() {
                 {filteredLogs.slice(0, 50).map((log) => {
                   const kind = asLogType(log.type);
                   const unitPrice = log.unit_price || 0;
-                  const amount = unitPrice * log.quantity;
+                  const amount = logAmount(log);
                   const sign = kind === "in" ? "+" : kind === "adjust" ? "=" : "-";
                   const qtyColor =
                     kind === "in"

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { fetchAllRows, chunk } from "@/lib/fetch-all";
+import { logAmount } from "@/lib/inventory";
 import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
 
 // 잔액 부호 표기: 미수(거래처가 덜 냄)는 '-', 과입금(더 냄)은 '+' 로 표시.
@@ -31,7 +32,7 @@ function formatBalance(unpaid: number) {
   return `${v > 0 ? "+" : ""}${formatNumber(v)}원`;
 }
 
-type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
+type SalesLog = { id: string; company_id: string; quantity: number; unit_price: number; amount: number | null; log_date: string; reason: string | null; product_id: string | null; products: { name: string; unit: string } | null };
 type SalesData = {
   amount: number; // 매출로 인정된 판매액 (체크·승인한 날짜분)
   count: number;
@@ -69,7 +70,7 @@ function logToSalesLine(log: SalesLog): SalesLineForMatch {
     product_name: log.products?.name || log.reason || "기타",
     quantity: log.quantity,
     unit_price: log.unit_price || 0,
-    amount: log.quantity * (log.unit_price || 0),
+    amount: logAmount(log),
     log_date: log.log_date,
     unit: log.products?.unit || undefined,
   };
@@ -245,7 +246,7 @@ export default function BillingPage() {
     const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
 
     const [salesRes, stmtRes, billRes, compRes, confirmRes, prevBillRes, prevStmtRes] = await Promise.all([
-      fetchAllRows(() => db.from("inventory_logs").select("id, company_id, quantity, unit_price, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date").order("id")),
+      fetchAllRows(() => db.from("inventory_logs").select("id, company_id, quantity, unit_price, amount, log_date, reason, product_id, products(name, unit)").eq("type", "out").gte("log_date", from).lte("log_date", to).order("log_date").order("id")),
       db.from("statements").select("*, statement_items(*), companies(id, name, biz_number)").gte("statement_date", from).lte("statement_date", to).order("statement_date", { ascending: false }),
       db.from("billings").select("*, companies(*), payments(*)").eq("billing_month", month),
       db.from("companies").select("*").eq("is_active", true).order("name"),
@@ -441,12 +442,12 @@ export default function BillingPage() {
       const key = toPrimary(log.company_id);
       const ex: SalesData = salesMap.get(key) || { amount: 0, count: 0, logs: [] as SalesLog[] };
       if (isConfirmedSale(log, confirmedSales)) {
-        ex.amount += log.quantity * (log.unit_price || 0);
+        ex.amount += logAmount(log);
         ex.count += 1;
         ex.logs.push(log);
       } else {
         // 체크하지 않은 날짜의 판매: 매출에는 넣지 않고, 빠진 금액만 따로 세어 화면에 알려 준다
-        ex.unconfirmedAmount = (ex.unconfirmedAmount || 0) + log.quantity * (log.unit_price || 0);
+        ex.unconfirmedAmount = (ex.unconfirmedAmount || 0) + logAmount(log);
         ex.unconfirmedCount = (ex.unconfirmedCount || 0) + 1;
       }
       salesMap.set(key, ex);
@@ -2418,7 +2419,7 @@ export default function BillingPage() {
       {/* 판매 상세 모달 */}
       {salesDetailModal && (() => {
         const logs = salesDetailModal.logs;
-        const supply = logs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0);
+        const supply = logs.reduce((s, l) => s + logAmount(l), 0);
         const tax = Math.round(supply * 0.1);
         const salesLines = logs.map(logToSalesLine);
         const stmtItemsForMatch = salesDetailModal.statements.flatMap((s) => s.statement_items || []);
@@ -2451,7 +2452,7 @@ export default function BillingPage() {
                   </thead>
                   <tbody>
                     {logs.map((log) => {
-                      const lineSupply = log.quantity * (log.unit_price || 0);
+                      const lineSupply = logAmount(log);
                       const lineTax = Math.round(lineSupply * 0.1);
                       const status = match.matchedRows.get(log.id);
                       const rowBg =

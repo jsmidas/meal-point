@@ -25,6 +25,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { logAmount, logBoxPrice } from "@/lib/inventory";
 
 type SalesLog = InventoryLog & { companies?: Company | null; products?: Product | null };
 type CompanyPrice = { product_id: string; custom_price: number };
@@ -32,7 +33,7 @@ type CompanyPrice = { product_id: string; custom_price: number };
 /** 자가소비(self) 여부. 자가소비는 목록에는 보이지만 매출 금액·명세서 대상에서 제외 */
 const isSelfUse = (log: SalesLog) => log.type === "self";
 /** 매출 금액 (자가소비는 0) */
-const saleAmount = (log: SalesLog) => (isSelfUse(log) ? 0 : log.quantity * (log.unit_price || 0));
+const saleAmount = (log: SalesLog) => (isSelfUse(log) ? 0 : logAmount(log));
 
 interface SaleItem {
   key: number;
@@ -182,7 +183,7 @@ export default function SalesPage() {
     for (const log of monthLogs) {
       if (isSelfUse(log)) continue;
       totalQty += log.quantity;
-      totalAmount += log.quantity * (log.unit_price || 0);
+      totalAmount += logAmount(log);
     }
     return { totalQty, totalAmount };
   }, [monthLogs]);
@@ -196,7 +197,7 @@ export default function SalesPage() {
       const name = log.companies?.name || "(거래처 미지정)";
       const existing = map.get(key) || { name, qty: 0, amount: 0, count: 0 };
       existing.qty += log.quantity;
-      existing.amount += log.quantity * (log.unit_price || 0);
+      existing.amount += logAmount(log);
       existing.count += 1;
       map.set(key, existing);
     }
@@ -345,7 +346,8 @@ export default function SalesPage() {
         product_name: prod?.name || "",
         unit: asBox ? "박스" : (prod?.unit || ""),
         quantity: asBox ? log.quantity / boxQty : log.quantity,
-        unit_price: asBox ? log.unit_price * boxQty : log.unit_price,
+        // 박스 금액이 따로 기록된 판매는 그 박스 단가 그대로 연다 (개당 단가 × 입수는 반올림된 값)
+        unit_price: asBox ? (logBoxPrice(log, boxQty) ?? log.unit_price * boxQty) : log.unit_price,
         box_quantity: asBox ? boxQty : 1,
       }]);
     }
@@ -387,6 +389,11 @@ export default function SalesPage() {
     for (const item of validItems) {
       // 실제 개수: 박스 판매면 박스 수 × 박스당 수량
       const actualQty = item.box_quantity > 1 ? item.quantity * item.box_quantity : item.quantity;
+      // 개당 단가(정수). 박스 단가가 입수로 나누어떨어지지 않으면 반올림된 참고값이 된다.
+      const eaPrice = item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0);
+      // 입력한 금액(수량 × 입력 단가). 개당 단가로는 이 금액이 나오지 않을 때만 amount 에 그대로 남긴다.
+      const lineAmount = item.quantity * (item.unit_price || 0);
+      const exactAmount = lineAmount !== actualQty * eaPrice ? lineAmount : null;
 
       // 판매(출고) 또는 자가소비 로그
       const { data: insertedLogData } = await dbInsert("inventory_logs", {
@@ -397,7 +404,8 @@ export default function SalesPage() {
           ? item.product_name
           : (formNotes || (item.box_quantity > 1 ? `${item.quantity}박스` : null)),
         company_id: formCompanyId || null,
-        unit_price: item.box_quantity > 1 ? Math.round(item.unit_price / item.box_quantity) : (item.unit_price || 0),
+        unit_price: eaPrice,
+        amount: exactAmount,
         // 자가소비는 매입가 기준 정산도 필요하므로 기록 시점 상품 매입가를 함께 저장
         cost_price: formKind === "self" ? (products.find((p) => p.id === item.product_id)?.cost_price || 0) : 0,
         log_date: formDate,
@@ -1151,9 +1159,11 @@ export default function SalesPage() {
                     </thead>
                     <tbody>
                       {selectedDayLogs.map((log) => {
-                        const amount = (log.unit_price || 0) * log.quantity;
+                        const amount = logAmount(log);
                         const isManual = !log.product_id;
                         const self = isSelfUse(log);
+                        // 박스 금액이 따로 기록된 판매: 개당 단가는 반올림된 참고값이므로 박스 단가를 함께 보여 준다
+                        const boxPrice = logBoxPrice(log, log.products?.box_quantity);
                         return (
                           <tr key={log.id} className={`border-b border-border hover:bg-bg-card-hover transition-colors ${self ? "bg-violet-500/5" : ""}`}>
                             <td className="px-4 py-3 text-text-primary font-medium">
@@ -1180,6 +1190,9 @@ export default function SalesPage() {
                             </td>
                             <td className="px-4 py-3 text-right text-text-secondary">
                               {log.unit_price > 0 ? formatNumber(log.unit_price) : "-"}
+                              {boxPrice !== null && boxPrice !== log.unit_price * (log.products?.box_quantity || 1) && (
+                                <span className="block text-[10px] text-text-muted">박스당 {formatNumber(boxPrice)}</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right font-bold text-accent">
                               {self ? (
@@ -1489,14 +1502,18 @@ export default function SalesPage() {
                         const boxQty = item.box_quantity > 1 ? item.box_quantity : 1;
                         const isBox = boxQty > 1;
                         const perUnitPrice = isBox ? Math.round(item.unit_price / boxQty) : item.unit_price;
-                        // 판매 기록은 개당 단가(원 단위)로 저장된다. 박스 단가가 입수로 나누어떨어지지 않으면
-                        // 개당 단가가 반올림되어 박스당 금액이 입력값과 달라진다 → 실제 기록될 금액을 미리 보여 준다.
-                        const recordedBoxPrice = perUnitPrice * boxQty;
-                        const boxPriceAdjusted = isBox && item.unit_price > 0 && recordedBoxPrice !== item.unit_price;
+                        // 박스 단가가 입수로 나누어떨어지지 않으면 개당 단가는 반올림된 참고값이다.
+                        // 금액은 입력한 박스 단가 그대로 기록된다(amount).
+                        const perUnitApprox = isBox && item.unit_price > 0 && perUnitPrice * boxQty !== item.unit_price;
                         return (
                           <div className="flex items-center gap-3 mt-1.5 ml-1 text-xs text-text-muted">
                             {isBox && (
-                              <span className="text-primary">{boxQty}개/박스 · 개당 {formatNumber(perUnitPrice)}원</span>
+                              <span
+                                className="text-primary"
+                                title={perUnitApprox ? "박스 단가가 입수로 나누어떨어지지 않아 개당 단가는 반올림한 값입니다. 금액은 박스 단가 그대로 기록됩니다." : undefined}
+                              >
+                                {boxQty}개/박스 · 개당 {perUnitApprox ? "약 " : ""}{formatNumber(perUnitPrice)}원
+                              </span>
                             )}
                             {isCustom && (
                               <span className="inline-flex items-center gap-0.5 text-yellow-500">
@@ -1505,14 +1522,6 @@ export default function SalesPage() {
                             )}
                             {isBox && item.quantity > 0 && (
                               <span>= {formatNumber(item.quantity * boxQty)}개</span>
-                            )}
-                            {boxPriceAdjusted && (
-                              <span
-                                className="text-yellow-400"
-                                title="판매 기록은 개당 단가(원 단위)로 저장됩니다. 박스 단가가 입수로 나누어떨어지지 않아 개당 단가를 반올림했습니다."
-                              >
-                                박스당 {formatNumber(recordedBoxPrice)}원으로 기록됩니다
-                              </span>
                             )}
                           </div>
                         );

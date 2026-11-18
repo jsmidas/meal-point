@@ -576,6 +576,8 @@ export type Database = {
           reference_type: string | null;
           company_id: string | null;
           unit_price: number;
+          /** 판매 금액(공급가). null 이면 quantity * unit_price — 금액은 logAmount() 로 구한다 */
+          amount: number | null;
           cost_price: number;
           log_date: string;
           created_at: string;
@@ -589,6 +591,7 @@ export type Database = {
           reference_type?: string | null;
           company_id?: string | null;
           unit_price?: number;
+          amount?: number | null;
           cost_price?: number;
           log_date?: string;
         };
@@ -601,6 +604,7 @@ export type Database = {
           reference_type?: string | null;
           company_id?: string | null;
           unit_price?: number;
+          amount?: number | null;
           cost_price?: number;
           log_date?: string;
         };

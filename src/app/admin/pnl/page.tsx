@@ -7,6 +7,7 @@ import type { Expense } from "@/lib/supabase/types";
 import { EXPENSE_CATEGORIES, EXPENSE_FIXED_CATEGORIES, formatNumber, todayKST } from "@/lib/utils";
 import { TrendingUp, TrendingDown, DollarSign, Plus, X, Trash2, Info, Printer, Pencil } from "lucide-react";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { logAmount } from "@/lib/inventory";
 import { buildConfirmedSales, isConfirmedSale } from "@/lib/sales-recognition";
 
 /**
@@ -24,6 +25,7 @@ interface SaleLog {
   product_id: string | null;
   quantity: number;
   unit_price: number;
+  amount: number | null;
   cost_price: number;
   type: string;
   reason: string | null;
@@ -76,7 +78,7 @@ export default function PnlPage() {
       // 연간 매출·원가 합계가 잘리지 않도록 끝까지 읽는다
       fetchAllRows(() =>
         db.from("inventory_logs")
-          .select("id, log_date, company_id, product_id, quantity, unit_price, cost_price, type, reason")
+          .select("id, log_date, company_id, product_id, quantity, unit_price, amount, cost_price, type, reason")
           .in("type", ["out", "self"])
           .gte("log_date", startDate)
           .lte("log_date", endDate)
@@ -132,7 +134,7 @@ export default function PnlPage() {
   }, [costHistory, productMap]);
 
   /** 로그 한 건의 매출·원가 */
-  const amountOf = (l: SaleLog) => l.quantity * (l.unit_price || 0);
+  const amountOf = (l: SaleLog) => logAmount(l);
   const costOf = (l: SaleLog) => l.type === "self" ? l.quantity * (l.cost_price || 0) : l.quantity * costAt(l.product_id, l.log_date);
 
   // ── 표 1: 월별 손익 ──
