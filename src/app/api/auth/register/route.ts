@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashPassword } from "@/lib/auth/password";
 import { uploadBizCert } from "@/lib/auth/biz-cert";
+import { clientIp, lockedUntil, recordAttempt, type ThrottleRule } from "@/lib/auth/throttle";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,18 @@ export const runtime = "nodejs";
  * 사업자등록증(cert)은 선택. 첨부해 업로드에 성공했을 때만 approval_status='pending'(승인 요청)이 되고,
  * 없으면 'none' 으로 가입만 된다 — 이후 '내 정보'(/api/account)에서 올리면 승인 요청으로 전환된다.
  */
+// 같은 IP에서 1시간에 5번까지만 가입 시도를 받는다 (자동 가입 스팸 방지)
+const REGISTER_RULE: ThrottleRule = { max: 5, windowMs: 60 * 60 * 1000, lockMs: 60 * 60 * 1000 };
+
 export async function POST(request: NextRequest) {
+  const throttleKey = `register:${clientIp(request)}`;
+  if (await lockedUntil(throttleKey)) {
+    return NextResponse.json(
+      { ok: false, error: "가입 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 429 },
+    );
+  }
+
   let fields: Record<string, string> = {};
   let cert: File | null = null;
   const ct = request.headers.get("content-type") || "";
@@ -56,7 +68,17 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase.from("members") as any;
 
-  const { data: existing } = await db.select("id").eq("login_id", login_id).maybeSingle();
+  // 대소문자만 다른 아이디(예: daham01 / Daham01)는 같은 아이디로 본다 — 사칭·혼동 방지
+  const { data: existingRows, error: existingError } = await db
+    .select("id")
+    // 아이디에 허용된 문자 중 "_" 만 LIKE 와일드카드라서 그것만 이스케이프한다
+    .ilike("login_id", login_id.replace(/_/g, "\\_"))
+    .limit(1);
+  if (existingError) {
+    console.error("[register] 아이디 중복 확인 실패", existingError.message);
+    return NextResponse.json({ ok: false, error: "일시적인 오류입니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+  }
+  const existing = existingRows && existingRows.length > 0;
   if (existing) {
     return NextResponse.json({ ok: false, error: "이미 사용 중인 아이디입니다." }, { status: 409 });
   }
@@ -80,8 +102,14 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error || !created) {
-    return NextResponse.json({ ok: false, error: "회원가입에 실패했습니다. " + (error?.message || "") }, { status: 500 });
+    // 동시에 같은 아이디로 가입한 경우(중복 제약 위반)는 "이미 사용 중"으로 안내
+    if (error?.code === "23505") {
+      return NextResponse.json({ ok: false, error: "이미 사용 중인 아이디입니다." }, { status: 409 });
+    }
+    console.error("[register] 회원 등록 실패", error?.message);
+    return NextResponse.json({ ok: false, error: "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
+  await recordAttempt(throttleKey, REGISTER_RULE);
 
   let certWarning: string | null = null;
   if (cert) {

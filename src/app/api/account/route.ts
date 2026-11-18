@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSession } from "@/lib/auth/guard";
+import { getLiveSession } from "@/lib/auth/guard";
 import { bizCertSignedUrl, uploadBizCert, removeBizCert } from "@/lib/auth/biz-cert";
 
 export const runtime = "nodejs";
 
 /** 로그인한 회원 본인의 업체 정보·승인 상태. 관리자 계정은 대상이 아니다. */
 async function memberSession(request: NextRequest) {
-  const s = await getSession(request);
+  // 정지·삭제된 회원이 기존 쿠키로 접근하지 못하도록 현재 상태를 DB로 확인한다
+  const s = await getLiveSession(request);
   if (!s || !s.id || (s.role !== "member" && s.role !== "company")) return null;
   return s;
 }

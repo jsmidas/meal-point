@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findOrCreateMember, createAuthResponse } from "@/lib/auth/social";
+import {
+  findOrCreateMember,
+  oauthBaseUrl,
+  oauthErrorRedirect,
+  oauthSuccessRedirect,
+  startOAuthRedirect,
+} from "@/lib/auth/social";
+
+export const runtime = "nodejs";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-
-// 로그인 후 복귀 경로 — 상대경로만 허용(오픈 리다이렉트 방지)
-function safeNext(next: string | null | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
+const STATE_COOKIE = "google_oauth_state";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -17,15 +21,20 @@ export async function GET(request: NextRequest) {
   if (action === "callback") {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const storedState = request.cookies.get("google_oauth_state")?.value;
+    const storedState = request.cookies.get(STATE_COOKIE)?.value;
+    const errTo = (err: string) => oauthErrorRedirect(request, STATE_COOKIE, err);
+
+    // 사용자가 구글 동의 화면에서 취소한 경우 (error=access_denied)
+    if (searchParams.get("error")) {
+      return errTo("cancelled");
+    }
 
     if (!code || !state || state !== storedState) {
-      return NextResponse.redirect(new URL("/login?error=invalid_state", request.url));
+      return errTo("invalid_state");
     }
 
     try {
-      const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-      const callbackUrl = `${baseUrl}/api/auth/google?action=callback`;
+      const callbackUrl = `${oauthBaseUrl(request)}/api/auth/google?action=callback`;
 
       // 토큰 발급
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -38,44 +47,52 @@ export async function GET(request: NextRequest) {
           redirect_uri: callbackUrl,
           code,
         }),
+        cache: "no-store",
       });
       const tokenData = await tokenRes.json();
 
-      if (tokenData.error) {
-        return NextResponse.redirect(new URL("/login?error=token_failed", request.url));
+      if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
+        console.error("[google] token error:", tokenData.error, tokenData.error_description);
+        return errTo("token_failed");
       }
 
       // 사용자 정보 조회
       const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        cache: "no-store",
       });
       const profileData = await profileRes.json();
 
-      const member = await findOrCreateMember({
+      // 조회가 실패하면 id 가 없다 — 그대로 진행하면 식별값 없는 유령 회원이 만들어지므로 반드시 확인
+      if (!profileRes.ok || !profileData.id) {
+        console.error("[google] profile error:", profileData.error?.message || profileRes.status);
+        return errTo("profile_failed");
+      }
+
+      const result = await findOrCreateMember({
         provider: "google",
         provider_id: profileData.id,
         name: profileData.name || "구글 사용자",
         email: profileData.email || null,
       });
+      if (result.status === "inactive") return errTo("inactive");
+      if (result.status !== "ok") return errTo("google_failed");
 
-      if (!member) {
-        return NextResponse.redirect(new URL("/login?error=inactive", request.url));
-      }
-
-      const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
-      const response = await createAuthResponse(member, new URL(nextPath, request.url).toString());
-      response.cookies.set("google_oauth_state", "", { path: "/", maxAge: 0 });
-      response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
-      return response;
-    } catch {
-      return NextResponse.redirect(new URL("/login?error=google_failed", request.url));
+      return await oauthSuccessRedirect(request, STATE_COOKIE, result.member);
+    } catch (e) {
+      console.error("[google] login failed:", e);
+      return errTo("google_failed");
     }
+  }
+
+  // 키 미설정 시 구글 오류 화면 대신 로그인 페이지에서 안내
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return NextResponse.redirect(new URL("/login?error=not_configured", request.url));
   }
 
   // 구글 로그인 시작
   const state = crypto.randomUUID();
-  const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-  const callbackUrl = `${baseUrl}/api/auth/google?action=callback`;
+  const callbackUrl = `${oauthBaseUrl(request)}/api/auth/google?action=callback`;
 
   const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   googleAuthUrl.searchParams.set("response_type", "code");
@@ -85,21 +102,5 @@ export async function GET(request: NextRequest) {
   googleAuthUrl.searchParams.set("state", state);
   googleAuthUrl.searchParams.set("access_type", "offline");
 
-  const response = NextResponse.redirect(googleAuthUrl.toString());
-  response.cookies.set("google_oauth_state", state, {
-    httpOnly: true,
-    path: "/",
-    maxAge: 60 * 10,
-  });
-  // 로그인 후 돌아올 경로 보존 (예: 회원가입 → /account)
-  const nextPath = safeNext(searchParams.get("next"));
-  if (nextPath !== "/") {
-    response.cookies.set("oauth_next", nextPath, {
-      httpOnly: true,
-      path: "/",
-      maxAge: 60 * 10,
-    });
-  }
-
-  return response;
+  return startOAuthRedirect(request, googleAuthUrl, STATE_COOKIE, state);
 }

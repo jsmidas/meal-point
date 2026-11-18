@@ -74,7 +74,7 @@ export default function CompanyAccountsSection({ companyId }: Props) {
   }
 
   async function handleReset(a: Account) {
-    const pw = prompt(`'${a.login_id}' 계정의 새 비밀번호 (4자 이상)`);
+    const pw = prompt(`'${a.login_id}' 계정의 새 비밀번호 (8자 이상)`);
     if (!pw) return;
     if (await post({ action: "reset_password", id: a.id, password: pw })) {
       alert("비밀번호가 변경되었습니다.");
@@ -127,7 +127,7 @@ export default function CompanyAccountsSection({ companyId }: Props) {
           />
           <input
             type="text"
-            placeholder="비밀번호 (4자+)"
+            placeholder="비밀번호 (8자+)"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="px-3 py-2 rounded-lg border border-border bg-bg-dark text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"

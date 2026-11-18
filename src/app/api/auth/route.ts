@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SESSION_COOKIE, signSession, sessionCookieOptions, verifySession } from "@/lib/auth/session";
 import { hashPassword, verifyPassword, safeEqualString } from "@/lib/auth/password";
-import type { SessionRole } from "@/lib/auth/roles";
+import { memberSessionRole, type SessionRole } from "@/lib/auth/roles";
 import { writeAudit } from "@/lib/audit";
+import { clientIp, clearAttempts, lockedUntil, recordAttempt, type ThrottleRule } from "@/lib/auth/throttle";
 
 export const runtime = "nodejs";
 
@@ -26,36 +27,18 @@ function adminAccounts(): { id: string; pw: string; role: SessionRole; name: str
   return list;
 }
 
-// ── 로그인 시도 제한 (인스턴스 메모리 기준: IP+ID 당 15분 안에 5회 실패 시 15분 잠금) ──
-const MAX_FAILS = 5;
-const WINDOW_MS = 15 * 60 * 1000;
-const attempts = new Map<string, { fails: number; first: number; lockedUntil: number }>();
+// ── 로그인 시도 제한 (DB 기록 — 서버 인스턴스가 바뀌어도 유지된다) ──
+// 같은 IP에서 같은 아이디로 15분 안에 5회 실패 → 15분 잠금
+const IP_ID_RULE: ThrottleRule = { max: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 };
+// IP를 바꿔 가며 한 아이디를 계속 두드리는 경우: 아이디 기준 15분 안에 20회 실패 → 15분 잠금
+const ID_RULE: ThrottleRule = { max: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 };
 
-function clientIp(request: NextRequest): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown";
+function throttleKeys(request: NextRequest, id: string) {
+  const lower = id.toLowerCase();
+  return { ipId: `login:${clientIp(request)}|${lower}`, idOnly: `login-id:${lower}` };
 }
-function throttleKey(request: NextRequest, id: string) {
-  return `${clientIp(request)}|${id.toLowerCase()}`;
-}
-function isLocked(key: string): number {
-  const a = attempts.get(key);
-  if (!a) return 0;
-  if (a.lockedUntil > Date.now()) return a.lockedUntil;
-  if (Date.now() - a.first > WINDOW_MS) attempts.delete(key);
-  return 0;
-}
-function recordFail(key: string) {
-  const now = Date.now();
-  const a = attempts.get(key);
-  if (!a || now - a.first > WINDOW_MS) {
-    attempts.set(key, { fails: 1, first: now, lockedUntil: 0 });
-    return;
-  }
-  a.fails += 1;
-  if (a.fails >= MAX_FAILS) a.lockedUntil = now + WINDOW_MS;
-}
-function clearFails(key: string) {
-  attempts.delete(key);
+async function recordFail(keys: { ipId: string; idOnly: string }) {
+  await Promise.all([recordAttempt(keys.ipId, IP_ID_RULE), recordAttempt(keys.idOnly, ID_RULE)]);
 }
 
 function setSessionCookie(response: NextResponse, token: string) {
@@ -90,10 +73,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "아이디와 비밀번호를 입력하세요." }, { status: 400 });
   }
 
-  const key = throttleKey(request, id);
-  const lockedUntil = isLocked(key);
-  if (lockedUntil) {
-    const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
+  const keys = throttleKeys(request, id);
+  const locked = Math.max(await lockedUntil(keys.ipId), await lockedUntil(keys.idOnly));
+  if (locked) {
+    const mins = Math.ceil((locked - Date.now()) / 60000);
     return NextResponse.json(
       { ok: false, error: `로그인 시도가 너무 많습니다. ${mins}분 후 다시 시도하세요.` },
       { status: 429 },
@@ -118,7 +101,7 @@ export async function POST(request: NextRequest) {
     const idMatch = await safeEqualString(id, acc.id);
     const pwMatch = await safeEqualString(password, acc.pw);
     if (idMatch && pwMatch) {
-      clearFails(key);
+      await clearAttempts(keys.ipId);
       const payload = { role: acc.role, name: acc.name, login: acc.id };
       const token = await signSession(payload);
       const response = NextResponse.json({ ok: true, role: acc.role, name: acc.name });
@@ -139,7 +122,7 @@ export async function POST(request: NextRequest) {
 
   const check = await verifyPassword(password, member?.password_hash);
   if (!member || !check.ok) {
-    recordFail(key);
+    await recordFail(keys);
     return NextResponse.json({ ok: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
   }
   if (!member.is_active) {
@@ -151,7 +134,7 @@ export async function POST(request: NextRequest) {
     await members.update({ password_hash: await hashPassword(password) }).eq("id", member.id);
   }
 
-  clearFails(key);
+  await clearAttempts(keys.ipId);
   // members.role='admin' 인 회원(다함푸드 직원 등)은 관리자 세션을 받는다
   const role: SessionRole = memberSessionRole(member);
   const companyName: string | null = member.companies?.name ?? null;
@@ -161,13 +144,6 @@ export async function POST(request: NextRequest) {
   setSessionCookie(response, token);
   void writeAudit(db, { ...payload, iat: 0, exp: 0 }, { action: "login", table: "auth", recordId: member.id }, request);
   return response;
-}
-
-/** members.role → 세션 역할 */
-function memberSessionRole(m: { role?: string | null; company_id?: string | null }): SessionRole {
-  if (m.role === "admin") return "admin";
-  if (m.role === "company" && m.company_id) return "company";
-  return "member";
 }
 
 /**
@@ -190,7 +166,7 @@ export async function GET(request: NextRequest) {
         .select("is_active, role")
         .eq("id", session.id)
         .maybeSingle();
-      if (m && (!m.is_active || m.role !== "admin")) {
+      if (!m || !m.is_active || m.role !== "admin") {
         const res = NextResponse.json({ authenticated: false });
         res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
         return res;
@@ -209,9 +185,10 @@ export async function GET(request: NextRequest) {
       .select("id, name, is_active, role, company_id, approval_status, biz_cert_path, company_name, companies(name)")
       .eq("id", session.id)
       .maybeSingle();
-    if (error || !m) return NextResponse.json(base); // 마이그레이션 미적용 등 — 세션 정보로 응답
+    if (error) return NextResponse.json(base); // 일시 오류·마이그레이션 미적용 등 — 세션 정보로 응답
 
-    if (!m.is_active) {
+    // 삭제됐거나 정지된 회원은 로그아웃 처리
+    if (!m || !m.is_active) {
       const res = NextResponse.json({ authenticated: false });
       res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
       return res;

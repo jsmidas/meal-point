@@ -4,7 +4,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const BIZ_CERT_BUCKET = "biz-certs";
-export const MAX_CERT_BYTES = 10 * 1024 * 1024;
+// 서버 함수가 받을 수 있는 요청 크기(약 4.5MB)보다 작게 잡는다 — 더 큰 파일은 서버에 닿기 전에 거절돼 원인을 알 수 없는 오류가 된다
+export const MAX_CERT_BYTES = 4 * 1024 * 1024;
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -28,7 +29,7 @@ export async function ensureBizCertBucket(admin: Admin): Promise<void> {
 
 export function validateCertFile(file: File): string | null {
   if (!EXT[file.type]) return "사업자등록증은 JPG, PNG, WEBP 이미지 또는 PDF 파일만 올릴 수 있습니다.";
-  if (file.size > MAX_CERT_BYTES) return "파일 크기는 10MB 이하여야 합니다.";
+  if (file.size > MAX_CERT_BYTES) return "파일 크기는 4MB 이하여야 합니다.";
   if (file.size === 0) return "빈 파일입니다.";
   return null;
 }

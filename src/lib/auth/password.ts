@@ -6,7 +6,10 @@
  */
 
 const LEGACY_SALT = "mealpoint_salt_2024";
-const ITERATIONS = 100_000;
+// OWASP 권고(PBKDF2-HMAC-SHA256 60만 회). 이보다 낮게 저장된 해시는 로그인 성공 시 자동으로 다시 저장된다.
+const ITERATIONS = 600_000;
+// 없는 아이디로 로그인해도 있는 아이디와 비슷한 시간이 걸리도록 하는 더미 솔트(응답 시간으로 아이디 존재 여부를 가리지 못하게)
+const DUMMY_SALT = new Uint8Array(16);
 const enc = new TextEncoder();
 
 function b64(bytes: ArrayBuffer | Uint8Array): string {
@@ -49,7 +52,10 @@ export async function verifyPassword(
   password: string,
   stored: string | null | undefined,
 ): Promise<{ ok: boolean; needsRehash: boolean }> {
-  if (!stored) return { ok: false, needsRehash: false };
+  if (!stored) {
+    await pbkdf2(password, DUMMY_SALT, ITERATIONS);
+    return { ok: false, needsRehash: false };
+  }
 
   if (stored.startsWith("pbkdf2$")) {
     const [, iterStr, saltB64, hashB64] = stored.split("$");

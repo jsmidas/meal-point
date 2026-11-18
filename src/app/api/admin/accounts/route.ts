@@ -74,8 +74,20 @@ export async function POST(request: NextRequest) {
   const session = await getAdminSession(request);
   if (!session) return NextResponse.json({ ok: false, error: "관리자 권한이 필요합니다." }, { status: 401 });
 
-  const body = await request.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "잘못된 요청입니다." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ ok: false, error: "잘못된 요청입니다." }, { status: 400 });
+  }
   const { action } = body;
+  // 정지·삭제·비밀번호 초기화는 일반 회원(member)에게도 적용된다 (스팸 가입·악성 회원 처리)
+  const ANY_MEMBER_ROLES = [...MANAGED_ROLES, "member"];
+  const NOT_FOUND = NextResponse.json({ ok: false, error: "대상 계정을 찾을 수 없습니다." }, { status: 404 });
   const supabase = createAdminClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase.from("members") as any;
@@ -94,32 +106,50 @@ export async function POST(request: NextRequest) {
     if (role === "company" && !before.company_id) {
       return NextResponse.json({ ok: false, error: "연결 거래처가 없어 발주 계정으로 되돌릴 수 없습니다." }, { status: 400 });
     }
-    const { error } = await db.update({ role }).eq("id", id).in("role", MANAGED_ROLES);
+    if (id === session.id && role !== "admin") {
+      return NextResponse.json({ ok: false, error: "본인의 관리자 권한은 직접 해제할 수 없습니다." }, { status: 400 });
+    }
+    const { data: changed, error } = await db.update({ role }).eq("id", id).in("role", MANAGED_ROLES).select("id");
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (!changed || changed.length === 0) return NOT_FOUND;
     await audit("set_role", id, { ...before, role }, before);
     return NextResponse.json({ ok: true });
   }
 
   // ── 계정 발급 ──
   if (action === "create") {
-    const { login_id, password, name, company_id } = body;
+    const login_id = typeof body.login_id === "string" ? body.login_id.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const company_id = body.company_id;
     if (!login_id || !password || !name || !company_id) {
       return NextResponse.json(
         { ok: false, error: "아이디, 비밀번호, 담당자명, 거래처는 필수입니다." },
         { status: 400 },
       );
     }
-    if (String(login_id).length < 4 || String(password).length < 4) {
+    // 회원가입과 같은 규칙: 아이디 4~64자(영문·숫자·_ . @ -), 비밀번호 8자 이상
+    if (login_id.length < 4 || login_id.length > 64 || !/^[A-Za-z0-9_.@-]+$/.test(login_id)) {
       return NextResponse.json(
-        { ok: false, error: "아이디와 비밀번호는 4자 이상이어야 합니다." },
+        { ok: false, error: "아이디는 4자 이상의 영문·숫자·기호(_ . @ -)만 쓸 수 있습니다." },
         { status: 400 },
       );
     }
+    if (password.length < 8 || password.length > 128) {
+      return NextResponse.json({ ok: false, error: "비밀번호는 8자 이상이어야 합니다." }, { status: 400 });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: company } = await (supabase.from("companies") as any).select("id").eq("id", company_id).maybeSingle();
+    if (!company) {
+      return NextResponse.json({ ok: false, error: "연결할 거래처를 찾을 수 없습니다." }, { status: 400 });
+    }
 
-    const { data: existing } = await db
+    // 대소문자만 다른 아이디도 같은 아이디로 본다
+    const { data: existingRows } = await db
       .select("id")
-      .eq("login_id", login_id)
-      .maybeSingle();
+      .ilike("login_id", login_id.replace(/_/g, "\\_"))
+      .limit(1);
+    const existing = existingRows && existingRows.length > 0;
     if (existing) {
       return NextResponse.json(
         { ok: false, error: "이미 사용 중인 아이디입니다." },
@@ -147,17 +177,18 @@ export async function POST(request: NextRequest) {
   // ── 비밀번호 초기화 ──
   if (action === "reset_password") {
     const { id, password } = body;
-    if (!id || !password || String(password).length < 4) {
+    if (!id || typeof password !== "string" || password.length < 8 || password.length > 128) {
       return NextResponse.json(
-        { ok: false, error: "비밀번호는 4자 이상이어야 합니다." },
+        { ok: false, error: "비밀번호는 8자 이상이어야 합니다." },
         { status: 400 },
       );
     }
     const password_hash = await hashPassword(password);
-    const { error } = await db.update({ password_hash }).eq("id", id).in("role", MANAGED_ROLES);
+    const { data: changed, error } = await db.update({ password_hash }).eq("id", id).in("role", ANY_MEMBER_ROLES).select("id");
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    if (!changed || changed.length === 0) return NOT_FOUND;
     await audit("reset_password", id);
     return NextResponse.json({ ok: true });
   }
@@ -168,13 +199,19 @@ export async function POST(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ ok: false, error: "id가 필요합니다." }, { status: 400 });
     }
-    const { error } = await db
+    if (id === session.id && !is_active) {
+      return NextResponse.json({ ok: false, error: "본인 계정은 직접 정지할 수 없습니다." }, { status: 400 });
+    }
+    const { data: changed, error } = await db
       .update({ is_active: !!is_active })
       .eq("id", id)
-      .in("role", MANAGED_ROLES);
+      .in("role", ANY_MEMBER_ROLES)
+      .select("id");
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    // 실제로 바뀐 행이 없으면 성공으로 답하지 않는다
+    if (!changed || changed.length === 0) return NOT_FOUND;
     await audit("toggle_active", id, { is_active: !!is_active });
     return NextResponse.json({ ok: true });
   }
@@ -191,10 +228,11 @@ export async function POST(request: NextRequest) {
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ ok: false, error: "변경할 내용이 없습니다." }, { status: 400 });
     }
-    const { error } = await db.update(patch).eq("id", id).eq("role", "company");
+    const { data: changed, error } = await db.update(patch).eq("id", id).eq("role", "company").select("id");
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    if (!changed || changed.length === 0) return NOT_FOUND;
     await audit("update", id, patch);
     return NextResponse.json({ ok: true });
   }
@@ -260,11 +298,23 @@ export async function POST(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ ok: false, error: "id가 필요합니다." }, { status: 400 });
     }
-    const { data: before } = await db.select("id, login_id, name, role, company_id").eq("id", id).maybeSingle();
-    const { error } = await db.delete().eq("id", id).in("role", MANAGED_ROLES);
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (id === session.id) {
+      return NextResponse.json({ ok: false, error: "본인 계정은 직접 삭제할 수 없습니다." }, { status: 400 });
     }
+    const { data: before } = await db.select("id, login_id, name, role, company_id").eq("id", id).maybeSingle();
+    const { data: removed, error } = await db.delete().eq("id", id).in("role", ANY_MEMBER_ROLES).select("id");
+    if (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: /foreign key|violates/i.test(error.message)
+            ? "발주 등 기록이 있는 계정은 삭제할 수 없습니다. 대신 정지해 주세요."
+            : error.message,
+        },
+        { status: 500 },
+      );
+    }
+    if (!removed || removed.length === 0) return NOT_FOUND;
     await audit("delete", id, undefined, before);
     return NextResponse.json({ ok: true });
   }

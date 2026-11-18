@@ -13,3 +13,15 @@ export function homeForRole(role: string | null | undefined): string {
   if (isAdminRole(role)) return "/admin";
   return "/";
 }
+
+/**
+ * members 행 → 세션 역할.
+ * - role='admin' 인 회원(직원 계정)은 관리자
+ * - role='company' 이고 거래처가 연결된 회원은 발주 계정
+ * - 그 외는 일반 회원
+ */
+export function memberSessionRole(m: { role?: string | null; company_id?: string | null }): SessionRole {
+  if (m.role === "admin") return "admin";
+  if (m.role === "company" && m.company_id) return "company";
+  return "member";
+}

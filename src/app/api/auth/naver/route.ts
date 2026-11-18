@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findOrCreateMember, createAuthResponse } from "@/lib/auth/social";
+import {
+  findOrCreateMember,
+  oauthBaseUrl,
+  oauthErrorRedirect,
+  oauthSuccessRedirect,
+  startOAuthRedirect,
+} from "@/lib/auth/social";
+
+export const runtime = "nodejs";
 
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || "";
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || "";
-
-// 로그인 후 복귀 경로 — 상대경로만 허용(오픈 리다이렉트 방지)
-function safeNext(next: string | null | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
+const STATE_COOKIE = "naver_oauth_state";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -17,13 +21,8 @@ export async function GET(request: NextRequest) {
   if (action === "callback") {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const storedState = request.cookies.get("naver_oauth_state")?.value;
-    const errTo = (err: string) => {
-      const res = NextResponse.redirect(new URL(`/login?error=${err}`, request.url));
-      res.cookies.set("naver_oauth_state", "", { path: "/", maxAge: 0 });
-      res.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
-      return res;
-    };
+    const storedState = request.cookies.get(STATE_COOKIE)?.value;
+    const errTo = (err: string) => oauthErrorRedirect(request, STATE_COOKIE, err);
 
     // 사용자가 네이버 동의 화면에서 취소한 경우 (error=access_denied)
     if (searchParams.get("error")) {
@@ -41,42 +40,37 @@ export async function GET(request: NextRequest) {
       tokenUrl.searchParams.set("client_secret", NAVER_CLIENT_SECRET);
       tokenUrl.searchParams.set("code", code);
       tokenUrl.searchParams.set("state", state);
-      const tokenRes = await fetch(tokenUrl);
+      const tokenRes = await fetch(tokenUrl, { cache: "no-store" });
       const tokenData = await tokenRes.json();
 
-      if (tokenData.error || !tokenData.access_token) {
+      if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
         console.error("[naver] token error:", tokenData.error, tokenData.error_description);
         return errTo("token_failed");
       }
 
       const profileRes = await fetch("https://openapi.naver.com/v1/nid/me", {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        cache: "no-store",
       });
       const profileData = await profileRes.json();
 
-      if (profileData.resultcode !== "00") {
+      if (!profileRes.ok || profileData.resultcode !== "00" || !profileData.response?.id) {
         console.error("[naver] profile error:", profileData.resultcode, profileData.message);
         return errTo("profile_failed");
       }
 
       const { id: naverId, name, nickname, email } = profileData.response;
 
-      const member = await findOrCreateMember({
+      const result = await findOrCreateMember({
         provider: "naver",
-        provider_id: String(naverId),
+        provider_id: naverId,
         name: name || nickname || "네이버 사용자",
         email,
       });
+      if (result.status === "inactive") return errTo("inactive");
+      if (result.status !== "ok") return errTo("naver_failed");
 
-      if (!member) {
-        return errTo("inactive");
-      }
-
-      const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
-      const response = await createAuthResponse(member, new URL(nextPath, request.url).toString());
-      response.cookies.set("naver_oauth_state", "", { path: "/", maxAge: 0 });
-      response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
-      return response;
+      return await oauthSuccessRedirect(request, STATE_COOKIE, result.member);
     } catch (e) {
       console.error("[naver] login failed:", e);
       return errTo("naver_failed");
@@ -90,8 +84,7 @@ export async function GET(request: NextRequest) {
 
   // 네이버 로그인 시작
   const state = crypto.randomUUID();
-  const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-  const callbackUrl = `${baseUrl}/api/auth/naver?action=callback`;
+  const callbackUrl = `${oauthBaseUrl(request)}/api/auth/naver?action=callback`;
 
   const naverAuthUrl = new URL("https://nid.naver.com/oauth2.0/authorize");
   naverAuthUrl.searchParams.set("response_type", "code");
@@ -99,19 +92,5 @@ export async function GET(request: NextRequest) {
   naverAuthUrl.searchParams.set("redirect_uri", callbackUrl);
   naverAuthUrl.searchParams.set("state", state);
 
-  const response = NextResponse.redirect(naverAuthUrl.toString());
-  response.cookies.set("naver_oauth_state", state, {
-    httpOnly: true,
-    path: "/",
-    maxAge: 60 * 10,
-  });
-  // 로그인 후 돌아올 경로 보존 (예: /account). 없으면 이전 시도의 값이 남지 않게 지운다.
-  const nextPath = safeNext(searchParams.get("next"));
-  response.cookies.set("oauth_next", nextPath === "/" ? "" : nextPath, {
-    httpOnly: true,
-    path: "/",
-    maxAge: nextPath === "/" ? 0 : 60 * 10,
-  });
-
-  return response;
+  return startOAuthRedirect(request, naverAuthUrl, STATE_COOKIE, state);
 }

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findOrCreateMember, createAuthResponse } from "@/lib/auth/social";
+import {
+  findOrCreateMember,
+  oauthBaseUrl,
+  oauthErrorRedirect,
+  oauthSuccessRedirect,
+  startOAuthRedirect,
+} from "@/lib/auth/social";
+
+export const runtime = "nodejs";
 
 const KAKAO_CLIENT_ID = process.env.KAKAO_CLIENT_ID || "";
 const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET || "";
-
-// 로그인 후 복귀 경로 — 상대경로만 허용(오픈 리다이렉트 방지)
-function safeNext(next: string | null | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
+const STATE_COOKIE = "kakao_oauth_state";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -17,21 +21,21 @@ export async function GET(request: NextRequest) {
   if (action === "callback") {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const storedState = request.cookies.get("kakao_oauth_state")?.value;
-    // 오류 시 복귀 경로: 시작한 페이지(/trial 등)로 되돌린다.
-    // /login 으로 보내면 이미 관리자로 로그인된 사용자는 미들웨어가 /admin 으로
-    // 튕겨 "관리자 화면이 자꾸 나타나는" 혼란이 생긴다.
-    const errBase = safeNext(request.cookies.get("oauth_next")?.value);
-    const errTo = (err: string) =>
-      NextResponse.redirect(new URL(`${errBase}?error=${err}`, request.url));
+    const storedState = request.cookies.get(STATE_COOKIE)?.value;
+    // 오류 시 복귀 경로는 공통 처리(oauthErrorRedirect)가 정한다: 체험 신청에서 시작했으면 /trial, 그 외 /login
+    const errTo = (err: string) => oauthErrorRedirect(request, STATE_COOKIE, err);
+
+    // 사용자가 카카오 동의 화면에서 취소한 경우 (error=access_denied)
+    if (searchParams.get("error")) {
+      return errTo("cancelled");
+    }
 
     if (!code || !state || state !== storedState) {
       return errTo("invalid_state");
     }
 
     try {
-      const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-      const callbackUrl = `${baseUrl}/api/auth/kakao?action=callback`;
+      const callbackUrl = `${oauthBaseUrl(request)}/api/auth/kakao?action=callback`;
 
       // 토큰 발급
       const tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
@@ -44,49 +48,52 @@ export async function GET(request: NextRequest) {
           redirect_uri: callbackUrl,
           code,
         }),
+        cache: "no-store",
       });
       const tokenData = await tokenRes.json();
 
-      if (tokenData.error) {
+      if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
+        console.error("[kakao] token error:", tokenData.error, tokenData.error_description);
         return errTo("token_failed");
       }
 
       // 사용자 정보 조회
       const profileRes = await fetch("https://kapi.kakao.com/v2/user/me", {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        cache: "no-store",
       });
       const profileData = await profileRes.json();
 
-      const kakaoId = String(profileData.id);
-      const name =
-        profileData.kakao_account?.profile?.nickname || "카카오 사용자";
-      const email = profileData.kakao_account?.email || null;
-
-      const member = await findOrCreateMember({
-        provider: "kakao",
-        provider_id: kakaoId,
-        name,
-        email,
-      });
-
-      if (!member) {
-        return errTo("inactive");
+      // 조회가 실패하면 id 가 없다 — 그대로 진행하면 엉뚱한 계정이 만들어지므로 반드시 확인
+      if (!profileRes.ok || profileData.id === undefined || profileData.id === null) {
+        console.error("[kakao] profile error:", profileData.code, profileData.msg);
+        return errTo("profile_failed");
       }
 
-      const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
-      const response = await createAuthResponse(member, new URL(nextPath, request.url).toString());
-      response.cookies.set("kakao_oauth_state", "", { path: "/", maxAge: 0 });
-      response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
-      return response;
-    } catch {
+      const result = await findOrCreateMember({
+        provider: "kakao",
+        provider_id: profileData.id,
+        name: profileData.kakao_account?.profile?.nickname || "카카오 사용자",
+        email: profileData.kakao_account?.email || null,
+      });
+      if (result.status === "inactive") return errTo("inactive");
+      if (result.status !== "ok") return errTo("kakao_failed");
+
+      return await oauthSuccessRedirect(request, STATE_COOKIE, result.member);
+    } catch (e) {
+      console.error("[kakao] login failed:", e);
       return errTo("kakao_failed");
     }
   }
 
+  // 키 미설정 시 카카오 오류 화면 대신 로그인 페이지에서 안내
+  if (!KAKAO_CLIENT_ID) {
+    return NextResponse.redirect(new URL("/login?error=not_configured", request.url));
+  }
+
   // 카카오 로그인 시작
   const state = crypto.randomUUID();
-  const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-  const callbackUrl = `${baseUrl}/api/auth/kakao?action=callback`;
+  const callbackUrl = `${oauthBaseUrl(request)}/api/auth/kakao?action=callback`;
 
   const kakaoAuthUrl = new URL("https://kauth.kakao.com/oauth/authorize");
   kakaoAuthUrl.searchParams.set("response_type", "code");
@@ -94,21 +101,5 @@ export async function GET(request: NextRequest) {
   kakaoAuthUrl.searchParams.set("redirect_uri", callbackUrl);
   kakaoAuthUrl.searchParams.set("state", state);
 
-  const response = NextResponse.redirect(kakaoAuthUrl.toString());
-  response.cookies.set("kakao_oauth_state", state, {
-    httpOnly: true,
-    path: "/",
-    maxAge: 60 * 10,
-  });
-  // 로그인 후 돌아올 경로 보존 (예: /trial)
-  const nextPath = safeNext(searchParams.get("next"));
-  if (nextPath !== "/") {
-    response.cookies.set("oauth_next", nextPath, {
-      httpOnly: true,
-      path: "/",
-      maxAge: 60 * 10,
-    });
-  }
-
-  return response;
+  return startOAuthRedirect(request, kakaoAuthUrl, STATE_COOKIE, state);
 }

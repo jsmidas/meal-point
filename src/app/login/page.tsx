@@ -7,12 +7,15 @@ import { homeForRole } from "@/lib/auth/roles";
 
 const STORAGE_KEY = "mp_saved_credentials";
 
+import { safeNextPath } from "@/lib/auth/safe-next";
+
 // 소셜 로그인 콜백이 ?error= 로 돌려보낸 사유 안내
 const SOCIAL_ERRORS: Record<string, string> = {
   cancelled: "로그인이 취소되었습니다.",
   invalid_state: "로그인 시간이 초과되었거나 잘못된 접근입니다. 다시 시도해 주세요.",
   inactive: "사용이 중지된 계정입니다. 관리자에게 문의해 주세요.",
   naver_not_configured: "네이버 로그인이 아직 설정되지 않았습니다.",
+  not_configured: "이 로그인 방법은 아직 설정되지 않았습니다.",
 };
 const SOCIAL_ERROR_DEFAULT = "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.";
 
@@ -31,9 +34,8 @@ export default function LoginPage() {
     const err = params.get("error");
     if (err) setError(SOCIAL_ERRORS[err] || SOCIAL_ERROR_DEFAULT);
     const next = params.get("next");
-    if (next && next.startsWith("/") && !next.startsWith("//")) {
-      setNextQuery(`?next=${encodeURIComponent(next)}`);
-    }
+    const safe = safeNextPath(next);
+    if (safe) setNextQuery(`?next=${encodeURIComponent(safe)}`);
   }, []);
 
   useEffect(() => {
@@ -71,10 +73,7 @@ export default function LoginPage() {
         }
         // ?next= 가 있으면 로그인 후 그 경로로 (상대경로만 허용 — 오픈 리다이렉트 방지)
         const nextParam = new URLSearchParams(window.location.search).get("next");
-        const safeNext =
-          nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
-            ? nextParam
-            : null;
+        const safeNext = safeNextPath(nextParam);
         // 거래처(company)는 로그인 후 메인페이지로 — 거기서 "주문하기"로 포털 진입
         router.push(
           safeNext ?? homeForRole(data.role),
@@ -181,7 +180,7 @@ export default function LoginPage() {
             </a>
 
             <a
-              href="/api/auth/kakao"
+              href={`/api/auth/kakao${nextQuery}`}
               className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 text-[#191919]"
               style={{ backgroundColor: "#FEE500" }}
             >
@@ -192,7 +191,7 @@ export default function LoginPage() {
             </a>
 
             <a
-              href="/api/auth/google"
+              href={`/api/auth/google${nextQuery}`}
               className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 border border-border text-[#222] bg-white hover:bg-gray-100"
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

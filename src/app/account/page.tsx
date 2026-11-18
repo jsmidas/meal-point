@@ -196,7 +196,7 @@ export default function AccountPage() {
                 <label className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-border bg-bg-dark cursor-pointer hover:border-primary transition-colors">
                   {cert ? <FileText size={18} className="text-primary shrink-0" /> : <Upload size={18} className="text-text-muted shrink-0" />}
                   <span className={`text-sm truncate ${cert ? "text-text-primary" : "text-text-muted"}`}>
-                    {cert ? `${cert.name} (${(cert.size / 1024 / 1024).toFixed(1)}MB)` : "이미지(JPG/PNG) 또는 PDF, 10MB 이하"}
+                    {cert ? `${cert.name} (${(cert.size / 1024 / 1024).toFixed(1)}MB)` : "이미지(JPG/PNG) 또는 PDF, 4MB 이하"}
                   </span>
                   <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(e) => setCert(e.target.files?.[0] || null)} />
                 </label>

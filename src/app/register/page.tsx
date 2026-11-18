@@ -286,7 +286,7 @@ export default function RegisterPage() {
                   >
                     {cert
                       ? `${cert.name} (${(cert.size / 1024 / 1024).toFixed(1)}MB)`
-                      : "이미지(JPG/PNG) 또는 PDF, 10MB 이하"}
+                      : "이미지(JPG/PNG) 또는 PDF, 4MB 이하"}
                   </span>
                   <input
                     type="file"
