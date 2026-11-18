@@ -1,12 +1,14 @@
 "use client";
 
 import { MessageCircle, Smartphone, Phone } from "lucide-react";
+import KakaoChatLink from "./KakaoChatLink";
+import { KAKAO_CHAT_URL } from "./kakaoChannel";
 
 const options = [
   {
     icon: MessageCircle,
     label: "카카오톡 상담",
-    href: "https://pf.kakao.com/_QxbQxdX/chat",
+    href: KAKAO_CHAT_URL,
     bg: "bg-[#FEE500]",
     iconColor: "text-[#3C1E1E]",
   },
@@ -29,25 +31,38 @@ const options = [
 export default function FloatingCTA() {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-      {options.map((opt) => (
-        <a
-          key={opt.label}
-          href={opt.href}
-          target={opt.href.startsWith("http") ? "_blank" : undefined}
-          rel={opt.href.startsWith("http") ? "noopener noreferrer" : undefined}
-          className={`group flex items-center gap-2`}
-          aria-label={opt.label}
-        >
-          <span className="hidden group-hover:block bg-bg-dark/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-            {opt.label}
-          </span>
-          <div
-            className={`w-12 h-12 rounded-full ${opt.bg} flex items-center justify-center shadow-lg hover:scale-110 transition-transform`}
+      {options.map((opt) => {
+        const body = (
+          <>
+            <span className="hidden group-hover:block bg-bg-dark/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+              {opt.label}
+            </span>
+            <div
+              className={`w-12 h-12 rounded-full ${opt.bg} flex items-center justify-center shadow-lg hover:scale-110 transition-transform`}
+            >
+              <opt.icon size={22} className={opt.iconColor} />
+            </div>
+          </>
+        );
+        return opt.href === KAKAO_CHAT_URL ? (
+          <KakaoChatLink
+            key={opt.label}
+            className="group flex items-center gap-2"
+            aria-label={opt.label}
           >
-            <opt.icon size={22} className={opt.iconColor} />
-          </div>
-        </a>
-      ))}
+            {body}
+          </KakaoChatLink>
+        ) : (
+          <a
+            key={opt.label}
+            href={opt.href}
+            className="group flex items-center gap-2"
+            aria-label={opt.label}
+          >
+            {body}
+          </a>
+        );
+      })}
     </div>
   );
 }
