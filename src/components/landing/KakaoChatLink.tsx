@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { MessageCircle, Phone, Smartphone, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 import { KAKAO_CHAT_URL } from "./kakaoChannel";
 
@@ -65,7 +66,7 @@ export default function KakaoChatLink({ className, children, ...rest }: Props) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="kakao-chat-title"
-            className="relative bg-bg-card border border-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl text-left"
+            className="relative bg-bg-card border border-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl text-left break-keep"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-border">
@@ -86,7 +87,27 @@ export default function KakaoChatLink({ className, children, ...rest }: Props) {
             </div>
 
             <div className="p-5 space-y-5">
-              <div>
+              <div className="flex items-center gap-4">
+                <div className="shrink-0 rounded-xl bg-white p-2">
+                  <QRCodeSVG
+                    value={KAKAO_CHAT_URL}
+                    size={112}
+                    level="M"
+                    title="밀포인트 카카오톡 채널 상담 QR코드"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">
+                    휴대폰으로 QR 찍기
+                  </p>
+                  <p className="mt-1 text-xs text-text-secondary leading-relaxed">
+                    휴대폰 카메라로 찍으면 로그인 없이 카카오톡 채팅방이 바로
+                    열립니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-4">
                 <a
                   href={KAKAO_CHAT_URL}
                   target="_blank"
