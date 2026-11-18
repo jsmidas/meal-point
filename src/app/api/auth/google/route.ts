@@ -4,6 +4,11 @@ import { findOrCreateMember, createAuthResponse } from "@/lib/auth/social";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
+// 로그인 후 복귀 경로 — 상대경로만 허용(오픈 리다이렉트 방지)
+function safeNext(next: string | null | undefined): string {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action");
@@ -57,8 +62,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(new URL("/login?error=inactive", request.url));
       }
 
-      const response = await createAuthResponse(member, new URL("/", request.url).toString());
+      const nextPath = safeNext(request.cookies.get("oauth_next")?.value);
+      const response = await createAuthResponse(member, new URL(nextPath, request.url).toString());
       response.cookies.set("google_oauth_state", "", { path: "/", maxAge: 0 });
+      response.cookies.set("oauth_next", "", { path: "/", maxAge: 0 });
       return response;
     } catch {
       return NextResponse.redirect(new URL("/login?error=google_failed", request.url));
@@ -84,6 +91,15 @@ export async function GET(request: NextRequest) {
     path: "/",
     maxAge: 60 * 10,
   });
+  // 로그인 후 돌아올 경로 보존 (예: 회원가입 → /account)
+  const nextPath = safeNext(searchParams.get("next"));
+  if (nextPath !== "/") {
+    response.cookies.set("oauth_next", nextPath, {
+      httpOnly: true,
+      path: "/",
+      maxAge: 60 * 10,
+    });
+  }
 
   return response;
 }
