@@ -63,6 +63,22 @@ function statementBasedTotal(statements: StatementWithItems[]): number {
   return billingAmountsFromStatements(statements).total;
 }
 
+// 판매액 기준 부가세. 청구 부가세는 명세서별 부가세의 합이므로, 판매액이 명세서 공급가 합과 같으면
+// 그 합을 그대로 쓴다(판매 기준 금액과 청구액이 반올림 몇 원 때문에 어긋나 보이지 않게).
+// 명세서가 없거나 금액이 다르면 판매액 × 10%.
+function salesBasedTax(salesAmount: number, statements: { supply_amount?: number | null; tax_amount?: number | null; shipping_fee?: number | null }[]): number {
+  if (statements.length > 0) {
+    const a = billingAmountsFromStatements(statements);
+    if (a.supply === salesAmount) return a.tax;
+  }
+  return Math.round(salesAmount * 0.1);
+}
+
+// 판매 기준 청구 예상액 = 판매액 + 부가세 + 그 달 명세서의 배송비
+function salesBasedTotal(salesAmount: number, statements: { supply_amount?: number | null; tax_amount?: number | null; shipping_fee?: number | null }[]): number {
+  return salesAmount + salesBasedTax(salesAmount, statements) + billingAmountsFromStatements(statements).shipping;
+}
+
 // 출고 로그 → 매칭용 라인 변환
 function logToSalesLine(log: SalesLog): SalesLineForMatch {
   return {
@@ -82,7 +98,6 @@ export default function BillingPage() {
 
   const [month, setMonth] = useState(currentMonthKST());
   const [companyRows, setCompanyRows] = useState<CompanyRow[]>([]);
-  const [allCompanies, setAllCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 이전 월 누계 미수금: companyId → 미결 청구 상세 배열 (분배 충당용)
@@ -103,6 +118,7 @@ export default function BillingPage() {
     unclassified: number; // 청구단위 입금으로 인해 어느 명세서에 갚았는지 모르는 금액 (양수=미결 중 미분류)
     estimated?: boolean; // 세금계산서/청구 미발행 → 명세서 기준 가정산 미수 (입금 시 청구로 승격)
     estSupply?: number; // 가정산 공급가 합계 (승격 시 billing.total_supply)
+    estTax?: number; // 가정산 부가세 = 명세서별 부가세의 합 (승격 시 billing.total_tax)
     estTotal?: number; // 가정산 합계(세액 포함) (승격 시 billing.total_amount)
   };
   const [prevUnpaidDetailMap, setPrevUnpaidDetailMap] = useState<Record<string, PrevUnpaidDetail[]>>({});
@@ -117,6 +133,8 @@ export default function BillingPage() {
 
   // 세금계산서 모달 (CompanyRow 기반으로 변경)
   const [taxModal, setTaxModal] = useState<CompanyRow | null>(null);
+  // 화면을 연 시각 — "마지막 입금 처리 후 며칠" 계산용 (렌더링마다 현재 시각을 다시 읽지 않는다)
+  const [openedAtMs] = useState(() => Date.now());
   const [taxDate, setTaxDate] = useState(todayKST());
   const [taxNumber, setTaxNumber] = useState("");
   const [taxChecked, setTaxChecked] = useState<Set<string>>(new Set()); // 선택된 명세서 ID
@@ -228,6 +246,8 @@ export default function BillingPage() {
   function changeMonth(delta: number) {
     const [y, m] = month.split("-").map(Number);
     const d = new Date(y, m - 1 + delta, 1);
+    // 월을 바꾸면 그 달 자료를 다시 읽는다 → 읽는 동안 로딩 표시
+    setLoading(true);
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
@@ -236,8 +256,14 @@ export default function BillingPage() {
     return `${y}년 ${m}월`;
   }, [month]);
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     void loadPaymentHistory(historyDays); // 입금 등록/수정/삭제 후 내역도 함께 갱신
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
@@ -253,7 +279,7 @@ export default function BillingPage() {
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
       // 이월 미수는 과거 청구·명세서 전체로 계산한다 → 건수가 늘어도 잘리지 않게 끝까지 읽는다
       fetchAllRows(() => db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }).order("id")),
-      fetchAllRows(() => db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, shipping_fee, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }).order("id")),
+      fetchAllRows(() => db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, tax_amount, shipping_fee, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }).order("id")),
     ]);
 
     // ── 사업자번호 그룹 인덱스 ──
@@ -336,8 +362,9 @@ export default function BillingPage() {
     const stmtsByBillingId: Record<string, StmtRow[]> = {};
     const estDetails: DetailWithRaw[] = []; // 가정산 stub (청구 미생성). 명세서 순회 후 금액 확정.
     const estSupplyById: Record<string, number> = {};
+    const estTaxById: Record<string, number> = {}; // 가정산 부가세 = 명세서별 부가세의 합
     const estShippingById: Record<string, number> = {}; // 가정산 배송비 합계 // 가정산 stub billingId → 공급가 합계
-    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; supply_amount: number; shipping_fee?: number | null; total_amount: number; companies?: { id: string; name: string } | null }>) {
+    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; supply_amount: number; tax_amount?: number | null; shipping_fee?: number | null; total_amount: number; companies?: { id: string; name: string } | null }>) {
       const stMonth = s.statement_date.slice(0, 7);
       const primary = toPrimary(s.company_id);
       const gmKey = `${primary}|${stMonth}`;
@@ -361,10 +388,12 @@ export default function BillingPage() {
         (prevDetail[primary] ||= []).push(detail);
         estDetails.push(detail);
         estSupplyById[estId] = 0;
+        estTaxById[estId] = 0;
         estShippingById[estId] = 0;
       }
       if (detail.estimated) {
         estSupplyById[detail.billingId] += s.supply_amount || 0;
+        estTaxById[detail.billingId] = (estTaxById[detail.billingId] || 0) + billingAmountsFromStatements([s]).tax;
         estShippingById[detail.billingId] = (estShippingById[detail.billingId] || 0) + (s.shipping_fee || 0);
       }
       const taggedPaid = paidByStmt[s.id] || 0;
@@ -378,12 +407,14 @@ export default function BillingPage() {
         companyName: s.companies?.name,
       });
     }
-    // 3.5) 가정산 stub 금액 확정 — 세액=공급가 합계×10% 반올림, 배송비 포함 (실제 청구 생성 규칙과 동일)
+    // 3.5) 가정산 stub 금액 확정 — 세액=명세서별 부가세의 합, 배송비 포함 (실제 청구 생성 규칙과 동일)
     for (const d of estDetails) {
       const supply = estSupplyById[d.billingId] || 0;
-      const total = supply + Math.round(supply * 0.1) + (estShippingById[d.billingId] || 0);
+      const estTax = estTaxById[d.billingId] || 0;
+      const total = supply + estTax + (estShippingById[d.billingId] || 0);
       const tagged = (stmtsByBillingId[d.billingId] || []).reduce((s, x) => s + x.taggedPaid, 0);
       d.estSupply = supply;
+      d.estTax = estTax;
       d.estTotal = total;
       d.totalAmount = total;
       d.paidAmount = tagged;
@@ -423,7 +454,6 @@ export default function BillingPage() {
     }
 
     const companies: Company[] = compRes.data || [];
-    setAllCompanies(companies);
 
     // 매출 인정 기준: 판매관리에서 체크(승인)한 "날짜 + 거래처"의 판매만 (손익·대시보드와 같은 규칙)
     const confirmedSales = buildConfirmedSales(confirmRes.data);
@@ -549,7 +579,7 @@ export default function BillingPage() {
   }
 
   useEffect(() => {
-    fetchData();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
@@ -591,7 +621,16 @@ export default function BillingPage() {
     return taxModal.sales.amount || taxModal.billing?.total_supply || 0;
   }, [taxModal, taxChecked, taxSupplyOverride]);
 
-  const taxComputedTax = Math.round(taxComputedSupply * 0.1);
+  // 세액: 발행 공급가가 명세서 공급가 합과 같으면 그 명세서들의 부가세 합(청구 규칙과 동일),
+  // 직접 입력했거나 명세서와 금액이 다르면 공급가 × 10%
+  const taxComputedTax = useMemo(() => {
+    if (!taxModal) return 0;
+    if (taxSupplyOverride === null) {
+      const target = taxChecked.size > 0 ? taxModal.statements.filter((s) => taxChecked.has(s.id)) : taxModal.statements;
+      return salesBasedTax(taxComputedSupply, target);
+    }
+    return Math.round(taxComputedSupply * 0.1);
+  }, [taxModal, taxChecked, taxSupplyOverride, taxComputedSupply]);
   const taxComputedTotal = taxComputedSupply + taxComputedTax;
   // 청구 합계에 더할 배송비: 명세서를 골랐으면 고른 명세서의, 아니면 그 달 명세서 전체의 배송비
   const taxShipping = useMemo(() => {
@@ -671,8 +710,6 @@ export default function BillingPage() {
   async function handleTaxInvoice(e: React.FormEvent) {
     e.preventDefault();
     if (!taxModal) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
 
     let billingId = taxModal.billing?.id;
 
@@ -780,7 +817,7 @@ export default function BillingPage() {
           const det = (prevUnpaidDetailMap[payModalRow.id] || []).find((d) => d.billingId === sentinel);
           const estMonth = det?.billingMonth || entry.billingMonth || month;
           const supply = det?.estSupply ?? 0;
-          const tax = Math.round(supply * 0.1);
+          const tax = det?.estTax ?? Math.round(supply * 0.1);
           const total = det?.estTotal ?? supply + tax;
           const created = await createBillingRow(estMonth, {
             company_id: payModalRow.id,
@@ -800,7 +837,7 @@ export default function BillingPage() {
       // 당월 청구가 없으면 자동 생성
       if (!billingId) {
         const supply = payModalRow.sales.amount || entry.amount;
-        const tax = Math.round(supply * 0.1);
+        const tax = salesBasedTax(supply, payModalRow.statements);
         const created = await createBillingRow(month, {
           company_id: payModalRow.id,
           total_supply: supply,
@@ -999,7 +1036,7 @@ export default function BillingPage() {
       }
     } else {
       billingOutstanding = payModalRow.sales.amount > 0
-        ? payModalRow.sales.amount + Math.round(payModalRow.sales.amount * 0.1)
+        ? payModalRow.sales.amount + salesBasedTax(payModalRow.sales.amount, payModalRow.statements)
         : 0;
     }
     const curUnclassified = billingOutstanding - curStmtSum;
@@ -1206,8 +1243,6 @@ export default function BillingPage() {
   async function handleCreateBilling(e: React.FormEvent) {
     e.preventDefault();
     if (!billingModal) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     const total = billingSupply + billingTax;
     const created = await createBillingRow(month, {
       company_id: billingModal.companyId,
@@ -1225,15 +1260,6 @@ export default function BillingPage() {
     setBillingTax(0);
     setBillingNotes("");
     fetchData();
-  }
-
-  function openBillingModal(row: CompanyRow) {
-    const supply = row.sales.amount;
-    const tax = Math.round(supply * 0.1);
-    setBillingModal({ companyId: row.id, companyName: row.name, salesAmount: row.sales.amount });
-    setBillingSupply(supply);
-    setBillingTax(tax);
-    setBillingNotes("");
   }
 
   // 단계 상태 아이콘
@@ -1395,7 +1421,7 @@ export default function BillingPage() {
                           <AlertTriangle size={12} /> {mismatchSummary}
                         </span>
                       )}
-                      {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1) + billingAmountsFromStatements(row.statements).shipping) !== billing.total_amount && (
+                      {billing && row.sales.amount > 0 && salesBasedTotal(row.sales.amount, row.statements) !== billing.total_amount && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 bg-orange-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
                           <AlertTriangle size={10} /> 청구액 불일치
                         </span>
@@ -1601,7 +1627,7 @@ export default function BillingPage() {
                         {/* 판매액과 청구액 차이 경고 */}
                         {(() => {
                           // 판매 기준 금액(공급가+부가세)에 그 달 명세서의 배송비를 더해 청구액과 비교한다
-                          const expectedBilling = row.sales.amount + Math.round(row.sales.amount * 0.1) + billingAmountsFromStatements(row.statements).shipping;
+                          const expectedBilling = salesBasedTotal(row.sales.amount, row.statements);
                           const diff = expectedBilling - billing.total_amount;
                           return diff !== 0 && row.sales.amount > 0 ? (
                             <div className="flex justify-between text-[10px] bg-yellow-500/10 rounded px-1.5 py-0.5 -mx-1.5">
@@ -1798,7 +1824,7 @@ export default function BillingPage() {
           <div className="flex items-center gap-3 flex-wrap">
             {/* 마지막 처리일 + 이후 경과 현황 */}
             {lastPaymentDate ? (() => {
-              const daysSince = Math.floor((Date.now() - new Date(lastPaymentDate + "T00:00:00").getTime()) / 86400000);
+              const daysSince = Math.floor((openedAtMs - new Date(lastPaymentDate + "T00:00:00").getTime()) / 86400000);
               const tone = daysSince <= 3 ? "text-emerald-400" : daysSince <= 7 ? "text-yellow-400" : "text-red-400";
               return (
                 <span className="text-xs text-text-secondary">
@@ -2014,6 +2040,13 @@ export default function BillingPage() {
                   <span className="text-text-muted">세액 (10%)</span>
                   <span className="text-text-primary">{formatNumber(taxComputedTax)}원</span>
                 </div>
+                {taxComputedTax !== Math.round(taxComputedSupply * 0.1) && (
+                  <p className="text-[11px] text-yellow-400/90 leading-snug">
+                    세액은 명세서별 부가세의 합입니다. 홈택스가 공급가액으로 자동 계산한 세액(
+                    {formatNumber(Math.round(taxComputedSupply * 0.1))}원)과 다르니, 발행할 때 세액을{" "}
+                    {formatNumber(taxComputedTax)}원으로 고쳐 입력하세요.
+                  </p>
+                )}
                 <div className="flex justify-between text-sm font-bold border-t border-border pt-2">
                   <span className="text-text-primary">합계</span>
                   <span className="text-accent">{formatNumber(taxComputedTotal)}원</span>
@@ -2420,7 +2453,8 @@ export default function BillingPage() {
       {salesDetailModal && (() => {
         const logs = salesDetailModal.logs;
         const supply = logs.reduce((s, l) => s + logAmount(l), 0);
-        const tax = Math.round(supply * 0.1);
+        // 판매액이 명세서 공급가 합과 같으면 명세서별 부가세의 합 (청구 규칙과 같은 금액)
+        const tax = salesBasedTax(supply, salesDetailModal.statements);
         const salesLines = logs.map(logToSalesLine);
         const stmtItemsForMatch = salesDetailModal.statements.flatMap((s) => s.statement_items || []);
         const match = matchSalesToStatements(salesLines, stmtItemsForMatch);
@@ -2562,7 +2596,7 @@ export default function BillingPage() {
                   const supplyDiff = supply - stmtSupply;
                   const billingTotal = billing?.total_amount ?? 0;
                   const stmtShipping = billingAmountsFromStatements(stmts).shipping;
-                  const expectedBilling = supply + tax + stmtShipping;
+                  const expectedBilling = supply + salesBasedTax(supply, stmts) + stmtShipping;
                   const billingDiff = expectedBilling - billingTotal;
                   return (
                     <div className="border-t border-border pt-3 mt-3 space-y-2">

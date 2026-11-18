@@ -26,8 +26,8 @@ export default function CompanyAccountsSection({ companyId }: Props) {
   const [form, setForm] = useState({ login_id: "", password: "", name: "" });
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  const readAccounts = useCallback(async () => {
     const res = await fetch(`/api/admin/accounts?company_id=${companyId}`);
     const data = await res.json();
     if (data.ok) setAccounts(data.accounts);
@@ -35,9 +35,15 @@ export default function CompanyAccountsSection({ companyId }: Props) {
     setLoading(false);
   }, [companyId]);
 
+  /** 다시 불러오기(저장·삭제 후): 로딩 표시를 켠 뒤 읽는다 */
+  function load() {
+    setLoading(true);
+    return readAccounts();
+  }
+
   useEffect(() => {
-    load();
-  }, [load]);
+    readAccounts();
+  }, [readAccounts]);
 
   async function post(body: Record<string, unknown>) {
     setBusy(true);

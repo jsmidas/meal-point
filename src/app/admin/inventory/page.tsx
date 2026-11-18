@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
+import { ensureInventoryRow } from "@/lib/inventory-row";
 import type { InventoryWithProduct, InventoryLog, Product } from "@/lib/supabase/types";
 import { formatNumber, todayKST } from "@/lib/utils";
 import type { Company } from "@/lib/supabase/types";
@@ -82,8 +83,14 @@ export default function InventoryPage() {
     return `${y}년 ${m}월`;
   }, [month]);
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
@@ -110,7 +117,7 @@ export default function InventoryPage() {
   }
 
   useEffect(() => {
-    fetchData();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -263,33 +270,52 @@ export default function InventoryPage() {
     // 자가소비 사용처 기본값: 이름에 '다함'이 들어간 거래처 (본사 우선)
     const daham = companies.find((c) => c.name.includes("다함") && c.name.includes("본사"))
       || companies.find((c) => c.name.includes("다함"));
-    setEntryCompanyId(daham?.id || "");
+    const companyId = daham?.id || "";
+    setEntryCompanyId(companyId);
     setShowEntry(true);
+    loadEntryPricing(productId, companyId);
   }
 
   const entryProduct = products.find((p) => p.id === entryProductId);
   const entryBoxQty = entryProduct?.box_quantity ?? 1;
 
-  // 사용처가 바뀌면 그 업체 단가를 불러온다
-  useEffect(() => {
-    if (!showEntry) return;
-    if (!entryCompanyId) { setEntryCompanyPrices([]); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("company_prices")
-      .select("product_id, custom_price")
-      .eq("company_id", entryCompanyId)
-      .then(({ data }: { data: { product_id: string; custom_price: number }[] | null }) => setEntryCompanyPrices(data || []));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryCompanyId, showEntry]);
+  // 판매 단가(업체 단가 → 없으면 상품 판매가)와 매입 단가(상품 매입가)를 채운다
+  function applyEntryPrices(productId: string, companyPrices: { product_id: string; custom_price: number }[]) {
+    const product = products.find((p) => p.id === productId);
+    if (!product) { setEntrySalePrice(0); setEntryCostPrice(0); return; }
+    const custom = companyPrices.find((cp) => cp.product_id === product.id)?.custom_price;
+    setEntrySalePrice(custom ?? product.selling_price ?? 0);
+    setEntryCostPrice(product.cost_price ?? 0);
+  }
 
-  // 상품·사용처가 바뀌면 판매 단가(업체 단가 → 없으면 상품 판매가)와 매입 단가(상품 매입가)를 채운다
-  useEffect(() => {
-    if (!entryProduct) { setEntrySalePrice(0); setEntryCostPrice(0); return; }
-    const custom = entryCompanyPrices.find((cp) => cp.product_id === entryProduct.id)?.custom_price;
-    setEntrySalePrice(custom ?? entryProduct.selling_price ?? 0);
-    setEntryCostPrice(entryProduct.cost_price ?? 0);
-  }, [entryProduct, entryCompanyPrices]);
+  // 사용처가 정해지면 그 업체 단가를 불러와 단가를 채운다
+  const entryPriceRequest = useRef(0);
+  async function loadEntryPricing(productId: string, companyId: string) {
+    // 사용처를 빠르게 바꿔도 마지막으로 고른 사용처의 단가만 반영한다
+    const requestId = ++entryPriceRequest.current;
+    let companyPrices: { product_id: string; custom_price: number }[] = [];
+    if (companyId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("company_prices")
+        .select("product_id, custom_price")
+        .eq("company_id", companyId);
+      if (requestId !== entryPriceRequest.current) return;
+      companyPrices = data || [];
+    }
+    setEntryCompanyPrices(companyPrices);
+    applyEntryPrices(productId, companyPrices);
+  }
+
+  function handleEntryCompanyChange(companyId: string) {
+    setEntryCompanyId(companyId);
+    loadEntryPricing(entryProductId, companyId);
+  }
+
+  function handleEntryProductChange(productId: string) {
+    setEntryProductId(productId);
+    applyEntryPrices(productId, entryCompanyPrices);
+  }
   /** 등록 일자 기준 장부 재고 (그 날까지의 로그 누적) */
   const entryLedgerStock = useMemo(() => {
     if (!entryProductId) return 0;
@@ -322,24 +348,8 @@ export default function InventoryPage() {
       log_date: entryDate,
     });
 
-    const { data: inv } = await db
-      .from("inventory")
-      .select("*")
-      .eq("product_id", entryProductId)
-      .maybeSingle();
-    const newStock =
-      entryKind === "self" ? Math.max(0, (inv?.current_stock || 0) - entryQty) : entryQty;
-    if (inv) {
-      await dbUpdate(
-        "inventory",
-        entryKind === "self"
-          ? { current_stock: newStock, last_out_date: entryDate }
-          : { current_stock: newStock },
-        { product_id: entryProductId }
-      );
-    } else {
-      await dbInsert("inventory", { product_id: entryProductId, current_stock: newStock });
-    }
+    // 재고 수량은 로그 누적으로 구한다 → 재고 목록에 이 상품이 보이도록 행만 보장한다
+    await ensureInventoryRow(db, entryProductId);
 
     setSubmitting(false);
     setShowEntry(false);
@@ -355,18 +365,7 @@ export default function InventoryPage() {
       )
     )
       return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    if (kind === "self" && log.product_id) {
-      const { data: inv } = await db
-        .from("inventory")
-        .select("*")
-        .eq("product_id", log.product_id)
-        .maybeSingle();
-      if (inv) {
-        await dbUpdate("inventory", { current_stock: inv.current_stock + log.quantity }, { product_id: log.product_id });
-      }
-    }
+    // 재고 수량은 로그 누적으로 구하므로 로그만 지우면 된다
     await dbDelete("inventory_logs", { id: log.id });
     fetchData();
   }
@@ -878,7 +877,7 @@ export default function InventoryPage() {
                     <label className="block text-sm text-text-secondary mb-1">사용처</label>
                     <select
                       value={entryCompanyId}
-                      onChange={(e) => setEntryCompanyId(e.target.value)}
+                      onChange={(e) => handleEntryCompanyChange(e.target.value)}
                       aria-label="사용처 선택"
                       className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"
                     >
@@ -897,7 +896,7 @@ export default function InventoryPage() {
                 </label>
                 <select
                   value={entryProductId}
-                  onChange={(e) => setEntryProductId(e.target.value)}
+                  onChange={(e) => handleEntryProductChange(e.target.value)}
                   required
                   aria-label="상품 선택"
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary"

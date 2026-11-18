@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { dbInsert, dbDelete } from "@/lib/db";
@@ -51,40 +51,45 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 거래처 선택 시 해당 거래처의 단가 로드
-  useEffect(() => {
-    if (!companyId) { setCompanyPrices({}); setCompanyBoxPrices({}); return; }
-    async function loadPrices() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
-        .from("company_prices")
-        .select("product_id, custom_price, box_price")
-        .eq("company_id", companyId);
-      const map: Record<string, number> = {};
-      const boxMap: Record<string, number> = {};
-      for (const row of data || []) {
-        map[row.product_id] = Number(row.custom_price);
-        if (Number(row.box_price) > 0) boxMap[row.product_id] = Number(row.box_price);
-      }
-      setCompanyPrices(map);
-      setCompanyBoxPrices(boxMap);
-      // 기존 항목들의 단가도 업데이트 (박스 단위 항목은 박스 금액, 그 외는 개당 단가)
-      setItems((prev) =>
-        prev.map((item) => {
-          const p = products.find((pr) => pr.id === item.product_id);
-          if (!p && map[item.product_id] === undefined) return item;
-          const resolved = resolveSellPrice(
-            p,
-            map[item.product_id] !== undefined ? { custom_price: map[item.product_id], box_price: boxMap[item.product_id] } : null,
-          );
-          const price = item.unit === "박스" ? resolved.box : resolved.ea;
-          return { ...item, unit_price: price, amount: item.quantity * price };
-        })
-      );
+  // 거래처를 고르면 그 거래처의 단가를 불러와 이미 넣은 항목의 단가도 맞춘다
+  const priceRequest = useRef(0);
+  async function handleCompanySelect(nextCompanyId: string) {
+    setCompanyId(nextCompanyId);
+    // 거래처를 빠르게 바꿔도 마지막으로 고른 거래처의 단가만 반영한다
+    const requestId = ++priceRequest.current;
+    if (!nextCompanyId) {
+      setCompanyPrices({});
+      setCompanyBoxPrices({});
+      return;
     }
-    loadPrices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from("company_prices")
+      .select("product_id, custom_price, box_price")
+      .eq("company_id", nextCompanyId);
+    if (requestId !== priceRequest.current) return;
+    const map: Record<string, number> = {};
+    const boxMap: Record<string, number> = {};
+    for (const row of data || []) {
+      map[row.product_id] = Number(row.custom_price);
+      if (Number(row.box_price) > 0) boxMap[row.product_id] = Number(row.box_price);
+    }
+    setCompanyPrices(map);
+    setCompanyBoxPrices(boxMap);
+    // 기존 항목들의 단가도 업데이트 (박스 단위 항목은 박스 금액, 그 외는 개당 단가)
+    setItems((prev) =>
+      prev.map((item) => {
+        const p = products.find((pr) => pr.id === item.product_id);
+        if (!p && map[item.product_id] === undefined) return item;
+        const resolved = resolveSellPrice(
+          p,
+          map[item.product_id] !== undefined ? { custom_price: map[item.product_id], box_price: boxMap[item.product_id] } : null,
+        );
+        const price = item.unit === "박스" ? resolved.box : resolved.ea;
+        return { ...item, unit_price: price, amount: item.quantity * price };
+      })
+    );
+  }
 
   function getProductPrice(productId: string): number {
     if (companyPrices[productId] !== undefined) return companyPrices[productId];
@@ -217,7 +222,7 @@ export default function NewOrderPage() {
               </label>
               <select
                 value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
+                onChange={(e) => handleCompanySelect(e.target.value)}
                 required
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-bg-dark text-text-primary focus:outline-none focus:border-primary transition-colors"
               >

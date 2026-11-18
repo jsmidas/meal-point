@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { dbInsert, dbUpdate } from "@/lib/db";
-import type { Product, Database } from "@/lib/supabase/types";
+import type { Product } from "@/lib/supabase/types";
 import { X } from "lucide-react";
 
 interface Props {

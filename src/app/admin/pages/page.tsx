@@ -8,7 +8,6 @@ import {
   FileEdit,
   Eye,
   Plus,
-  CheckCircle,
   XCircle,
   Image as ImageIcon,
 } from "lucide-react";

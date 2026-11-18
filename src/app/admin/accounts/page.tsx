@@ -75,8 +75,8 @@ export default function AccountsPage() {
     [companies],
   );
 
-  const loadAccounts = useCallback(async () => {
-    setLoading(true);
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  const readAccounts = useCallback(async () => {
     const [res, adminRes] = await Promise.all([fetch("/api/admin/accounts"), fetch("/api/admin/accounts?admins=1")]);
     const data = await res.json();
     const adminData = await adminRes.json();
@@ -85,6 +85,12 @@ export default function AccountsPage() {
     if (adminData.ok) setAdmins(adminData.admins);
     setLoading(false);
   }, []);
+
+  /** 다시 불러오기(저장·삭제 후): 로딩 표시를 켠 뒤 읽는다 */
+  function loadAccounts() {
+    setLoading(true);
+    return readAccounts();
+  }
 
   const loadCompanies = useCallback(async () => {
     const { data } = await supabase
@@ -102,10 +108,10 @@ export default function AccountsPage() {
   }, []);
 
   useEffect(() => {
-    loadAccounts();
+    readAccounts();
     loadCompanies();
     loadPending();
-  }, [loadAccounts, loadCompanies, loadPending]);
+  }, [readAccounts, loadCompanies, loadPending]);
 
   async function viewCert(m: PendingMember) {
     const res = await fetch(`/api/admin/accounts?cert=${m.id}`);

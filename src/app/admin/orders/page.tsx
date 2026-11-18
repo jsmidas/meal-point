@@ -16,8 +16,14 @@ export default function OrdersPage() {
 
   const supabase = createClient();
 
-  async function fetchOrders() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchOrders() {
     setLoading(true);
+    return loadOrders();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadOrders() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.from("orders") as any)
       .select("*, companies(*)")
@@ -27,7 +33,7 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
-    fetchOrders();
+    loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

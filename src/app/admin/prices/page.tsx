@@ -77,12 +77,15 @@ export default function PricesPage() {
     })();
   }, [load]);
 
-  // 모드 전환 시 dirty 초기화
-  useEffect(() => {
+  // 판매가 ↔ 매입가 전환: 저장하지 않은 수정분은 버린다
+  function switchMode(next: PriceMode) {
+    if (next === mode) return;
+    setMode(next);
     setDirty({});
     setDirtyBox({});
+    setAutoEaKeys(new Set());
     setSaved(false);
-  }, [mode]);
+  }
 
   // 수정된 칸 (개당 단가 또는 박스 금액 중 하나라도 바뀐 거래처·상품)
   const dirtyKeys = useMemo(() => [...new Set([...Object.keys(dirty), ...Object.keys(dirtyBox)])], [dirty, dirtyBox]);
@@ -395,7 +398,7 @@ export default function PricesPage() {
           <div className="inline-flex items-center rounded-xl border border-border bg-bg-card p-1">
             <button
               type="button"
-              onClick={() => setMode("sell")}
+              onClick={() => switchMode("sell")}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 mode === "sell" ? "bg-primary text-bg-dark" : "text-text-muted hover:text-text-primary"
               }`}
@@ -404,7 +407,7 @@ export default function PricesPage() {
             </button>
             <button
               type="button"
-              onClick={() => setMode("cost")}
+              onClick={() => switchMode("cost")}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 mode === "cost" ? "bg-primary text-bg-dark" : "text-text-muted hover:text-text-primary"
               }`}

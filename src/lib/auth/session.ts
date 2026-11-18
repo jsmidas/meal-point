@@ -4,7 +4,7 @@
  * 값 형식: base64url(JSON payload) + "." + base64url(HMAC-SHA256(payload, SESSION_SECRET))
  * - 서명이 없거나 틀리면 무효 → 쿠키를 임의로 만들어 role 을 바꾸는 위조가 불가능하다.
  * - 만료(exp)를 payload 에 넣어 서버에서 검증한다.
- * - Web Crypto 만 사용하므로 Edge(middleware)와 Node(API Route) 모두에서 동작한다.
+ * - Web Crypto 만 사용하므로 프록시(proxy, 예전 middleware)와 API Route 모두에서 동작한다.
  */
 import type { SessionRole } from "./roles";
 

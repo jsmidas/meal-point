@@ -54,16 +54,21 @@ export function generateBillingNumber(month: string) {
 /**
  * 명세서 묶음으로 청구(billings) 금액을 계산한다. 청구 금액을 쓰는 모든 곳이 이 규칙을 따른다.
  *  - 공급가 = 명세서 공급가의 합
- *  - 부가세 = 공급가 합 × 10% (합산 후 반올림 — 세금계산서 금액과 맞추기 위함)
+ *  - 부가세 = 명세서별 부가세의 합 (명세서 합계의 합과 청구 합계가 1원도 다르지 않게 한다.
+ *    홈택스가 월 공급가 합에 10%를 자동 계산한 세액과는 몇 원 다를 수 있다 — 발행 때 세액을 이 금액으로 맞춘다)
+ *    부가세가 없는 행(예전 조회)은 그 명세서 공급가 × 10% 반올림으로 본다 — 명세서 저장 규칙과 같다.
  *  - 배송비 = 명세서 배송비의 합 (부가세를 따로 붙이지 않는다 — 명세서와 같은 방식)
  *  - 청구 합계 = 공급가 + 부가세 + 배송비
  */
 export function billingAmountsFromStatements(
-  statements: { supply_amount?: number | null; shipping_fee?: number | null }[],
+  statements: { supply_amount?: number | null; tax_amount?: number | null; shipping_fee?: number | null }[],
 ): { supply: number; tax: number; shipping: number; total: number } {
   const supply = statements.reduce((s, st) => s + (st.supply_amount || 0), 0);
   const shipping = statements.reduce((s, st) => s + (st.shipping_fee || 0), 0);
-  const tax = Math.round(supply * 0.1);
+  const tax = statements.reduce(
+    (s, st) => s + (st.tax_amount != null ? st.tax_amount : Math.round((st.supply_amount || 0) * 0.1)),
+    0,
+  );
   return { supply, tax, shipping, total: supply + tax + shipping };
 }
 

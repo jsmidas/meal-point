@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type {
   Product,
-  ProductPage,
   KeyPoint,
   SpecItem,
   ProcessStep,
@@ -100,17 +99,6 @@ export default function ProductDetailEditorPage() {
   const DEFAULT_SECTION_ORDER = ["hero", "feature", "keypoints", "specs", "detail", "process", "gallery", "figma"];
   const [sectionOrder, setSectionOrder] = useState(DEFAULT_SECTION_ORDER);
 
-  const SECTION_LABELS: Record<string, string> = {
-    hero: "히어로 섹션",
-    feature: "특장점 섹션",
-    keypoints: "키포인트",
-    specs: "제품 스펙",
-    detail: "상세 설명",
-    process: "공정/선택 안내",
-    gallery: "갤러리",
-    figma: "Figma 디자인",
-  };
-
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -203,9 +191,8 @@ export default function ProductDetailEditorPage() {
     );
   }
 
+  // loading 초기값이 이미 true 다 (상품이 바뀌면 화면이 새로 만들어진다) → 여기서는 읽기만 한다
   const fetchData = useCallback(async () => {
-    setLoading(true);
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const { data: prod } = await db
@@ -273,8 +260,6 @@ export default function ProductDetailEditorPage() {
 
   async function handleSave() {
     setSaving(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     const filteredHeroImages = form.hero_images.filter(Boolean);
     const filteredFeatureImages = form.feature_images.filter(Boolean);
     const payload = {

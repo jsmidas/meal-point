@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog } from "@/lib/supabase/types";
-import { formatNumber, formatDate, todayKST } from "@/lib/utils";
+import { formatNumber, todayKST } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete, dbUpsert } from "@/lib/db";
+import { ensureInventoryRow } from "@/lib/inventory-row";
 import {
   Plus,
   ChevronLeft,
@@ -23,7 +24,7 @@ import {
   PackageMinus,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { logAmount, logBoxPrice } from "@/lib/inventory";
 import { resolveSellPrice } from "@/lib/box-price";
@@ -60,6 +61,7 @@ function newManualItem(): SaleItem {
 export default function SalesPage() {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [tab, setTab] = useState<"list" | "calendar">("calendar");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -79,8 +81,6 @@ export default function SalesPage() {
 
   async function toggleSaleCheck(dateStr: string, companyId: string) {
     const key = `${dateStr}_${companyId}`;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
     if (checkedSales.has(key)) {
       await dbDelete("sale_checks", { sale_date: dateStr, company_id: companyId });
       setCheckedSales((prev) => { const next = new Set(prev); next.delete(key); return next; });
@@ -97,7 +97,9 @@ export default function SalesPage() {
   });
 
   // 판매 등록/수정 모달
-  const [showModal, setShowModal] = useState(false);
+  // 대시보드 바로가기(/admin/sales?new=1)로 들어왔는가 — 그렇다면 등록 모달을 연 채로 시작한다
+  const [openedWithNew] = useState(() => searchParams.get("new") === "1");
+  const [showModal, setShowModal] = useState(openedWithNew);
   const [editingLogId, setEditingLogId] = useState<string | null>(null); // null=신규, string=수정
   const [formDate, setFormDate] = useState(todayKST());
   const [formCompanyId, setFormCompanyId] = useState("");
@@ -119,8 +121,14 @@ export default function SalesPage() {
     return `${y}년 ${m}월`;
   }, [month]);
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
@@ -156,13 +164,10 @@ export default function SalesPage() {
   }
 
   useEffect(() => {
-    fetchData();
-    // 대시보드 바로가기(/admin/sales?new=1) 진입 시 판매 등록 모달 자동 오픈
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("new") === "1") {
-      resetForm();
-      setShowModal(true);
-      window.history.replaceState(null, "", "/admin/sales");
-    }
+    loadData();
+    // 대시보드 바로가기(/admin/sales?new=1)로 들어오면 판매 등록 모달이 열린 채로 시작한다(showModal 초기값).
+    // 새로고침해도 다시 열리지 않도록 주소에서 ?new=1 만 지운다.
+    if (openedWithNew) window.history.replaceState(null, "", "/admin/sales");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -208,49 +213,52 @@ export default function SalesPage() {
   }, [monthLogs]);
 
   // 업체별 단가 로드
-  const loadCompanyPrices = useCallback(async (companyId: string) => {
-    if (!companyId) { setCompanyPrices([]); return; }
+  const loadCompanyPrices = useCallback(async (companyId: string): Promise<CompanyPrice[]> => {
+    if (!companyId) { setCompanyPrices([]); return []; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const { data } = await db.from("company_prices").select("product_id, custom_price, box_price").eq("company_id", companyId);
-    setCompanyPrices(data || []);
+    const prices: CompanyPrice[] = data || [];
+    setCompanyPrices(prices);
+    return prices;
   }, [supabase]);
 
-  // 업체별 단가 또는 기본 판매단가
-  function getProductPrice(productId: string): number {
-    const cp = companyPrices.find((p) => p.product_id === productId);
+  // 업체별 단가 또는 기본 판매단가 (prices 를 주면 그 단가표 기준 — 방금 불러온 단가를 바로 쓸 때)
+  function getProductPrice(productId: string, prices: CompanyPrice[] = companyPrices): number {
+    const cp = prices.find((p) => p.product_id === productId);
     if (cp) return cp.custom_price;
     const prod = products.find((p) => p.id === productId);
     return prod?.selling_price || 0;
   }
 
   // 박스 금액: 단가표에 박스 금액이 따로 있으면 그 금액, 없으면 개당 단가 × 입수
-  function getBoxPrice(productId: string): number {
+  function getBoxPrice(productId: string, prices: CompanyPrice[] = companyPrices): number {
     const prod = products.find((p) => p.id === productId);
-    return resolveSellPrice(prod, companyPrices.find((p) => p.product_id === productId)).box;
+    return resolveSellPrice(prod, prices.find((p) => p.product_id === productId)).box;
   }
 
   function hasCustomPrice(productId: string): boolean {
     return companyPrices.some((p) => p.product_id === productId);
   }
 
-  // 업체 변경 시 단가 재적용
+  // 업체 변경 시: 그 업체 단가를 불러와 이미 넣은 품목의 단가도 다시 맞춘다
+  const companyChangeRequest = useRef(0);
   async function handleCompanyChange(companyId: string) {
     setFormCompanyId(companyId);
-    await loadCompanyPrices(companyId);
-  }
-
-  // 업체 변경 후 기존 품목들의 단가 갱신 (companyPrices가 로드된 후)
-  useEffect(() => {
-    if (!showModal) return;
+    // 업체를 빠르게 바꿔도 마지막으로 고른 업체의 단가만 반영한다
+    const requestId = ++companyChangeRequest.current;
+    const prices = await loadCompanyPrices(companyId);
+    if (requestId !== companyChangeRequest.current) return;
     setFormItems((prev) =>
       prev.map((item) => {
         if (item.type !== "product" || !item.product_id) return item;
-        return { ...item, unit_price: item.unit === "박스" ? getBoxPrice(item.product_id) : getProductPrice(item.product_id) };
+        return {
+          ...item,
+          unit_price: item.unit === "박스" ? getBoxPrice(item.product_id, prices) : getProductPrice(item.product_id, prices),
+        };
       })
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyPrices]);
+  }
 
   // 품목 선택 시: 박스 상품이면 박스 단위/단가를 기본으로
   function handleItemProductChange(index: number, productId: string) {
@@ -372,20 +380,8 @@ export default function SalesPage() {
     const db = supabase as any;
     const isEditing = !!editingLogId;
 
-    // 수정 모드: 기존 기록 삭제 후 재등록
+    // 수정 모드: 기존 기록 삭제 후 재등록 (재고 수량은 로그 누적으로 구하므로 따로 되돌릴 것이 없다)
     if (editingLogId) {
-      const oldLog = logs.find((l) => l.id === editingLogId);
-      if (oldLog && oldLog.product_id) {
-        // 기존 재고 복원
-        const { data: inv } = await db
-          .from("inventory")
-          .select("*")
-          .eq("product_id", oldLog.product_id)
-          .maybeSingle();
-        if (inv) {
-          await dbUpdate("inventory", { current_stock: inv.current_stock + oldLog.quantity }, { product_id: oldLog.product_id });
-        }
-      }
       await dbDelete("inventory_logs", { id: editingLogId });
     }
 
@@ -420,25 +416,9 @@ export default function SalesPage() {
 
       if (insertedLog) newLogIds.push(insertedLog.id);
 
-      // 재고 차감 (상품 품목만 - 실제 개수 기준)
+      // 재고 수량은 로그 누적으로 구한다 → 재고 목록에 이 상품이 보이도록 행만 보장한다
       if (item.type === "product" && item.product_id) {
-        const { data: inv } = await db
-          .from("inventory")
-          .select("*")
-          .eq("product_id", item.product_id)
-          .maybeSingle();
-
-        const newStock = Math.max(0, (inv?.current_stock || 0) - actualQty);
-
-        if (inv) {
-          await dbUpdate("inventory", { current_stock: newStock, last_out_date: formDate }, { product_id: item.product_id });
-        } else {
-          await dbInsert("inventory", {
-            product_id: item.product_id,
-            current_stock: 0,
-            last_out_date: formDate,
-          });
-        }
+        await ensureInventoryRow(db, item.product_id);
       }
     }
 
@@ -464,22 +444,7 @@ export default function SalesPage() {
       )
     )
       return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
-    // 재고 복원 (상품 품목만)
-    if (log.product_id) {
-      const { data: inv } = await db
-        .from("inventory")
-        .select("*")
-        .eq("product_id", log.product_id)
-        .maybeSingle();
-
-      if (inv) {
-        await dbUpdate("inventory", { current_stock: inv.current_stock + log.quantity }, { product_id: log.product_id });
-      }
-    }
-
+    // 재고 수량은 로그 누적으로 구하므로 로그만 지우면 된다
     await dbDelete("inventory_logs", { id: log.id });
     fetchData();
   }
@@ -509,19 +474,6 @@ export default function SalesPage() {
     }
     return map;
   }, [monthLogs]);
-
-  // 이번 달 거래명세서 발행된 company_id Set
-  const monthStatementCompanyIds = useMemo(() => {
-    const [y, m] = month.split("-").map(Number);
-    const prefix = `${y}-${String(m).padStart(2, "0")}`;
-    const set = new Set<string>();
-    for (const s of statements) {
-      if (s.statement_date?.startsWith(prefix) && s.company_id) {
-        set.add(s.company_id);
-      }
-    }
-    return set;
-  }, [statements, month]);
 
   // 주문 기반 예정 집계 (미래 날짜용)
   const orderSummary = useMemo(() => {

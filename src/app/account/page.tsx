@@ -40,8 +40,14 @@ export default function AccountPage() {
   const [form, setForm] = useState({ company_name: "", biz_number: "", name: "", phone: "", email: "" });
   const [cert, setCert] = useState<File | null>(null);
 
-  async function load() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function load() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     const res = await fetch("/api/account", { cache: "no-store" });
     if (res.status === 401) { router.push("/login?next=/account"); return; }
     const data = await res.json();
@@ -54,7 +60,7 @@ export default function AccountPage() {
     }
     setLoading(false);
   }
-  useEffect(() => { load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**

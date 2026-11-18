@@ -62,7 +62,6 @@ export default function ProductDetailPage() {
       setLoading(false);
     }
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (loading) {

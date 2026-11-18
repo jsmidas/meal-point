@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { homeForRole } from "@/lib/auth/roles";
+import { safeNextPath } from "@/lib/auth/safe-next";
 
 const STORAGE_KEY = "mp_saved_credentials";
-
-import { safeNextPath } from "@/lib/auth/safe-next";
 
 // 소셜 로그인 콜백이 ?error= 로 돌려보낸 사유 안내
 const SOCIAL_ERRORS: Record<string, string> = {
@@ -19,42 +18,83 @@ const SOCIAL_ERRORS: Record<string, string> = {
 };
 const SOCIAL_ERROR_DEFAULT = "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.";
 
+interface SavedLogin {
+  id: string;
+  /** 비밀번호는 사용자가 "비밀번호도 저장"을 켠 경우에만 들어 있다 */
+  password: string;
+}
+
+/** 이 브라우저에 저장해 둔 로그인 정보 (없으면 null) */
+function parseSaved(raw: string | null): SavedLogin | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return { id: String(v?.id || ""), password: String(v?.password || "") };
+  } catch {
+    return null;
+  }
+}
+
+function readSavedRaw(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// 저장된 로그인 정보는 브라우저에만 있다. 서버 렌더링 때는 "없음"으로 그리고,
+// 브라우저에서 읽은 값으로 폼을 다시 만든다(아래 key).
+const subscribeNoop = () => () => {};
+
 export default function LoginPage() {
+  const savedRaw = useSyncExternalStore(subscribeNoop, readSavedRaw, () => null);
+  return (
+    <Suspense fallback={null}>
+      <LoginForm key={savedRaw ?? ""} saved={parseSaved(savedRaw)} />
+    </Suspense>
+  );
+}
+
+function LoginForm({ saved }: { saved: SavedLogin | null }) {
   const router = useRouter();
-  const [id, setId] = useState("");
-  const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(false);
+  const searchParams = useSearchParams();
+
+  const [id, setId] = useState(saved?.id || "");
+  const [password, setPassword] = useState(saved?.password || "");
+  // 아이디 저장 / 비밀번호 저장은 따로 고른다. 비밀번호는 사용자가 직접 켠 경우에만 저장한다.
+  const [rememberId, setRememberId] = useState(!!saved);
+  const [rememberPassword, setRememberPassword] = useState(!!saved?.password);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  // 소셜 로그인에도 ?next= 를 이어 준다 (상대경로만)
-  const [nextQuery, setNextQuery] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const err = params.get("error");
-    if (err) setError(SOCIAL_ERRORS[err] || SOCIAL_ERROR_DEFAULT);
-    const next = params.get("next");
-    const safe = safeNextPath(next);
-    if (safe) setNextQuery(`?next=${encodeURIComponent(safe)}`);
-  }, []);
+  // 소셜 로그인 콜백이 돌려보낸 사유 (?error=). 직접 로그인을 시도하면 그 결과로 바뀐다.
+  const socialErrorCode = searchParams.get("error");
+  const socialError = socialErrorCode ? SOCIAL_ERRORS[socialErrorCode] || SOCIAL_ERROR_DEFAULT : "";
+  const error = submitError ?? socialError;
 
-  useEffect(() => {
+  // 로그인 후 돌아갈 경로 (?next=, 상대경로만 허용 — 오픈 리다이렉트 방지). 소셜 로그인에도 이어 준다.
+  const safeNext = safeNextPath(searchParams.get("next"));
+  const nextQuery = safeNext ? `?next=${encodeURIComponent(safeNext)}` : "";
+
+  function saveLoginChoice() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const { id: savedId, password: savedPw } = JSON.parse(saved);
-        setId(savedId || "");
-        setPassword(savedPw || "");
-        setRemember(true);
+      if (rememberId) {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(rememberPassword ? { id, password } : { id }),
+        );
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
       }
     } catch {
-      // ignore
+      // 저장소를 쓸 수 없는 브라우저(사생활 보호 모드 등) — 저장만 건너뛴다
     }
-  }, []);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setSubmitError("");
     setLoading(true);
 
     try {
@@ -66,23 +106,14 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (data.ok) {
-        if (remember) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, password }));
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-        // ?next= 가 있으면 로그인 후 그 경로로 (상대경로만 허용 — 오픈 리다이렉트 방지)
-        const nextParam = new URLSearchParams(window.location.search).get("next");
-        const safeNext = safeNextPath(nextParam);
+        saveLoginChoice();
         // 거래처(company)는 로그인 후 메인페이지로 — 거기서 "주문하기"로 포털 진입
-        router.push(
-          safeNext ?? homeForRole(data.role),
-        );
+        router.push(safeNext ?? homeForRole(data.role));
       } else {
-        setError(data.error || "로그인에 실패했습니다.");
+        setSubmitError(data.error || "로그인에 실패했습니다.");
       }
     } catch {
-      setError("서버 연결에 실패했습니다.");
+      setSubmitError("서버 연결에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -137,17 +168,45 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="remember"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="accent-primary"
-            />
-            <label htmlFor="remember" className="text-sm text-text-secondary">
-              아이디/비밀번호 저장
-            </label>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="rememberId"
+                  checked={rememberId}
+                  onChange={(e) => {
+                    setRememberId(e.target.checked);
+                    // 아이디를 저장하지 않으면 비밀번호도 저장하지 않는다
+                    if (!e.target.checked) setRememberPassword(false);
+                  }}
+                  className="accent-primary"
+                />
+                <label htmlFor="rememberId" className="text-sm text-text-secondary">
+                  아이디 저장
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="rememberPassword"
+                  checked={rememberPassword}
+                  onChange={(e) => {
+                    setRememberPassword(e.target.checked);
+                    if (e.target.checked) setRememberId(true);
+                  }}
+                  className="accent-primary"
+                />
+                <label htmlFor="rememberPassword" className="text-sm text-text-secondary">
+                  비밀번호도 저장
+                </label>
+              </div>
+            </div>
+            {rememberPassword && (
+              <p className="text-xs text-yellow-400/90">
+                비밀번호가 이 브라우저에 저장됩니다. 여럿이 쓰는 PC에서는 켜지 마세요.
+              </p>
+            )}
           </div>
 
           <button

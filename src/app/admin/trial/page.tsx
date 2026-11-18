@@ -55,8 +55,8 @@ export default function TrialAdminPage() {
   const [newLabel, setNewLabel] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  const loadData = useCallback(async () => {
     const res = await fetch("/api/trial/admin");
     if (res.ok) {
       const d = await res.json();
@@ -66,9 +66,15 @@ export default function TrialAdminPage() {
     setLoading(false);
   }, []);
 
+  /** 다시 불러오기(저장·삭제 후): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
+    setLoading(true);
+    return loadData();
+  }
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    loadData();
+  }, [loadData]);
 
   async function addAccount(e: React.FormEvent) {
     e.preventDefault();

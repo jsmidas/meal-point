@@ -1,16 +1,32 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useSyncExternalStore } from "react";
 import type { Popup } from "@/lib/supabase/types";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+
+const DISMISSED_KEY = "popup_dismissed";
+const subscribeNoop = () => () => {};
+function readDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(DISMISSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
 
 export default function PopupBanner() {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [current, setCurrent] = useState(0);
-  const [visible, setVisible] = useState(true);
+  // 이번 방문에서 닫기를 눌렀는가
+  const [closed, setClosed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // 이 탭에서 이미 닫은 적이 있는가 (sessionStorage). 서버 렌더링 때는 "닫음"으로 보고 아무것도 그리지 않는다.
+  const dismissed = useSyncExternalStore(subscribeNoop, readDismissed, () => true);
+  const visible = !dismissed && !closed;
 
   useEffect(() => {
+    // 이미 닫은 팝업은 받아 오지도 않는다
+    if (readDismissed()) return;
     async function fetchPopups() {
       // 지금 노출할 팝업만 서버(/api/public/site)에서 받는다
       try {
@@ -21,13 +37,6 @@ export default function PopupBanner() {
         setPopups([]);
       }
       setLoaded(true);
-    }
-    // 오늘 이미 닫은 팝업은 표시하지 않음
-    const dismissed = sessionStorage.getItem("popup_dismissed");
-    if (dismissed === "true") {
-      setVisible(false);
-      setLoaded(true);
-      return;
     }
     fetchPopups();
   }, []);
@@ -42,8 +51,12 @@ export default function PopupBanner() {
   }, [popups.length]);
 
   const handleClose = useCallback(() => {
-    setVisible(false);
-    sessionStorage.setItem("popup_dismissed", "true");
+    setClosed(true);
+    try {
+      sessionStorage.setItem(DISMISSED_KEY, "true");
+    } catch {
+      // 저장소를 쓸 수 없는 브라우저 — 이번 화면에서만 닫힌다
+    }
   }, []);
 
   const prev = useCallback(() => {

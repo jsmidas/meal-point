@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Product, Company, InventoryLog, CompanyPriceHistory } from "@/lib/supabase/types";
 import { formatNumber, formatDate, todayKST } from "@/lib/utils";
-import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
+import { dbInsert, dbDelete } from "@/lib/db";
+import { ensureInventoryRow } from "@/lib/inventory-row";
 import {
   Plus,
   ChevronLeft,
@@ -64,8 +65,14 @@ export default function InboundPage() {
     return `${y}년 ${m}월`;
   }, [month]);
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
@@ -93,7 +100,7 @@ export default function InboundPage() {
   }
 
   useEffect(() => {
-    fetchData();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -255,24 +262,8 @@ export default function InboundPage() {
       log_date: form.log_date,
     });
 
-    // 재고 업데이트
-    const { data: inv } = await db
-      .from("inventory")
-      .select("*")
-      .eq("product_id", form.product_id)
-      .maybeSingle();
-
-    const newStock = (inv?.current_stock || 0) + form.quantity;
-
-    if (inv) {
-      await dbUpdate("inventory", { current_stock: newStock, last_in_date: form.log_date }, { product_id: form.product_id });
-    } else {
-      await dbInsert("inventory", {
-        product_id: form.product_id,
-        current_stock: newStock,
-        last_in_date: form.log_date,
-      });
-    }
+    // 재고 수량은 로그 누적으로 구한다 → 재고 목록에 이 상품이 보이도록 행만 보장한다
+    await ensureInventoryRow(db, form.product_id);
 
     setShowModal(false);
     resetForm();
@@ -282,22 +273,7 @@ export default function InboundPage() {
   async function handleDelete(log: InboundLog) {
     if (!confirm(`이 입고 기록을 삭제하시겠습니까?\n${log.products?.name || ""} ${formatNumber(log.quantity)}개`))
       return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
-    // 재고 차감
-    const { data: inv } = await db
-      .from("inventory")
-      .select("*")
-      .eq("product_id", log.product_id)
-      .maybeSingle();
-
-    if (inv) {
-      const newStock = Math.max(0, inv.current_stock - log.quantity);
-      await dbUpdate("inventory", { current_stock: newStock }, { product_id: log.product_id });
-    }
-
-    // 로그 삭제
+    // 재고 수량은 로그 누적으로 구하므로 로그만 지우면 된다
     await dbDelete("inventory_logs", { id: log.id });
     fetchData();
   }

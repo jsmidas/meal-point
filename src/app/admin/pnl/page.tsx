@@ -67,8 +67,14 @@ export default function PnlPage() {
 
   const months = useMemo(() => Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`), [year]);
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const startDate = `${year}-01-01`;
@@ -104,7 +110,10 @@ export default function PnlPage() {
     setLoading(false);
   }
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [year]);
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name || "(미지정)";
@@ -348,7 +357,11 @@ export default function PnlPage() {
           </button>
           <select
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            onChange={(e) => {
+              // 연도를 바꾸면 그 연도 자료를 다시 읽는다 → 읽는 동안 로딩 표시
+              setLoading(true);
+              setYear(Number(e.target.value));
+            }}
             aria-label="연도"
             className="px-4 py-2.5 rounded-xl border border-border bg-bg-card text-text-primary focus:outline-none focus:border-primary transition-colors"
           >

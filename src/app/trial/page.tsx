@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   Clock,
@@ -36,9 +37,20 @@ const cautions = [
   "기능 둘러보기 용도이며 일부 기능(백업·시스템 설정 등 관리자 기능)은 제한됩니다.",
 ];
 
+// useSearchParams 를 쓰는 화면은 Suspense 로 감싼다 (주소의 ?error= 를 첫 렌더링부터 알 수 있게)
 export default function TrialPage() {
+  return (
+    <Suspense fallback={null}>
+      <TrialPageInner />
+    </Suspense>
+  );
+}
+
+function TrialPageInner() {
+  const searchParams = useSearchParams();
   const [state, setState] = useState<State>({ kind: "loading" });
-  const [authError, setAuthError] = useState(false);
+  // 카카오 콜백 오류로 돌아온 경우(?error=...) 안내를 띄운다. 들어올 때의 주소로 한 번만 정한다.
+  const [authError] = useState(() => !!searchParams.get("error"));
 
   // 체험 사이트로 자동 진입 (u/p 파라미터 = 원클릭 자동 로그인).
   // TRIAL_URL 미설정이면 폴백으로 계정 카드를 보여준다.
@@ -78,11 +90,8 @@ export default function TrialPage() {
     // 데모 서버는 미사용 시 자동 정지(autostop) — 켜지는 데 ~10초.
     // 페이지가 열리자마자 미리 깨워, 카카오 인증하는 동안 기동이 끝나게 한다 (응답은 안 읽음).
     if (TRIAL_URL) fetch(TRIAL_URL, { mode: "no-cors", cache: "no-store" }).catch(() => {});
-    // 카카오 콜백 오류로 복귀한 경우 안내 (?error=...)
-    if (new URLSearchParams(window.location.search).get("error")) {
-      setAuthError(true);
-      window.history.replaceState(null, "", "/trial");
-    }
+    // 카카오 콜백 오류로 복귀한 경우: 새로고침해도 안내가 다시 뜨지 않도록 주소에서 ?error= 를 지운다
+    if (authError) window.history.replaceState(null, "", "/trial");
     // 카카오 인증이 끝나 있으면 배정~시스템 진입까지 사람 손 없이 이어진다:
     // 인증됨+사용권 있음 → 즉시 이동 / 인증됨+미발급 → 자동 배정 후 이동
     fetch("/api/trial")

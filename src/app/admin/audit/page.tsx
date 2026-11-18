@@ -106,8 +106,14 @@ export default function AuditPage() {
   const [products, setProducts] = useState<Record<string, string>>({});
   const [companies, setCompanies] = useState<Record<string, string>>({});
 
-  async function fetchData() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function fetchData() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
     const since = new Date(Date.now() - days * 86400000).toISOString();
@@ -126,7 +132,7 @@ export default function AuditPage() {
   }
 
   useEffect(() => {
-    fetchData();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableFilter, actorFilter, days]);
 
@@ -224,7 +230,7 @@ export default function AuditPage() {
       <div className="flex flex-wrap gap-2 mb-4">
         <select
           value={days}
-          onChange={(e) => setDays(Number(e.target.value))}
+          onChange={(e) => { setLoading(true); setDays(Number(e.target.value)); }}
           aria-label="기간"
           className="px-3 py-2 rounded-xl border border-border bg-bg-card text-text-primary text-sm focus:outline-none focus:border-primary"
         >
@@ -235,7 +241,7 @@ export default function AuditPage() {
         </select>
         <select
           value={tableFilter}
-          onChange={(e) => setTableFilter(e.target.value)}
+          onChange={(e) => { setLoading(true); setTableFilter(e.target.value); }}
           aria-label="대상"
           className="px-3 py-2 rounded-xl border border-border bg-bg-card text-text-primary text-sm focus:outline-none focus:border-primary"
         >
@@ -246,7 +252,7 @@ export default function AuditPage() {
         </select>
         <select
           value={actorFilter}
-          onChange={(e) => setActorFilter(e.target.value)}
+          onChange={(e) => { setLoading(true); setActorFilter(e.target.value); }}
           aria-label="작업자"
           className="px-3 py-2 rounded-xl border border-border bg-bg-card text-text-primary text-sm focus:outline-none focus:border-primary"
         >

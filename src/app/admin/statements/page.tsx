@@ -14,8 +14,8 @@ export default function StatementsPage() {
 
   const supabase = createClient();
 
-  async function fetchStatements() {
-    setLoading(true);
+  /** 읽기만 한다. loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadStatements() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.from("statements") as any)
       .select("*, companies(*)")
@@ -25,7 +25,7 @@ export default function StatementsPage() {
   }
 
   useEffect(() => {
-    fetchStatements();
+    loadStatements();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

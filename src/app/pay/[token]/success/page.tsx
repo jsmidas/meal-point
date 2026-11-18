@@ -13,18 +13,20 @@ function SuccessInner() {
   const search = useSearchParams();
   const token = params.token as string;
 
-  const [state, setState] = useState<"loading" | "ok" | "fail">("loading");
-  const [message, setMessage] = useState("");
+  // 결제 승인 요청의 결과
+  const [confirmState, setState] = useState<"loading" | "ok" | "fail">("loading");
+  const [confirmMessage, setMessage] = useState("");
   const amount = Number(search.get("amount")) || 0;
 
+  // 주소에 결제 정보가 없으면 승인 요청 없이 바로 실패로 안내한다
+  const paymentKey = search.get("paymentKey");
+  const orderId = search.get("orderId");
+  const invalid = !paymentKey || !orderId;
+  const state = invalid ? "fail" : confirmState;
+  const message = invalid ? "결제 정보가 올바르지 않습니다." : confirmMessage;
+
   useEffect(() => {
-    const paymentKey = search.get("paymentKey");
-    const orderId = search.get("orderId");
-    if (!paymentKey || !orderId) {
-      setState("fail");
-      setMessage("결제 정보가 올바르지 않습니다.");
-      return;
-    }
+    if (invalid) return;
     (async () => {
       let errorMessage = "결제 승인에 실패했습니다.";
       try {

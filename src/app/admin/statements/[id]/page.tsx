@@ -59,8 +59,14 @@ export default function StatementDetailPage() {
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function load() {
+  /** 다시 불러오기(저장·삭제 후, 버튼): 로딩 표시를 켠 뒤 읽는다 */
+  function load() {
     setLoading(true);
+    return loadData();
+  }
+
+  /** 읽기만 한다. 처음 들어올 때는 loading 초기값이 이미 true 라 효과에서 상태를 켤 필요가 없다 */
+  async function loadData() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
@@ -81,7 +87,7 @@ export default function StatementDetailPage() {
   }
 
   useEffect(() => {
-    load();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -214,7 +220,7 @@ export default function StatementDetailPage() {
     const to = `${billingMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
     const { data: stmts, error: stmtsError } = await db
       .from("statements")
-      .select("supply_amount, shipping_fee")
+      .select("supply_amount, tax_amount, shipping_fee")
       .eq("company_id", companyId)
       .gte("statement_date", from)
       .lte("statement_date", to);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
@@ -64,7 +64,7 @@ function NewStatementForm() {
   );
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<StatementItemDraft[]>([]);
-  const [linkedOrderId, setLinkedOrderId] = useState<string | null>(
+  const [linkedOrderId] = useState<string | null>(
     orderId || null,
   );
   const [shippingFee, setShippingFee] = useState(0);
@@ -75,9 +75,9 @@ function NewStatementForm() {
   const [salesLogs, setSalesLogs] = useState<SalesSearchLog[]>([]);
 
   // 미반영 출고 (어느 명세서에도 안 들어간 출고)
-  const [unbilledLines, setUnbilledLines] = useState<SalesLineForMatch[]>([]);
-  const [unbilledRawLogs, setUnbilledRawLogs] = useState<RawSalesLog[]>([]);
-  const [unbilledLoading, setUnbilledLoading] = useState(false);
+  // 조회 결과를 "어느 거래처의 것인지"와 함께 둔다 → 거래처가 바뀌면 예전 결과는 저절로 안 보인다
+  const [unbilled, setUnbilled] = useState<{ companyId: string; lines: SalesLineForMatch[]; rawLogs: RawSalesLog[] } | null>(null);
+  const unbilledRequest = useRef("");
 
   useEffect(() => {
     async function load() {
@@ -198,7 +198,8 @@ function NewStatementForm() {
 
   // 최근 3개월간 어느 명세서에도 들어가지 않은 출고를 식별
   async function fetchUnbilledLogs(cId: string) {
-    setUnbilledLoading(true);
+    // 거래처를 빠르게 바꿔도 마지막으로 고른 거래처의 결과만 남긴다
+    unbilledRequest.current = cId;
     // 한국시간 기준: 두 달 전 1일 ~ 오늘
     const to = todayKST();
     const [ty, tm] = to.split("-").map(Number);
@@ -237,19 +238,19 @@ function NewStatementForm() {
     const stmtItems = (stmtsRes.data || []).flatMap((s: any) => s.statement_items || []);
     const match = matchSalesToStatements(salesLines, stmtItems);
 
-    setUnbilledLines(match.missingLines);
-    setUnbilledRawLogs(rawLogs);
-    setUnbilledLoading(false);
+    if (unbilledRequest.current !== cId) return;
+    setUnbilled({ companyId: cId, lines: match.missingLines, rawLogs });
   }
+
+  // 지금 고른 거래처의 조회 결과만 쓴다 (거래처가 없거나 아직 읽는 중이면 빈 목록)
+  const unbilledReady = !!companyId && unbilled?.companyId === companyId;
+  const unbilledLines = unbilledReady ? unbilled.lines : [];
+  const unbilledRawLogs = unbilledReady ? unbilled.rawLogs : [];
+  const unbilledLoading = !!companyId && !unbilledReady;
 
   // companyId가 어떤 경로로든 바뀌면 미반영 출고 재조회
   useEffect(() => {
-    if (companyId) {
-      fetchUnbilledLogs(companyId);
-    } else {
-      setUnbilledLines([]);
-      setUnbilledRawLogs([]);
-    }
+    if (companyId) fetchUnbilledLogs(companyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
@@ -422,7 +423,7 @@ function NewStatementForm() {
       const bTo = `${billingMonth}-${String(new Date(by, bm, 0).getDate()).padStart(2, "0")}`;
       const { data: stmts } = await db
         .from("statements")
-        .select("supply_amount, shipping_fee")
+        .select("supply_amount, tax_amount, shipping_fee")
         .eq("company_id", companyId)
         .gte("statement_date", bFrom)
         .lte("statement_date", bTo);
