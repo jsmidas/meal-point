@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Statement, StatementItem, BillingWithPayments, Payment } from "@/lib/supabase/types";
-import { formatNumber, generateBillingNumber, numberToKorean, todayKST, currentMonthKST } from "@/lib/utils";
+import { formatNumber, generateBillingNumber, numberToKorean, todayKST, currentMonthKST, billingAmountsFromStatements } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import { matchSalesToStatements, summarizeMismatch, type SalesLineForMatch } from "@/lib/billing-match";
 import {
@@ -49,11 +49,10 @@ type CompanyRow = {
   strayBillings?: { companyName: string; billingMonth: string }[]; // 비-primary 멤버의 기존 billing (경고용)
 };
 
-// 명세서 합계(공급가 → 세액 10% 가산)로 가정산 청구액 산출.
-// billings의 자동 동기화 로직(total = supply + round(supply*0.1))과 동일 규칙.
+// 명세서 합계로 가정산 청구액 산출 (공급가 + 부가세 + 배송비).
+// billings의 자동 동기화 로직과 같은 규칙(billingAmountsFromStatements)을 쓴다.
 function statementBasedTotal(statements: StatementWithItems[]): number {
-  const supply = statements.reduce((s, st) => s + (st.supply_amount || 0), 0);
-  return supply + Math.round(supply * 0.1);
+  return billingAmountsFromStatements(statements).total;
 }
 
 // 출고 로그 → 매칭용 라인 변환
@@ -246,7 +245,7 @@ export default function BillingPage() {
       db.from("sale_checks").select("company_id, sale_date").gte("sale_date", from).lte("sale_date", to),
       // 이월 미수는 과거 청구·명세서 전체로 계산한다 → 건수가 늘어도 잘리지 않게 끝까지 읽는다
       fetchAllRows(() => db.from("billings").select("id, company_id, billing_month, total_amount, paid_amount").lt("billing_month", month).order("billing_month", { ascending: true }).order("id")),
-      fetchAllRows(() => db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }).order("id")),
+      fetchAllRows(() => db.from("statements").select("id, company_id, statement_number, statement_date, supply_amount, shipping_fee, total_amount, companies(id, name)").lt("statement_date", from).order("statement_date", { ascending: true }).order("id")),
     ]);
 
     // ── 사업자번호 그룹 인덱스 ──
@@ -328,8 +327,9 @@ export default function BillingPage() {
     type StmtRow = { id: string; statement_number: string; statement_date: string; total_amount: number; taggedPaid: number; companyName?: string };
     const stmtsByBillingId: Record<string, StmtRow[]> = {};
     const estDetails: DetailWithRaw[] = []; // 가정산 stub (청구 미생성). 명세서 순회 후 금액 확정.
-    const estSupplyById: Record<string, number> = {}; // 가정산 stub billingId → 공급가 합계
-    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; supply_amount: number; total_amount: number; companies?: { id: string; name: string } | null }>) {
+    const estSupplyById: Record<string, number> = {};
+    const estShippingById: Record<string, number> = {}; // 가정산 배송비 합계 // 가정산 stub billingId → 공급가 합계
+    for (const s of (prevStmtRes.data || []) as Array<{ id: string; company_id: string; statement_number: string; statement_date: string; supply_amount: number; shipping_fee?: number | null; total_amount: number; companies?: { id: string; name: string } | null }>) {
       const stMonth = s.statement_date.slice(0, 7);
       const primary = toPrimary(s.company_id);
       const gmKey = `${primary}|${stMonth}`;
@@ -353,8 +353,12 @@ export default function BillingPage() {
         (prevDetail[primary] ||= []).push(detail);
         estDetails.push(detail);
         estSupplyById[estId] = 0;
+        estShippingById[estId] = 0;
       }
-      if (detail.estimated) estSupplyById[detail.billingId] += s.supply_amount || 0;
+      if (detail.estimated) {
+        estSupplyById[detail.billingId] += s.supply_amount || 0;
+        estShippingById[detail.billingId] = (estShippingById[detail.billingId] || 0) + (s.shipping_fee || 0);
+      }
       const taggedPaid = paidByStmt[s.id] || 0;
       if (!stmtsByBillingId[detail.billingId]) stmtsByBillingId[detail.billingId] = [];
       stmtsByBillingId[detail.billingId].push({
@@ -366,10 +370,10 @@ export default function BillingPage() {
         companyName: s.companies?.name,
       });
     }
-    // 3.5) 가정산 stub 금액 확정 — 세액=공급가 합계×10% 반올림 (실제 청구/세금계산서 생성 규칙과 동일)
+    // 3.5) 가정산 stub 금액 확정 — 세액=공급가 합계×10% 반올림, 배송비 포함 (실제 청구 생성 규칙과 동일)
     for (const d of estDetails) {
       const supply = estSupplyById[d.billingId] || 0;
-      const total = supply + Math.round(supply * 0.1);
+      const total = supply + Math.round(supply * 0.1) + (estShippingById[d.billingId] || 0);
       const tagged = (stmtsByBillingId[d.billingId] || []).reduce((s, x) => s + x.taggedPaid, 0);
       d.estSupply = supply;
       d.estTotal = total;
@@ -461,20 +465,28 @@ export default function BillingPage() {
     for (const [primary, b] of billMap) {
       const stmts = stmtMap.get(primary);
       if (stmts && stmts.length > 0) {
-        const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
-        const stmtTax = Math.round(stmtSupply * 0.1);
-        const stmtTotal = stmtSupply + stmtTax;
+        // 청구 합계 = 공급가 + 부가세 + 배송비
+        const { supply: stmtSupply, tax: stmtTax, total: stmtTotal } = billingAmountsFromStatements(stmts);
         if (b.total_amount !== stmtTotal) {
+          // 합계가 바뀌면 완납 여부도 달라질 수 있다 → 입금 상태를 새 합계 기준으로 다시 판정한다.
+          // 완납일은 이미 있으면 유지하고, 완납이 아니게 되면 비운다.
+          const paid = b.paid_amount || 0;
+          const newStatus = paid <= 0 ? "unpaid" : paid >= stmtTotal ? "paid" : "partial";
+          const newPaidDate = newStatus === "paid" ? b.paid_date ?? todayKST() : null;
           // DB 업데이트 (비동기, UI 먼저 반영)
           dbUpdate("billings", {
             total_supply: stmtSupply,
             total_tax: stmtTax,
             total_amount: stmtTotal,
+            status: newStatus,
+            paid_date: newPaidDate,
           }, { id: b.id });
           // 로컬 데이터 즉시 반영
           b.total_supply = stmtSupply;
           b.total_tax = stmtTax;
           b.total_amount = stmtTotal;
+          b.status = newStatus;
+          b.paid_date = newPaidDate;
         }
       }
     }
@@ -557,6 +569,13 @@ export default function BillingPage() {
 
   const taxComputedTax = Math.round(taxComputedSupply * 0.1);
   const taxComputedTotal = taxComputedSupply + taxComputedTax;
+  // 청구 합계에 더할 배송비: 명세서를 골랐으면 고른 명세서의, 아니면 그 달 명세서 전체의 배송비
+  const taxShipping = useMemo(() => {
+    if (!taxModal) return 0;
+    const target = taxChecked.size > 0 ? taxModal.statements.filter((s) => taxChecked.has(s.id)) : taxModal.statements;
+    return target.reduce((sum, s) => sum + (s.shipping_fee || 0), 0);
+  }, [taxModal, taxChecked]);
+  const taxBillingTotal = taxComputedTotal + taxShipping;
 
   function openTaxModal(row: CompanyRow) {
     setTaxModal(row);
@@ -607,7 +626,7 @@ export default function BillingPage() {
         company_id: taxModal.id,
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
-        total_amount: taxComputedTotal,
+        total_amount: taxBillingTotal,
       });
       if (!created.id) {
         alert(`세금계산서 처리 실패: 청구를 만들지 못했습니다.\n${created.error || ""}`);
@@ -619,7 +638,7 @@ export default function BillingPage() {
       const upd = await dbUpdate("billings", {
         total_supply: taxComputedSupply,
         total_tax: taxComputedTax,
-        total_amount: taxComputedTotal,
+        total_amount: taxBillingTotal,
       }, { id: billingId });
       if (upd.error) {
         alert(`세금계산서 처리 실패: 청구 금액을 저장하지 못했습니다.\n${upd.error}`);
@@ -1320,7 +1339,7 @@ export default function BillingPage() {
                           <AlertTriangle size={12} /> {mismatchSummary}
                         </span>
                       )}
-                      {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1)) !== billing.total_amount && (
+                      {billing && row.sales.amount > 0 && (row.sales.amount + Math.round(row.sales.amount * 0.1) + billingAmountsFromStatements(row.statements).shipping) !== billing.total_amount && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 bg-orange-500/10 rounded-full px-2 py-0.5" title="판매액과 청구액이 일치하지 않습니다">
                           <AlertTriangle size={10} /> 청구액 불일치
                         </span>
@@ -1484,7 +1503,8 @@ export default function BillingPage() {
                         </div>
                         {/* 판매액과 청구액 차이 경고 */}
                         {(() => {
-                          const expectedBilling = row.sales.amount + Math.round(row.sales.amount * 0.1);
+                          // 판매 기준 금액(공급가+부가세)에 그 달 명세서의 배송비를 더해 청구액과 비교한다
+                          const expectedBilling = row.sales.amount + Math.round(row.sales.amount * 0.1) + billingAmountsFromStatements(row.statements).shipping;
                           const diff = expectedBilling - billing.total_amount;
                           return diff !== 0 && row.sales.amount > 0 ? (
                             <div className="flex justify-between text-[10px] bg-yellow-500/10 rounded px-1.5 py-0.5 -mx-1.5">
@@ -1901,6 +1921,12 @@ export default function BillingPage() {
                   <span className="text-text-primary">합계</span>
                   <span className="text-accent">{formatNumber(taxComputedTotal)}원</span>
                 </div>
+                {taxShipping > 0 && (
+                  <div className="flex justify-between text-xs text-text-muted">
+                    <span>청구 합계 (배송비 {formatNumber(taxShipping)}원 포함)</span>
+                    <span className="text-text-primary">{formatNumber(taxBillingTotal)}원</span>
+                  </div>
+                )}
                 <div className="pt-1">
                   <label className="text-xs text-text-muted">금액 직접 수정</label>
                   <input
@@ -2438,7 +2464,8 @@ export default function BillingPage() {
                   const stmtSupply = stmts.reduce((s, st) => s + st.supply_amount, 0);
                   const supplyDiff = supply - stmtSupply;
                   const billingTotal = billing?.total_amount ?? 0;
-                  const expectedBilling = supply + tax;
+                  const stmtShipping = billingAmountsFromStatements(stmts).shipping;
+                  const expectedBilling = supply + tax + stmtShipping;
                   const billingDiff = expectedBilling - billingTotal;
                   return (
                     <div className="border-t border-border pt-3 mt-3 space-y-2">
@@ -2456,7 +2483,7 @@ export default function BillingPage() {
                       {billing ? (
                         <>
                           <div className="flex justify-between text-sm">
-                            <span className="text-text-muted">청구액 (부가세 포함)</span>
+                            <span className="text-text-muted">청구액 (부가세{stmtShipping > 0 ? "·배송비" : ""} 포함)</span>
                             <span className={`font-medium ${billingDiff !== 0 ? "text-yellow-400" : "text-emerald-400"}`}>{formatNumber(billingTotal)}원</span>
                           </div>
                           {billingDiff !== 0 && (

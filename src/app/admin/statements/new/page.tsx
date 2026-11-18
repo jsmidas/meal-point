@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Product, CompanyPrice, OrderWithItems } from "@/lib/supabase/types";
-import { generateStatementNumber, formatNumber, formatDate, todayKST } from "@/lib/utils";
+import { generateStatementNumber, formatNumber, formatDate, todayKST, billingAmountsFromStatements } from "@/lib/utils";
 import { dbInsert, dbUpdate, dbDelete } from "@/lib/db";
 import { matchSalesToStatements, type SalesLineForMatch } from "@/lib/billing-match";
 import { Plus, Trash2, ArrowLeft, ShoppingCart, AlertTriangle } from "lucide-react";
@@ -493,17 +493,17 @@ function NewStatementForm() {
       const bTo = `${billingMonth}-${String(new Date(by, bm, 0).getDate()).padStart(2, "0")}`;
       const { data: stmts } = await db
         .from("statements")
-        .select("supply_amount")
+        .select("supply_amount, shipping_fee")
         .eq("company_id", companyId)
         .gte("statement_date", bFrom)
         .lte("statement_date", bTo);
 
-      const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
-      const newTax = Math.round(newSupply * 0.1);
+      // 청구 합계 = 공급가 + 부가세 + 배송비
+      const amounts = billingAmountsFromStatements(stmts || []);
       await dbUpdate("billings", {
-        total_supply: newSupply,
-        total_tax: newTax,
-        total_amount: newSupply + newTax,
+        total_supply: amounts.supply,
+        total_tax: amounts.tax,
+        total_amount: amounts.total,
       }, { id: billing.id });
     }
 

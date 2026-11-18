@@ -51,6 +51,22 @@ export function generateBillingNumber(month: string) {
   return `BL-${month.replace("-", "")}-${rand3()}`;
 }
 
+/**
+ * 명세서 묶음으로 청구(billings) 금액을 계산한다. 청구 금액을 쓰는 모든 곳이 이 규칙을 따른다.
+ *  - 공급가 = 명세서 공급가의 합
+ *  - 부가세 = 공급가 합 × 10% (합산 후 반올림 — 세금계산서 금액과 맞추기 위함)
+ *  - 배송비 = 명세서 배송비의 합 (부가세를 따로 붙이지 않는다 — 명세서와 같은 방식)
+ *  - 청구 합계 = 공급가 + 부가세 + 배송비
+ */
+export function billingAmountsFromStatements(
+  statements: { supply_amount?: number | null; shipping_fee?: number | null }[],
+): { supply: number; tax: number; shipping: number; total: number } {
+  const supply = statements.reduce((s, st) => s + (st.supply_amount || 0), 0);
+  const shipping = statements.reduce((s, st) => s + (st.shipping_fee || 0), 0);
+  const tax = Math.round(supply * 0.1);
+  return { supply, tax, shipping, total: supply + tax + shipping };
+}
+
 /** 견적서 상태 */
 export const QUOTE_STATUS: Record<string, { label: string; color: string }> = {
   draft: { label: "작성중", color: "bg-gray-400/10 text-gray-400" },

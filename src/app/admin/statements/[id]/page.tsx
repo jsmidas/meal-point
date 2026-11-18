@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { StatementWithItems, CompanyInfo, StatementSendLog } from "@/lib/supabase/types";
-import { formatNumber, formatDate } from "@/lib/utils";
+import { formatNumber, formatDate, billingAmountsFromStatements } from "@/lib/utils";
 import { dbUpdate, dbDelete, dbInsert } from "@/lib/db";
 import { ArrowLeft, Trash2, Printer, Send, Clock, Plus, Edit2, Save, X } from "lucide-react";
 import Link from "next/link";
@@ -211,18 +211,18 @@ export default function StatementDetailPage() {
     const to = `${billingMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
     const { data: stmts, error: stmtsError } = await db
       .from("statements")
-      .select("supply_amount")
+      .select("supply_amount, shipping_fee")
       .eq("company_id", companyId)
       .gte("statement_date", from)
       .lte("statement_date", to);
     if (stmtsError) return; // 조회 실패 시 0원으로 덮어쓰지 않는다
 
-    const newSupply = (stmts || []).reduce((s: number, st: { supply_amount: number }) => s + st.supply_amount, 0);
-    const newTax = Math.round(newSupply * 0.1);
+    // 청구 합계 = 공급가 + 부가세 + 배송비
+    const amounts = billingAmountsFromStatements(stmts || []);
     const res = await dbUpdate("billings", {
-      total_supply: newSupply,
-      total_tax: newTax,
-      total_amount: newSupply + newTax,
+      total_supply: amounts.supply,
+      total_tax: amounts.tax,
+      total_amount: amounts.total,
     }, { id: billing.id });
     if (res.error) alert(`청구 금액 갱신 실패: ${res.error}\n정산 화면에서 금액을 확인해 주세요.`);
   }
