@@ -1,18 +1,11 @@
-import { MessageCircle, MessagesSquare, Smartphone, Phone } from "lucide-react";
+import { MessageCircle, Smartphone, Phone } from "lucide-react";
 
 const contacts = [
   {
     icon: MessageCircle,
     title: "카카오톡 채널",
     desc: "밀포인트 공식 채널로 문의",
-    href: "https://pf.kakao.com/CHANNEL_ID/chat",
-    color: "bg-[#FEE500]/10 text-[#FEE500]",
-  },
-  {
-    icon: MessagesSquare,
-    title: "오픈채팅",
-    desc: "카카오톡 오픈채팅방 입장",
-    href: "https://open.kakao.com/o/ROOM_ID",
+    href: "https://pf.kakao.com/_QxbQxdX/chat",
     color: "bg-[#FEE500]/10 text-[#FEE500]",
   },
   {
@@ -47,7 +40,7 @@ export default function Contact() {
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {contacts.map((c) => (
             <a
               key={c.title}
