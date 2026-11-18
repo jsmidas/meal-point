@@ -64,7 +64,10 @@ export async function POST(request: NextRequest) {
   const certRaw = fd.get("cert");
   const cert = certRaw instanceof File && certRaw.size > 0 ? certRaw : null;
 
-  if (!company_name) return NextResponse.json({ ok: false, error: "업체명을 입력하세요." }, { status: 400 });
+  // intent=save: 내 정보만 수정(승인 상태·사업자등록증은 그대로). 그 외(기본)는 승인 요청/승인 업체 정보 갱신.
+  const saveOnly = str("intent") === "save";
+
+  if (!saveOnly && !company_name) return NextResponse.json({ ok: false, error: "업체명을 입력하세요." }, { status: 400 });
   if (biz_number && !/^\d{3}-?\d{2}-?\d{5}$/.test(biz_number)) {
     return NextResponse.json({ ok: false, error: "사업자등록번호 형식이 올바르지 않습니다. (예: 123-45-67890)" }, { status: 400 });
   }
@@ -75,8 +78,18 @@ export async function POST(request: NextRequest) {
   const { data: m } = await db.select("id, approval_status, biz_cert_path").eq("id", s.id).maybeSingle();
   if (!m) return NextResponse.json({ ok: false, error: "회원 정보를 찾을 수 없습니다." }, { status: 404 });
 
-  const patch: Record<string, unknown> = { company_name, biz_number: biz_number || null, phone: phone || null, email: email || null };
+  const patch: Record<string, unknown> = { company_name: company_name || null, biz_number: biz_number || null, phone: phone || null, email: email || null };
   if (name) patch.name = name;
+
+  if (saveOnly) {
+    // 승인된 업체가 업체명을 비우는 것은 막는다(거래처 연결 정보와 어긋남)
+    if (m.approval_status === "approved" && !company_name) {
+      return NextResponse.json({ ok: false, error: "업체명을 입력하세요." }, { status: 400 });
+    }
+    const { error: saveErr } = await db.update(patch).eq("id", s.id);
+    if (saveErr) return NextResponse.json({ ok: false, error: saveErr.message }, { status: 500 });
+    return NextResponse.json({ ok: true, approval_status: m.approval_status || "none" });
+  }
 
   if (cert) {
     const up = await uploadBizCert(supabase, s.id as string, cert);

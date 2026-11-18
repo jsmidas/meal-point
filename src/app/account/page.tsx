@@ -57,25 +57,42 @@ export default function AccountPage() {
   useEffect(() => { load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  /**
+   * intent "save"    — 내 정보만 수정(승인 상태는 그대로). 저장 후 메인 화면으로 이동.
+   * intent "request" — 업체명·사업자등록증을 갖춰 승인 요청. 결과(승인 대기)를 이 화면에서 보여준다.
+   */
+  async function submit(intent: "save" | "request") {
     setError(""); setDone("");
-    if (!form.company_name.trim()) { setError("업체명을 입력하세요."); return; }
-    if (!cert && !member?.has_cert) { setError("사업자등록증 파일을 올려주세요."); return; }
+    if (!form.name.trim()) { setError("담당자 이름을 입력하세요."); return; }
+    if (intent === "request") {
+      if (!form.company_name.trim()) { setError("승인 요청에는 업체명이 필요합니다."); return; }
+      if (!cert && !member?.has_cert) { setError("승인 요청에는 사업자등록증 파일이 필요합니다."); return; }
+    }
     setSaving(true);
     try {
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-      if (cert) fd.append("cert", cert);
+      fd.append("intent", intent);
+      if (cert && intent === "request") fd.append("cert", cert);
       const res = await fetch("/api/account", { method: "POST", body: fd });
       const data = await res.json();
-      if (data.ok) {
-        setDone(data.approval_status === "approved" ? "업체 정보를 저장했습니다." : "승인 요청을 보냈습니다. 관리자 확인 후 승인됩니다.");
-        setCert(null);
-        await load();
-      } else setError(data.error || "저장에 실패했습니다.");
+      if (!data.ok) { setError(data.error || "저장에 실패했습니다."); return; }
+      if (intent === "save") {
+        setDone("정보를 저장했습니다. 메인 화면으로 이동합니다.");
+        setTimeout(() => router.push("/"), 1200);
+        return;
+      }
+      setDone(data.approval_status === "approved" ? "업체 정보를 저장했습니다." : "승인 요청을 보냈습니다. 관리자 확인 후 승인됩니다.");
+      setCert(null);
+      await load();
     } catch { setError("서버 연결에 실패했습니다."); }
     finally { setSaving(false); }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    // Enter 키 제출: 승인된 업체는 저장(사업자등록증 교체 포함), 그 외에는 정보 저장만
+    void submit(member?.approval_status === "approved" ? "request" : "save");
   }
 
   const status = STATUS[member?.approval_status || "none"] || STATUS.none;
@@ -128,25 +145,35 @@ export default function AccountPage() {
 
             {/* 업체 정보 + 사업자등록증 */}
             <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-bg-card p-6 space-y-4">
-              <h2 className="text-base font-semibold text-text-primary">업체 정보</h2>
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">내 정보 · 업체 정보</h2>
+                {!isApproved && (
+                  <p className="text-xs text-text-muted mt-1">
+                    <span className="text-amber-400">●</span> 표시 항목은 업체 단가 승인을 요청할 때만 필요합니다. 정보 수정만 할 때는 비워 두어도 됩니다.
+                  </p>
+                )}
+              </div>
               {error && <div className="px-4 py-3 rounded-xl bg-red-400/10 border border-red-400/20 text-red-400 text-sm">{error}</div>}
               {done && <div className="px-4 py-3 rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 text-sm">{done}</div>}
 
               <div className="grid sm:grid-cols-2 gap-4">
                 {([
-                  ["company_name", "업체명", true, "사업자등록증상의 상호"],
-                  ["biz_number", "사업자등록번호", false, "123-45-67890"],
-                  ["name", "담당자 이름", true, ""],
-                  ["phone", "연락처", false, "010-0000-0000"],
-                  ["email", "이메일", false, ""],
-                ] as [keyof typeof form, string, boolean, string][]).map(([key, label, required, ph]) => (
+                  ["company_name", "업체명", "approval", "사업자등록증상의 상호"],
+                  ["biz_number", "사업자등록번호", "", "123-45-67890"],
+                  ["name", "담당자 이름", "required", ""],
+                  ["phone", "연락처", "", "010-0000-0000"],
+                  ["email", "이메일", "", ""],
+                ] as [keyof typeof form, string, "required" | "approval" | "", string][]).map(([key, label, mark, ph]) => (
                   <div key={key} className={key === "email" ? "sm:col-span-2" : ""}>
-                    <label className="block text-sm text-text-secondary mb-1">{label}{required && <span className="text-red-400 ml-1">*</span>}</label>
+                    <label className="block text-sm text-text-secondary mb-1">
+                      {label}
+                      {mark === "required" && <span className="text-red-400 ml-1">*</span>}
+                      {mark === "approval" && <span className="text-amber-400 ml-1 text-[10px]">●</span>}
+                    </label>
                     <input
                       type="text"
                       value={form[key]}
                       onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                      required={required}
                       placeholder={ph}
                       className="w-full px-4 py-3 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
                     />
@@ -156,7 +183,7 @@ export default function AccountPage() {
 
               <div>
                 <label className="block text-sm text-text-secondary mb-1">
-                  사업자등록증 {!member.has_cert && <span className="text-red-400 ml-1">*</span>}
+                  사업자등록증 {!member.has_cert && <span className="text-amber-400 ml-1 text-[10px]">●</span>}
                 </label>
                 {member.has_cert && member.cert_url && (
                   <p className="text-sm mb-2">
@@ -175,13 +202,49 @@ export default function AccountPage() {
                 </label>
               </div>
 
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
-              >
-                {saving ? "처리 중..." : isApproved ? "업체 정보 저장" : member.approval_status === "pending" ? "정보 수정 후 다시 요청" : "승인 요청"}
-              </button>
+              {isApproved ? (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
+                >
+                  {saving ? "처리 중..." : "업체 정보 저장"}
+                </button>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => submit("save")}
+                    disabled={saving}
+                    className="w-full py-3 rounded-xl border border-border text-text-primary font-semibold text-sm hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? "처리 중..." : "정보 수정 저장"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submit("request")}
+                    disabled={saving}
+                    className="w-full py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-50"
+                  >
+                    {saving ? "처리 중..." : member.approval_status === "pending" ? "수정 후 다시 승인 요청" : "승인 요청"}
+                  </button>
+                </div>
+              )}
+
+              {/* 승인 요청 없이 나가기 — 가입은 이미 끝난 상태 */}
+              {member.approval_status === "none" && (
+                <>
+                  <Link
+                    href="/products"
+                    className="block w-full py-3 rounded-xl border border-border text-center text-text-primary font-semibold text-sm hover:bg-white/5 transition-colors"
+                  >
+                    나중에 하기 · 제품 둘러보기 →
+                  </Link>
+                  <p className="text-xs text-text-muted text-center">
+                    회원가입은 완료되었습니다. 승인 요청은 언제든 &lsquo;내 정보&rsquo;에서 할 수 있습니다.
+                  </p>
+                </>
+              )}
             </form>
           </>
         )}
