@@ -120,7 +120,12 @@ export default function RegisterPage() {
               네이버로 간편 가입
             </a>
             <p className="text-[11px] text-text-muted mt-2 text-center leading-relaxed">
-              네이버 계정으로 바로 가입됩니다. 가입 후 &apos;내 정보&apos;에서<br />사업자등록증을 올리면 단가 승인을 요청할 수 있습니다.
+              네이버 계정으로 바로 가입됩니다. 가입 후 &apos;내 정보&apos;에서<br />사업자등록증을 올리면 단가 승인을 요청할 수 있습니다.<br />
+              가입 시{" "}
+              <Link href="/privacy" className="underline hover:text-text-primary">
+                개인정보처리방침
+              </Link>
+              에 동의한 것으로 봅니다.
             </p>
           </div>
 

@@ -15,6 +15,10 @@ export default function Footer() {
         </div>
         <div className="border-t border-border pt-6">
           <p className="text-xs text-text-muted text-center">
+            <a href="/privacy" className="font-semibold text-text-secondary hover:text-text-primary transition-colors">
+              개인정보처리방침
+            </a>
+            <span className="mx-2">|</span>
             &copy; {new Date().getFullYear()} 밀포인트. All rights reserved.
           </p>
         </div>
