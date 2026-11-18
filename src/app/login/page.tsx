@@ -7,6 +7,15 @@ import { homeForRole } from "@/lib/auth/roles";
 
 const STORAGE_KEY = "mp_saved_credentials";
 
+// 소셜 로그인 콜백이 ?error= 로 돌려보낸 사유 안내
+const SOCIAL_ERRORS: Record<string, string> = {
+  cancelled: "로그인이 취소되었습니다.",
+  invalid_state: "로그인 시간이 초과되었거나 잘못된 접근입니다. 다시 시도해 주세요.",
+  inactive: "사용이 중지된 계정입니다. 관리자에게 문의해 주세요.",
+  naver_not_configured: "네이버 로그인이 아직 설정되지 않았습니다.",
+};
+const SOCIAL_ERROR_DEFAULT = "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+
 export default function LoginPage() {
   const router = useRouter();
   const [id, setId] = useState("");
@@ -14,6 +23,18 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // 소셜 로그인에도 ?next= 를 이어 준다 (상대경로만)
+  const [nextQuery, setNextQuery] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (err) setError(SOCIAL_ERRORS[err] || SOCIAL_ERROR_DEFAULT);
+    const next = params.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      setNextQuery(`?next=${encodeURIComponent(next)}`);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -149,7 +170,7 @@ export default function LoginPage() {
 
           <div className="space-y-2">
             <a
-              href="/api/auth/naver"
+              href={`/api/auth/naver${nextQuery}`}
               className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 text-white"
               style={{ backgroundColor: "#03C75A" }}
             >

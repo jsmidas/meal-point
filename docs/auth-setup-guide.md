@@ -76,15 +76,22 @@
   ```
 - 환경변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 
-## 3. (선택) 네이버 로그인 설정
+## 3. 네이버 로그인 설정
 
-https://developers.naver.com → 애플리케이션 등록 → "네이버 로그인" API 사용.
-- Callback URL:
+노출 위치: `/login`(네이버로 로그인), `/register`(네이버로 간편 가입 → 가입 후 `/account`에서 사업자등록증 승인 요청).
+
+https://developers.naver.com → Application → 내 애플리케이션 → "네이버 로그인" API 사용.
+- 서비스 URL: `https://www.mealpoint.co.kr`
+- Callback URL (운영 `NEXTAUTH_URL` 도메인과 **글자 하나까지 일치**해야 함):
   ```
-  https://meal-point-ochre.vercel.app/api/auth/naver?action=callback
+  https://www.mealpoint.co.kr/api/auth/naver?action=callback
   http://localhost:3000/api/auth/naver?action=callback
   ```
-- 환경변수: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
+- 제공 정보: 이름(또는 별명), 이메일 — 없으면 "네이버 사용자"로 가입됨
+- 환경변수: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` (로컬 `.env.local` + Vercel)
+- ⚠️ 애플리케이션이 **"개발 중"** 상태면 멤버 관리에 등록한 네이버 아이디만 로그인됩니다.
+  일반 고객이 쓰려면 **네이버 로그인 검수 요청 → 승인**이 필요합니다.
+- 실패 시 `/login?error=...` 로 돌아와 사유가 표시되고, 상세 원인은 Vercel 로그의 `[naver]` 항목에 남습니다.
 
 ---
 
