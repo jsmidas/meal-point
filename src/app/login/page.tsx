@@ -119,7 +119,7 @@ export default function LoginPage() {
               onChange={(e) => setId(e.target.value)}
               required
               autoFocus
-              placeholder="admin"
+              placeholder="아이디"
               className="w-full px-4 py-3 rounded-xl border border-border bg-bg-dark text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
             />
           </div>
