@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-bg-dark text-text-primary">
@@ -92,7 +94,7 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-12 pt-6 border-t border-border">
-          <a href="/" className="text-primary hover:underline text-sm">&larr; 홈으로 돌아가기</a>
+          <Link href="/" className="text-primary hover:underline text-sm">&larr; 홈으로 돌아가기</Link>
         </div>
       </div>
     </div>

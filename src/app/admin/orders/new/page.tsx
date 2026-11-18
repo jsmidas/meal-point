@@ -36,15 +36,10 @@ export default function NewOrderPage() {
   useEffect(() => {
     async function load() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any;
       const [c, p] = await Promise.all([
-        (supabase.from("companies") as any)
-          .select("*")
-          .eq("is_active", true)
-          .order("name"),
-        (supabase.from("products") as any)
-          .select("*")
-          .eq("is_active", true)
-          .order("name"),
+        db.from("companies").select("*").eq("is_active", true).order("name"),
+        db.from("products").select("*").eq("is_active", true).order("name"),
       ]);
       setCompanies(c.data || []);
       setProducts(p.data || []);

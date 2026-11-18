@@ -21,6 +21,17 @@ type RawSalesLog = {
   products: { name: string; unit: string; box_quantity: number } | null;
 };
 
+/** 판매 불러오기 검색 결과 한 줄 (inventory_logs + 상품 정보) */
+type SalesSearchLog = {
+  id: string;
+  product_id: string | null;
+  quantity: number;
+  unit_price: number | null;
+  log_date: string;
+  reason: string | null;
+  products: { name: string; unit: string; box_quantity: number } | null;
+};
+
 interface StatementItemDraft {
   product_id: string | null;
   product_name: string;
@@ -57,8 +68,7 @@ function NewStatementForm() {
   const [showSalesImport, setShowSalesImport] = useState(false);
   const [salesDateFrom, setSalesDateFrom] = useState("");
   const [salesDateTo, setSalesDateTo] = useState("");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [salesLogs, setSalesLogs] = useState<any[]>([]);
+  const [salesLogs, setSalesLogs] = useState<SalesSearchLog[]>([]);
 
   // 미반영 출고 (어느 명세서에도 안 들어간 출고)
   const [unbilledLines, setUnbilledLines] = useState<SalesLineForMatch[]>([]);
@@ -182,17 +192,6 @@ function NewStatementForm() {
     }
   }
 
-  // companyId가 어떤 경로로든 바뀌면 미반영 출고 재조회
-  useEffect(() => {
-    if (companyId) {
-      fetchUnbilledLogs(companyId);
-    } else {
-      setUnbilledLines([]);
-      setUnbilledRawLogs([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
-
   // 최근 3개월간 어느 명세서에도 들어가지 않은 출고를 식별
   async function fetchUnbilledLogs(cId: string) {
     setUnbilledLoading(true);
@@ -238,6 +237,17 @@ function NewStatementForm() {
     setUnbilledRawLogs(rawLogs);
     setUnbilledLoading(false);
   }
+
+  // companyId가 어떤 경로로든 바뀌면 미반영 출고 재조회
+  useEffect(() => {
+    if (companyId) {
+      fetchUnbilledLogs(companyId);
+    } else {
+      setUnbilledLines([]);
+      setUnbilledRawLogs([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
 
   // 미반영 출고를 명세서 항목으로 채움 (상품별 집계 + 박스 단위 변환)
   function importUnbilled() {
@@ -573,7 +583,7 @@ function NewStatementForm() {
             {salesLogs.length > 0 && (
               <div className="space-y-2">
                 <div className="text-sm text-text-secondary">
-                  {salesLogs.length}건의 판매 데이터 ({formatNumber(salesLogs.reduce((s: number, l: any) => s + l.quantity * (l.unit_price || 0), 0))}원)
+                  {salesLogs.length}건의 판매 데이터 ({formatNumber(salesLogs.reduce((s, l) => s + l.quantity * (l.unit_price || 0), 0))}원)
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-bg-dark">
                   <table className="w-full text-xs">
@@ -582,7 +592,7 @@ function NewStatementForm() {
                       <th className="px-3 py-2 text-right">수량</th><th className="px-3 py-2 text-right">단가</th><th className="px-3 py-2 text-right">금액</th>
                     </tr></thead>
                     <tbody>
-                      {salesLogs.map((log: any, i: number) => (
+                      {salesLogs.map((log, i) => (
                         <tr key={i} className="border-b border-border/50">
                           <td className="px-3 py-1.5 text-text-muted">{formatDate(log.log_date)}</td>
                           <td className="px-3 py-1.5 text-text-primary">{log.products?.name || log.reason || "-"}</td>

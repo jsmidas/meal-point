@@ -1365,7 +1365,7 @@ export default function SalesPage() {
                     <option value="">거래처 선택</option>
                     {companies
                       .filter((c) => {
-                        const ct = (c as any).company_type || "customer";
+                        const ct = c.company_type || "customer";
                         return ct === "customer" || ct === "both";
                       })
                       .map((c) => (

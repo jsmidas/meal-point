@@ -92,7 +92,9 @@ export default function Sidebar() {
   const isActive = (href: string) =>
     href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
 
-  const Nav = () => (
+  // 메뉴 목록 — 모바일·데스크톱 두 곳에서 같은 내용을 쓴다.
+  // 컴포넌트로 정의하면 그릴 때마다 새 컴포넌트가 되어 메뉴 전체가 다시 만들어지므로, 요소로 만들어 둔다.
+  const nav = (
     <>
       {navItems.map((item) => (
         <Link
@@ -136,7 +138,7 @@ export default function Sidebar() {
       {open && (
         <div className="lg:hidden fixed inset-0 top-[53px] z-40 bg-bg-dark/95 backdrop-blur-md p-4">
           <nav className="space-y-1">
-            <Nav />
+            {nav}
           </nav>
         </div>
       )}
@@ -152,7 +154,7 @@ export default function Sidebar() {
           </span>
         </div>
         <nav className="space-y-0.5 flex-1 min-h-0 overflow-y-auto">
-          <Nav />
+          {nav}
         </nav>
         <div className="border-t border-border pt-2 mt-2 space-y-0.5">
           <Link

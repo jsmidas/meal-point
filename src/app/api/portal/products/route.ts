@@ -15,14 +15,10 @@ export async function GET() {
   const supabase = createAdminClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
   const [{ data: products }, { data: prices }] = await Promise.all([
-    (supabase.from("products") as any)
-      .select("id, name, unit, selling_price")
-      .eq("is_active", true)
-      .order("name"),
-    (supabase.from("company_prices") as any)
-      .select("product_id, custom_price")
-      .eq("company_id", session.companyId),
+    db.from("products").select("id, name, unit, selling_price").eq("is_active", true).order("name"),
+    db.from("company_prices").select("product_id, custom_price").eq("company_id", session.companyId),
   ]);
 
   const priceMap: Record<string, number> = {};

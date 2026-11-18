@@ -286,8 +286,8 @@ export default function StatementPdf({ statement, companyInfo }: Props) {
             <View style={s.totalSub}>
               <Text style={s.totalSubText}>공급가액: {fmt(statement.supply_amount)}원</Text>
               <Text style={s.totalSubText}>세액: {fmt(statement.tax_amount)}원</Text>
-              {(statement as any).shipping_fee > 0 && (
-                <Text style={s.totalSubText}>배송비: {fmt((statement as any).shipping_fee)}원</Text>
+              {statement.shipping_fee > 0 && (
+                <Text style={s.totalSubText}>배송비: {fmt(statement.shipping_fee)}원</Text>
               )}
             </View>
           </View>

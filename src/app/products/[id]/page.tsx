@@ -113,9 +113,8 @@ export default function ProductDetailPage() {
   const heroImages = ((page as any).hero_images as string[] | undefined)?.filter(Boolean) || (page.hero_image ? [page.hero_image] : []);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const featureImages = ((page as any).feature_images as string[] | undefined)?.filter(Boolean) || (page.feature_image ? [page.feature_image] : []);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sectionOrder: string[] = (page as any).section_order?.length > 0
-    ? (page as any).section_order
+  const sectionOrder: string[] = page.section_order?.length > 0
+    ? page.section_order
     : ["hero", "feature", "keypoints", "specs", "detail", "process", "gallery", "figma"];
 
   // 섹션 렌더 맵

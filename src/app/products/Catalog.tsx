@@ -6,6 +6,7 @@ import type { PublicProduct } from "@/lib/public-data";
 import { productGroups, categoryLabels, type GroupKey } from "@/lib/categories";
 import ProductCard, { type ProductCardItem } from "@/components/ProductCard";
 import { useCompanyPricing } from "@/lib/use-company-pricing";
+import Link from "next/link";
 
 interface CatalogItem extends ProductCardItem {
   category: string;
@@ -169,12 +170,12 @@ export default function Catalog() {
           <p className="text-text-secondary mb-6">
             제품 목록을 불러오지 못했습니다. 잠시 후 다시 시도하시거나 문의해 주세요.
           </p>
-          <a
+          <Link
             href="/#contact"
             className="inline-flex items-center px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
           >
             문의하기
-          </a>
+          </Link>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-text-muted">

@@ -36,6 +36,34 @@ interface RichTextEditorProps {
   placeholder?: string;
 }
 
+/** 도구 모음 버튼. 편집기 안에서 정의하면 그릴 때마다 새 컴포넌트가 되어 버튼이 매번 다시 만들어진다. */
+function ToolBtn({
+  onClick,
+  active,
+  children,
+  title,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  children: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`p-1.5 rounded-md transition-colors ${
+        active
+          ? "bg-primary/20 text-primary"
+          : "text-text-muted hover:text-text-primary hover:bg-bg-card-hover"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function RichTextEditor({
   content,
   onChange,
@@ -76,31 +104,6 @@ export default function RichTextEditor({
   }, [content]);
 
   if (!editor) return null;
-
-  const ToolBtn = ({
-    onClick,
-    active,
-    children,
-    title,
-  }: {
-    onClick: () => void;
-    active?: boolean;
-    children: React.ReactNode;
-    title: string;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={`p-1.5 rounded-md transition-colors ${
-        active
-          ? "bg-primary/20 text-primary"
-          : "text-text-muted hover:text-text-primary hover:bg-bg-card-hover"
-      }`}
-    >
-      {children}
-    </button>
-  );
 
   function setLink() {
     const url = window.prompt("링크 URL을 입력하세요:", "https://");

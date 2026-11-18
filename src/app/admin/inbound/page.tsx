@@ -100,7 +100,7 @@ export default function InboundPage() {
   // 매입처만 필터 (supplier 또는 both)
   const suppliers = useMemo(() => {
     return companies.filter((c) => {
-      const ct = (c as any).company_type || "customer";
+      const ct = c.company_type || "customer";
       return ct === "supplier" || ct === "both";
     });
   }, [companies]);

@@ -51,6 +51,29 @@ export default function TrialPage() {
     return true;
   }
 
+  async function startTrial() {
+    try {
+      const res = await fetch("/api/trial", { method: "POST" });
+      const d = await res.json();
+      if (res.status === 401) {
+        setState({ kind: "guest" });
+        return;
+      }
+      if (d.status === "full") setState({ kind: "full" });
+      else if (d.status === "used") setState({ kind: "used" });
+      else if (d.status === "kakao_required") setState({ kind: "kakao_required" });
+      else if (d.status === "active") {
+        if (!enterTrial(d.account, d.expiresAt)) return;
+        setState({ kind: "entering" });
+      } else {
+        // 배정 실패 — "배정하고 있습니다" 화면에 멈춰 있지 않게 오류로 안내
+        setState({ kind: "error" });
+      }
+    } catch {
+      setState({ kind: "error" });
+    }
+  }
+
   useEffect(() => {
     // 데모 서버는 미사용 시 자동 정지(autostop) — 켜지는 데 ~10초.
     // 페이지가 열리자마자 미리 깨워, 카카오 인증하는 동안 기동이 끝나게 한다 (응답은 안 읽음).
@@ -81,29 +104,6 @@ export default function TrialPage() {
       .catch(() => setState({ kind: "guest" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function startTrial() {
-    try {
-      const res = await fetch("/api/trial", { method: "POST" });
-      const d = await res.json();
-      if (res.status === 401) {
-        setState({ kind: "guest" });
-        return;
-      }
-      if (d.status === "full") setState({ kind: "full" });
-      else if (d.status === "used") setState({ kind: "used" });
-      else if (d.status === "kakao_required") setState({ kind: "kakao_required" });
-      else if (d.status === "active") {
-        if (!enterTrial(d.account, d.expiresAt)) return;
-        setState({ kind: "entering" });
-      } else {
-        // 배정 실패 — "배정하고 있습니다" 화면에 멈춰 있지 않게 오류로 안내
-        setState({ kind: "error" });
-      }
-    } catch {
-      setState({ kind: "error" });
-    }
-  }
 
   return (
     <div className="min-h-screen bg-bg-dark">
@@ -229,12 +229,12 @@ export default function TrialPage() {
                   체험 시작하기 — 클릭 한 번으로 자동 로그인 <ExternalLink size={16} />
                 </a>
               ) : (
-                <a
+                <Link
                   href="/#contact"
                   className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-bg-card-hover text-text-secondary font-semibold text-sm border border-border"
                 >
                   체험 사이트 준비 중 — 문의하기
-                </a>
+                </Link>
               )}
             </div>
           )}
@@ -249,12 +249,12 @@ export default function TrialPage() {
                 무료 체험은 한 분당 한 번(7일) 제공됩니다.<br />
                 계속 사용하시거나 한 번 더 체험이 필요하시면 문의해 주세요.
               </p>
-              <a
+              <Link
                 href="/#contact"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-bg-dark font-semibold text-sm hover:bg-primary-dark transition-colors"
               >
                 도입·재체험 문의하기
-              </a>
+              </Link>
             </div>
           )}
 

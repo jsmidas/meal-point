@@ -50,7 +50,7 @@ export default function CompaniesPage() {
       c.name.includes(search) ||
       c.biz_number.includes(search) ||
       c.ceo_name.includes(search);
-    const ct = (c as any).company_type || "customer";
+    const ct = c.company_type || "customer";
     const matchType =
       typeFilter === "all" ||
       ct === typeFilter ||
@@ -210,7 +210,7 @@ export default function CompaniesPage() {
                   </td>
                   <td className="px-4 py-3">
                     {(() => {
-                      const ct = (company as any).company_type || "customer";
+                      const ct = company.company_type || "customer";
                       const styles: Record<string, string> = {
                         customer: "bg-blue-400/10 text-blue-400",
                         supplier: "bg-emerald-400/10 text-emerald-400",
