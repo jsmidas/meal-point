@@ -107,37 +107,6 @@ export default function RegisterPage() {
           onSubmit={handleSubmit}
           className="rounded-2xl border border-border bg-bg-card p-8 space-y-4"
         >
-          {/* 네이버 간편가입 — 가입 후 '내 정보'에서 사업자등록증을 올려 승인 요청 */}
-          <div>
-            <a
-              href="/api/auth/naver?next=/account"
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 text-white"
-              style={{ backgroundColor: "#03C75A" }}
-            >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <path d="M13.5 10.56L6.26 0H0v20h6.5V9.44L13.74 20H20V0h-6.5v10.56z" fill="white" />
-              </svg>
-              네이버로 간편 가입
-            </a>
-            <p className="text-[11px] text-text-muted mt-2 text-center leading-relaxed">
-              네이버 계정으로 바로 가입됩니다. 가입 후 &apos;내 정보&apos;에서<br />사업자등록증을 올리면 단가 승인을 요청할 수 있습니다.<br />
-              가입 시{" "}
-              <Link href="/privacy" className="underline hover:text-text-primary">
-                개인정보처리방침
-              </Link>
-              에 동의한 것으로 봅니다.
-            </p>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-bg-card px-3 text-text-muted">또는 아이디로 가입</span>
-            </div>
-          </div>
-
           {error && (
             <div className="px-4 py-3 rounded-xl bg-red-400/10 border border-red-400/20 text-red-400 text-sm">
               {error}
