@@ -200,11 +200,14 @@ export default function StatementDetailPage() {
     const db = supabase as any;
     const { data: billing } = await db
       .from("billings")
-      .select("id")
+      .select("id, tax_invoice_issued")
       .eq("company_id", companyId)
       .eq("billing_month", billingMonth)
       .maybeSingle();
     if (!billing) return;
+    // 세금계산서를 발행한 청구는 발행 금액을 지킨다 — 자동으로 바꾸지 않는다.
+    // 차이는 정산 화면에 표시되고, 거기서 "명세서 기준으로 맞추기"로 직접 맞출 수 있다.
+    if (billing.tax_invoice_issued) return;
 
     const [y, m] = billingMonth.split("-").map(Number);
     const from = `${billingMonth}-01`;

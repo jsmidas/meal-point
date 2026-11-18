@@ -462,33 +462,40 @@ export default function BillingPage() {
       }
     }
     // 대표 청구를 그룹 전체 명세서 합으로 자동 보정 (합산 후 round → 세금계산서와 1원 정합)
+    //  - 세금계산서를 발행한 청구는 발행한 금액을 지킨다. 자동으로 덮어쓰지 않고, 명세서 합계와 다르면
+    //    화면에 차이를 보여 주며 "명세서 기준으로 맞추기" 버튼으로 직접 맞추게 한다.
+    //    (예전에는 화면을 열 때마다 덮어써서, 판매액 기준·수동 입력으로 발행한 금액이 되돌아갔다)
+    //  - 저장이 실패하면 화면 값도 바꾸지 않는다(저장되지 않은 금액을 저장된 것처럼 보여 주지 않는다).
     for (const [primary, b] of billMap) {
       const stmts = stmtMap.get(primary);
-      if (stmts && stmts.length > 0) {
-        // 청구 합계 = 공급가 + 부가세 + 배송비
-        const { supply: stmtSupply, tax: stmtTax, total: stmtTotal } = billingAmountsFromStatements(stmts);
-        if (b.total_amount !== stmtTotal) {
-          // 합계가 바뀌면 완납 여부도 달라질 수 있다 → 입금 상태를 새 합계 기준으로 다시 판정한다.
-          // 완납일은 이미 있으면 유지하고, 완납이 아니게 되면 비운다.
-          const paid = b.paid_amount || 0;
-          const newStatus = paid <= 0 ? "unpaid" : paid >= stmtTotal ? "paid" : "partial";
-          const newPaidDate = newStatus === "paid" ? b.paid_date ?? todayKST() : null;
-          // DB 업데이트 (비동기, UI 먼저 반영)
-          dbUpdate("billings", {
-            total_supply: stmtSupply,
-            total_tax: stmtTax,
-            total_amount: stmtTotal,
-            status: newStatus,
-            paid_date: newPaidDate,
-          }, { id: b.id });
-          // 로컬 데이터 즉시 반영
-          b.total_supply = stmtSupply;
-          b.total_tax = stmtTax;
-          b.total_amount = stmtTotal;
-          b.status = newStatus;
-          b.paid_date = newPaidDate;
-        }
+      if (!stmts || stmts.length === 0) continue;
+      if (b.tax_invoice_issued) continue;
+
+      // 청구 합계 = 공급가 + 부가세 + 배송비
+      const { supply: stmtSupply, tax: stmtTax, total: stmtTotal } = billingAmountsFromStatements(stmts);
+      if (b.total_amount === stmtTotal) continue;
+
+      // 합계가 바뀌면 완납 여부도 달라질 수 있다 → 입금 상태를 새 합계 기준으로 다시 판정한다.
+      // 완납일은 이미 있으면 유지하고, 완납이 아니게 되면 비운다.
+      const paid = b.paid_amount || 0;
+      const newStatus = paid <= 0 ? "unpaid" : paid >= stmtTotal ? "paid" : "partial";
+      const newPaidDate = newStatus === "paid" ? b.paid_date ?? todayKST() : null;
+      const res = await dbUpdate("billings", {
+        total_supply: stmtSupply,
+        total_tax: stmtTax,
+        total_amount: stmtTotal,
+        status: newStatus,
+        paid_date: newPaidDate,
+      }, { id: b.id });
+      if (res.error) {
+        console.error("[billing] 청구 금액 자동 보정 실패", b.id, res.error);
+        continue;
       }
+      b.total_supply = stmtSupply;
+      b.total_tax = stmtTax;
+      b.total_amount = stmtTotal;
+      b.status = newStatus;
+      b.paid_date = newPaidDate;
     }
 
     // 활동이 있는 그룹(대표 키)만 — 모든 키는 이미 primary 기준
@@ -609,6 +616,38 @@ export default function BillingPage() {
       if (!/billing_number/i.test(lastError)) break;
     }
     return { id: null, error: lastError };
+  }
+
+  /**
+   * 세금계산서를 발행한 청구의 금액을 명세서 합계(공급가 + 부가세 + 배송비)로 맞춘다.
+   * 발행분은 자동 보정하지 않으므로, 발행 뒤 명세서가 추가·수정돼 금액이 달라졌을 때 직접 누른다.
+   */
+  async function syncBillingToStatements(row: CompanyRow) {
+    const billing = row.billing;
+    if (!billing || row.statements.length === 0) return;
+    const amounts = billingAmountsFromStatements(row.statements);
+    if (amounts.total === billing.total_amount) return;
+    const ok = window.confirm(
+      "청구 금액을 명세서 기준으로 바꿉니다.\n\n" +
+        `현재 청구액: ${formatNumber(billing.total_amount)}원\n` +
+        `명세서 기준: ${formatNumber(amounts.total)}원\n\n` +
+        "세금계산서로 발행한 금액과 달라질 수 있습니다. 계속할까요?",
+    );
+    if (!ok) return;
+    const paid = billing.paid_amount || 0;
+    const newStatus = paid <= 0 ? "unpaid" : paid >= amounts.total ? "paid" : "partial";
+    const res = await dbUpdate("billings", {
+      total_supply: amounts.supply,
+      total_tax: amounts.tax,
+      total_amount: amounts.total,
+      status: newStatus,
+      paid_date: newStatus === "paid" ? billing.paid_date ?? todayKST() : null,
+    }, { id: billing.id });
+    if (res.error) {
+      alert(`청구 금액을 바꾸지 못했습니다.\n${res.error}`);
+      return;
+    }
+    fetchData();
   }
 
   // 세금계산서 발행 처리
@@ -1344,6 +1383,14 @@ export default function BillingPage() {
                           <AlertTriangle size={10} /> 청구액 불일치
                         </span>
                       )}
+                      {billing?.tax_invoice_issued && row.statements.length > 0 && statementBasedTotal(row.statements) !== billing.total_amount && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] text-yellow-400 bg-yellow-500/10 rounded-full px-2 py-0.5"
+                          title="세금계산서 발행 금액과 명세서 합계가 다릅니다. 발행분은 자동으로 바꾸지 않습니다 — 펼쳐서 확인하세요."
+                        >
+                          <AlertTriangle size={10} /> 명세서 합계와 다름
+                        </span>
+                      )}
                     </div>
                     <span className="text-sm font-bold text-accent shrink-0">{formatNumber(row.sales.amount)}원</span>
                   </div>
@@ -1501,6 +1548,31 @@ export default function BillingPage() {
                           <span className="text-text-muted">청구액</span>
                           <span className="text-text-primary">{formatNumber(billing.total_amount)}원</span>
                         </div>
+                        {/* 세금계산서 발행분: 명세서 합계와 다르면 차이를 보여 주고 직접 맞추게 한다 */}
+                        {(() => {
+                          if (!billing.tax_invoice_issued || row.statements.length === 0) return null;
+                          const stmtTotal = statementBasedTotal(row.statements);
+                          const gap = stmtTotal - billing.total_amount;
+                          if (gap === 0) return null;
+                          return (
+                            <div className="bg-yellow-500/10 rounded px-1.5 py-1 -mx-1.5 space-y-1">
+                              <div className="flex justify-between text-[10px]">
+                                <span className="text-yellow-400">명세서 기준 {formatNumber(stmtTotal)}원</span>
+                                <span className="text-yellow-400 font-bold">{gap > 0 ? "+" : ""}{formatNumber(gap)}원</span>
+                              </div>
+                              <p className="text-[10px] text-text-muted leading-snug">
+                                세금계산서를 발행한 청구라 자동으로 바꾸지 않았습니다.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => syncBillingToStatements(row)}
+                                className="w-full text-[10px] font-semibold text-yellow-400 border border-yellow-500/40 rounded py-0.5 hover:bg-yellow-500/10 transition-colors"
+                              >
+                                명세서 기준으로 맞추기
+                              </button>
+                            </div>
+                          );
+                        })()}
                         {/* 판매액과 청구액 차이 경고 */}
                         {(() => {
                           // 판매 기준 금액(공급가+부가세)에 그 달 명세서의 배송비를 더해 청구액과 비교한다

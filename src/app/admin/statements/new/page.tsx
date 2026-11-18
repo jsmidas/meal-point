@@ -482,12 +482,13 @@ function NewStatementForm() {
     const db = supabase as any;
     const { data: billing } = await db
       .from("billings")
-      .select("id")
+      .select("id, tax_invoice_issued")
       .eq("company_id", companyId)
       .eq("billing_month", billingMonth)
-      .single();
+      .maybeSingle();
 
-    if (billing) {
+    // 세금계산서를 발행한 청구는 발행 금액을 지킨다 — 자동으로 바꾸지 않는다(정산 화면에서 직접 맞춘다)
+    if (billing && !billing.tax_invoice_issued) {
       const [by, bm] = billingMonth.split("-").map(Number);
       const bFrom = `${billingMonth}-01`;
       const bTo = `${billingMonth}-${String(new Date(by, bm, 0).getDate()).padStart(2, "0")}`;
